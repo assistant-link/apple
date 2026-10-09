@@ -1,0 +1,64 @@
+# XcodeGen spec. Run `make generate` after editing this file or adding/removing
+# source files. The generated AssistantLink.xcodeproj is git-ignored; never edit it.
+name: AssistantLink
+
+options:
+  bundleIdPrefix: ai.assistantlink
+  deploymentTarget:
+    iOS: "18.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    SWIFT_STRICT_CONCURRENCY: complete
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    GENERATE_INFOPLIST_FILE: YES
+
+targets:
+  AssistantLink:
+    type: application
+    platform: iOS
+    sources:
+      - AssistantLink
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: ai.assistantlink.app
+        TARGETED_DEVICE_FAMILY: "1"
+        PRODUCT_MODULE_NAME: AssistantLink
+        # Only App Transport Security lives here, so debug builds can reach a local
+        # service over plain HTTP; every other key is generated from INFOPLIST_KEY_*.
+        INFOPLIST_FILE: AssistantLink/Info.plist
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        ENABLE_PREVIEWS: YES
+        INFOPLIST_KEY_CFBundleDisplayName: Assistant Link
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
+
+  AssistantLinkTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - AssistantLinkTests
+    dependencies:
+      - target: AssistantLink
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: ai.assistantlink.app.tests
+        TARGETED_DEVICE_FAMILY: "1"
+
+schemes:
+  AssistantLink:
+    build:
+      targets:
+        AssistantLink: all
+        AssistantLinkTests: [test]
+    test:
+      config: Debug
+      targets:
+        - AssistantLinkTests
+    run:
+      config: Debug
