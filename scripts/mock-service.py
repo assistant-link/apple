@@ -1,13 +1,11 @@
 #!/usr/bin/env python3
 """A stand-in for the Assistant Link service that answers what the app calls at launch.
 
-Usage: mock-service.py [PORT]   (default 8765, listens on 127.0.0.1)
-
-Serves canned data that mirrors `Assistant.samples`, and accepts any credential.
+Listens on 127.0.0.1:8765. Serves canned data that mirrors `Assistant.samples`
+and accepts any credential.
 """
 import json
 import re
-import sys
 from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -92,5 +90,4 @@ class Handler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    port = int(sys.argv[1]) if len(sys.argv) > 1 else 8765
-    ThreadingHTTPServer(("127.0.0.1", port), Handler).serve_forever()
+    ThreadingHTTPServer(("127.0.0.1", 8765), Handler).serve_forever()
