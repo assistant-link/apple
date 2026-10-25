@@ -72,6 +72,7 @@ def route(method, path):
             "expires_at": iso(timedelta(minutes=10)),
             "pairing_text": "Pair with Assistant Link using the code K7QM-2XPA.",
         }
+    # /api/v1/connect deliberately 404s so the app skips live updates.
     return 404, {"error": {"code": "not_found", "message": "Not found."}}
 
 

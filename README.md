@@ -13,6 +13,7 @@ edit it by hand. Everything runs from the command line through `make`.
 - [XcodeGen](https://github.com/yonaskolb/XcodeGen): `mise install` installs the version pinned in `mise.toml`
   ([mise](https://mise.jdx.dev)), or `brew install xcodegen`.
 - `jq` (preinstalled on macOS 15 and later).
+- `python3`, for the mock service that `make screenshots` runs.
 
 The Makefile uses `/Applications/Xcode.app` automatically when `xcode-select` points at
 the Command Line Tools. To use a different Xcode, run
@@ -22,20 +23,23 @@ the Command Line Tools. To use a different Xcode, run
 
 Run these from the repository root:
 
-| Target          | What it does                                                        |
-| --------------- | ------------------------------------------------------------------- |
-| `make generate` | Generate `AssistantLink.xcodeproj` from `project.yml`.              |
-| `make build`    | Build the app for the Simulator into `build/`.                      |
-| `make test`     | Run the unit tests (Swift Testing) on the Simulator.                |
+| Target             | What it does                                                        |
+| ------------------ | ------------------------------------------------------------------- |
+| `make generate`    | Generate `AssistantLink.xcodeproj` from `project.yml`.              |
+| `make build`       | Build the app for the Simulator into `build/`.                      |
+| `make test`        | Run the unit tests (Swift Testing) on the Simulator.                |
 | `make screenshots` | Capture the key screens in light and dark into `build/screenshots`. |
-| `make run`      | Build, boot the Simulator, install and launch Assistant Link.       |
-| `make device`   | Build, sign, install and launch on a paired iPhone.                 |
-| `make lint`     | Check Swift style with `swift format` and `.swift-format`.          |
-| `make format`   | Reformat Swift sources in place with `swift format`.                |
-| `make clean`    | Remove `build/` and the generated Xcode project.                    |
+| `make run`         | Build, boot the Simulator, install and launch Assistant Link.       |
+| `make device`      | Build, sign, install and launch on a paired iPhone.                 |
+| `make lint`        | Check Swift style with `swift format` and `.swift-format`.          |
+| `make format`      | Reformat Swift sources in place with `swift format`.                |
+| `make clean`       | Remove `build/` and the generated Xcode project.                    |
 
-`build`, `test` and `run` generate the project first if it is missing or older than
+`build`, `test`, `screenshots` and `run` generate the project first if it is missing or older than
 `project.yml`. Run `make generate` yourself after adding or removing source files.
+
+`make screenshots` switches the Simulator to light, then dark (restored afterwards), and may leave a mock
+account in the Simulator's Keychain, so use a Simulator you don't mind.
 
 Add `XCODEBUILD_FLAGS=` to see full `xcodebuild` output, for example
 `make build XCODEBUILD_FLAGS=`.

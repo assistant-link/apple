@@ -12,12 +12,14 @@ final class ScreenshotTests: XCTestCase {
 
     row("Hermes", in: app).tap()
     XCTAssertTrue(backButton(in: app).waitForExistence(timeout: 10))
+    XCTAssertTrue(app.buttons["Show pairing text"].waitForExistence(timeout: 10))
     capture(app, "2-hermes")
 
     backButton(in: app).tap()
     XCTAssertTrue(row("Grok Bot", in: app).waitForExistence(timeout: 10))
     row("Grok Bot", in: app).tap()
     XCTAssertTrue(backButton(in: app).waitForExistence(timeout: 10))
+    XCTAssertTrue(app.buttons["createLink"].waitForExistence(timeout: 10))
     capture(app, "3-grok-bot-setup")
   }
 

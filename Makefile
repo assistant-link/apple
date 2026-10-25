@@ -74,7 +74,11 @@ screenshots: $(PROJECT) ## Capture screenshots of the key screens in light and d
 	@rm -rf $(BUILD_DIR)/Screenshots-*.xcresult $(SCREENSHOT_DIR) $(BUILD_DIR)/attachments
 	@$(PICK_SIMULATOR) \
 	xcrun simctl bootstatus "$$udid" -b > /dev/null; \
-	python3 scripts/mock-service.py & mock=$$!; trap 'kill $$mock 2>/dev/null || true' EXIT; \
+	original="$$(xcrun simctl ui "$$udid" appearance)"; \
+	python3 scripts/mock-service.py & mock=$$!; \
+	trap 'kill $$mock 2>/dev/null || true; xcrun simctl ui "$$udid" appearance "$$original" || true' EXIT; \
+	sleep 1; \
+	kill -0 $$mock 2>/dev/null || { echo "error: the mock service did not start; is port 8765 in use?" >&2; exit 1; }; \
 	status=0; \
 	for style in light dark; do \
 	  bundle=$(BUILD_DIR)/Screenshots-$$style.xcresult; \
