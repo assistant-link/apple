@@ -27,6 +27,7 @@ Run these from the repository root:
 | `make generate` | Generate `AssistantLink.xcodeproj` from `project.yml`.              |
 | `make build`    | Build the app for the Simulator into `build/`.                      |
 | `make test`     | Run the unit tests (Swift Testing) on the Simulator.                |
+| `make screenshots` | Capture the key screens in light and dark into `build/screenshots`. |
 | `make run`      | Build, boot the Simulator, install and launch Assistant Link.       |
 | `make device`   | Build, sign, install and launch on a paired iPhone.                 |
 | `make lint`     | Check Swift style with `swift format` and `.swift-format`.          |

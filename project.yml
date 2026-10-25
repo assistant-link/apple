@@ -50,6 +50,18 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: ai.assistantlink.app.tests
         TARGETED_DEVICE_FAMILY: "1"
 
+  AssistantLinkUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - AssistantLinkUITests
+    dependencies:
+      - target: AssistantLink
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: ai.assistantlink.app.uitests
+        TARGETED_DEVICE_FAMILY: "1"
+
 schemes:
   AssistantLink:
     build:
@@ -62,3 +74,12 @@ schemes:
         - AssistantLinkTests
     run:
       config: Debug
+  AssistantLinkScreenshots:
+    build:
+      targets:
+        AssistantLink: all
+        AssistantLinkUITests: [test]
+    test:
+      config: Debug
+      targets:
+        - AssistantLinkUITests
