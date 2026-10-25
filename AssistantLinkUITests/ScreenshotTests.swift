@@ -4,11 +4,9 @@ final class ScreenshotTests: XCTestCase {
   @MainActor func testCaptureKeyScreens() {
     continueAfterFailure = false
     for style in ["light", "dark"] {
+      XCUIDevice.shared.appearance = style == "dark" ? .dark : .light
       let app = XCUIApplication()
-      app.launchArguments = [
-        "-serviceURL", "http://127.0.0.1:8765",
-        "-AppleInterfaceStyle", style == "dark" ? "Dark" : "Light",
-      ]
+      app.launchArguments = ["-serviceURL", "http://127.0.0.1:8765"]
       app.launch()
 
       XCTAssertTrue(row("Hermes", in: app).waitForExistence(timeout: 30))
