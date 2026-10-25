@@ -74,13 +74,13 @@ screenshots: SCHEME := AssistantLinkScreenshots
 screenshots: $(PROJECT) ## Capture screenshots of the key screens in light and dark into build/screenshots
 	@rm -rf $(SCREENSHOT_RESULTS) $(SCREENSHOT_DIR) $(BUILD_DIR)/attachments
 	@$(PICK_SIMULATOR) \
-	scripts/mock-service.py & mock=$$!; trap 'kill $$mock 2>/dev/null || true' EXIT; \
+	python3 scripts/mock-service.py & mock=$$!; trap 'kill $$mock 2>/dev/null || true' EXIT; \
 	status=0; $(XCODEBUILD) -resultBundlePath $(SCREENSHOT_RESULTS) test || status=$$?; \
 	if [[ -d $(SCREENSHOT_RESULTS) ]]; then \
 	  xcrun xcresulttool export attachments --path $(SCREENSHOT_RESULTS) \
 	    --output-path $(BUILD_DIR)/attachments; \
 	  mkdir -p $(SCREENSHOT_DIR); \
-	  jq -r '.[].attachments[]? | [.exportedFileName, (.suggestedHumanReadableName | sub("(_[0-9]+_[0-9A-Fa-f-]{36})?(\\.png)?$$"; ""))] | @tsv' \
+	  jq -r '.[].attachments[]? | select(.suggestedHumanReadableName | test("^(light|dark)-")) | [.exportedFileName, (.suggestedHumanReadableName | sub("(_[0-9]+_[0-9A-Fa-f-]{36})?(\\.png)?$$"; ""))] | @tsv' \
 	    $(BUILD_DIR)/attachments/manifest.json | \
 	  while IFS=$$'\t' read -r file name; do cp "$(BUILD_DIR)/attachments/$$file" "$(SCREENSHOT_DIR)/$$name.png"; done; \
 	fi; \
