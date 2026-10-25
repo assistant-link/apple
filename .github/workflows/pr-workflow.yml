@@ -47,6 +47,6 @@ jobs:
         if: failure()
         with:
           name: screenshots-xcresult
-          path: build/Screenshots.xcresult
+          path: build/Screenshots-*.xcresult
           if-no-files-found: ignore
           retention-days: 14

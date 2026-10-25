@@ -26,7 +26,6 @@ DERIVED_DATA := $(BUILD_DIR)/DerivedData
 APP_PATH := $(DERIVED_DATA)/Build/Products/Debug-iphonesimulator/AssistantLink.app
 DEVICE_APP_PATH := $(DERIVED_DATA)/Build/Products/Debug-iphoneos/AssistantLink.app
 TEST_RESULTS := $(BUILD_DIR)/TestResults.xcresult
-SCREENSHOT_RESULTS := $(BUILD_DIR)/Screenshots.xcresult
 SCREENSHOT_DIR := $(BUILD_DIR)/screenshots
 SOURCES := AssistantLink AssistantLinkTests AssistantLinkUITests
 SIMULATOR ?=
@@ -72,21 +71,28 @@ test: $(PROJECT) ## Run the unit tests on the Simulator
 
 screenshots: SCHEME := AssistantLinkScreenshots
 screenshots: $(PROJECT) ## Capture screenshots of the key screens in light and dark into build/screenshots
-	@rm -rf $(SCREENSHOT_RESULTS) $(SCREENSHOT_DIR) $(BUILD_DIR)/attachments
+	@rm -rf $(BUILD_DIR)/Screenshots-*.xcresult $(SCREENSHOT_DIR) $(BUILD_DIR)/attachments
 	@$(PICK_SIMULATOR) \
+	xcrun simctl bootstatus "$$udid" -b > /dev/null; \
 	python3 scripts/mock-service.py & mock=$$!; trap 'kill $$mock 2>/dev/null || true' EXIT; \
-	status=0; $(XCODEBUILD) -resultBundlePath $(SCREENSHOT_RESULTS) test || status=$$?; \
-	if [[ -d $(SCREENSHOT_RESULTS) ]]; then \
-	  xcrun xcresulttool export attachments --path $(SCREENSHOT_RESULTS) \
-	    --output-path $(BUILD_DIR)/attachments; \
-	  mkdir -p $(SCREENSHOT_DIR); \
-	  jq -r '.[].attachments[]? | select(.suggestedHumanReadableName | test("^(light|dark)-")) | [.exportedFileName, (.suggestedHumanReadableName | sub("(_[0-9]+_[0-9A-Fa-f-]{36})?(\\.png)?$$"; ""))] | @tsv' \
-	    $(BUILD_DIR)/attachments/manifest.json | \
-	  while IFS=$$'\t' read -r file name; do cp "$(BUILD_DIR)/attachments/$$file" "$(SCREENSHOT_DIR)/$$name.png"; done; \
-	fi; \
-	count=$$(ls $(SCREENSHOT_DIR) 2>/dev/null | wc -l || true); \
-	echo "Exported $$count screenshots to $(SCREENSHOT_DIR)"; \
-	[[ $$count -gt 0 ]] || { echo "error: no screenshot was exported." >&2; exit 1; }; \
+	status=0; \
+	for style in light dark; do \
+	  bundle=$(BUILD_DIR)/Screenshots-$$style.xcresult; \
+	  attachments=$(BUILD_DIR)/attachments/$$style; \
+	  out=$(SCREENSHOT_DIR)/$$style; \
+	  xcrun simctl ui "$$udid" appearance $$style; \
+	  $(XCODEBUILD) -resultBundlePath $$bundle test || status=$$?; \
+	  if [[ -d $$bundle ]]; then \
+	    xcrun xcresulttool export attachments --path $$bundle --output-path $$attachments; \
+	    mkdir -p $$out; \
+	    jq -r '.[].attachments[]? | select(.suggestedHumanReadableName | test("^[0-9]-")) | [.exportedFileName, (.suggestedHumanReadableName | sub("(_[0-9]+_[0-9A-Fa-f-]{36})?(\\.png)?$$"; ""))] | @tsv' \
+	      $$attachments/manifest.json | \
+	    while IFS=$$'\t' read -r file name; do cp "$$attachments/$$file" "$$out/$$name.png"; done; \
+	  fi; \
+	  count=$$(ls $$out 2>/dev/null | wc -l || true); \
+	  echo "Exported $$count $$style screenshots to $$out"; \
+	  [[ $$count -gt 0 ]] || { echo "error: no $$style screenshot was exported." >&2; status=1; }; \
+	done; \
 	exit $$status
 
 run: build ## Boot the Simulator, install and launch the app
