@@ -79,7 +79,7 @@ struct ConversationView: View {
     ) { message in
       Button("Try Again") { Task { await model.retry(message) } }
         .accessibilityIdentifier("tryAgain")
-      Button("Cancel", role: .cancel) { model.cancel(message) }
+      Button("Cancel", role: .destructive) { model.cancel(message) }
         .accessibilityIdentifier("cancelSend")
     }
     .task { try? await model.openConversation(assistantID: assistant.id) }

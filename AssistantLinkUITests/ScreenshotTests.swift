@@ -8,7 +8,7 @@ final class ScreenshotTests: XCTestCase {
     addTeardownBlock { @MainActor [self] in
       guard (testRun?.totalFailureCount ?? 0) > 0 else { return }
       let app = XCUIApplication()
-      capture(app, "99-failure")
+      capture(app, "0-failure")
       let hierarchy = XCTAttachment(string: String(app.debugDescription.prefix(3000)))
       hierarchy.name = "99-hierarchy"
       hierarchy.lifetime = .keepAlways
