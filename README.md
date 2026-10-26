@@ -41,6 +41,9 @@ Run these from the repository root:
 `make screenshots` switches the Simulator to light, then dark (restored afterwards), and may leave a mock
 account in the Simulator's Keychain, so use a Simulator you don't mind.
 
+Screenshots are not part of PR CI. Run the Screenshots workflow manually (Actions > screenshots > Run
+workflow, or `gh workflow run screenshots.yml --ref <branch>`).
+
 Add `XCODEBUILD_FLAGS=` to see full `xcodebuild` output, for example
 `make build XCODEBUILD_FLAGS=`.
 
