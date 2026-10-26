@@ -43,12 +43,6 @@ private struct FailedMessageSheet: ViewModifier {
         onCancelMessage(message)
       })
     sheet.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in item = nil })
-    if let popover = sheet.popoverPresentationController {
-      popover.sourceView = top.view
-      popover.sourceRect = CGRect(
-        x: top.view.bounds.midX, y: top.view.bounds.maxY, width: 0, height: 0)
-      popover.permittedArrowDirections = []
-    }
     top.present(sheet, animated: true)
   }
 
