@@ -205,4 +205,39 @@ struct LiveUpdatesTests {
 
     #expect(await task.value == nil)
   }
+
+  @Test func passesEventNotificationsInOrder() async {
+    let script = Script([
+      .init(
+        steps: [
+          .open, .message(eventNotice("event.created", id: "e-1")),
+          .message(eventNotice("event.updated", id: "e-2")), .message(accountDeleted),
+        ], end: .closed)
+    ])
+    var log: [String] = []
+
+    _ = await script.liveUpdates().run(
+      onOpen: {}, onLinkStatus: { _ in },
+      onEventCreated: { log.append("created \($0.id)") },
+      onEventUpdated: { log.append("updated \($0.id)") })
+
+    #expect(log == ["created e-1", "updated e-2"])
+  }
+}
+
+extension LiveUpdates {
+  func run(onOpen: () async -> Void, onLinkStatus: (LinkStatusChange) -> Void) async -> Stop? {
+    await run(
+      onOpen: onOpen, onLinkStatus: onLinkStatus, onEventCreated: { _ in },
+      onEventUpdated: { _ in })
+  }
+}
+
+private func eventNotice(_ method: String, id: String) -> String {
+  #"""
+  {"jsonrpc": "2.0", "method": "\#(method)", "params": {"event": {
+    "id": "\#(id)", "assistant_id": "as-1", "type": "text_message", "sender": "assistant",
+    "link_id": "l-1", "created_at": "2026-10-08T12:30:15Z", "deleted": false,
+    "delivery_status": null, "idempotency_key": null, "text_message": {"text": "Done."}}}}
+  """#
 }

@@ -53,7 +53,12 @@ struct LiveUpdates {
 
   /// Returns why it stopped reconnecting, or `nil` when cancelled. A rejected upgrade (4xx)
   /// stops it, because retrying with the same credential can't succeed.
-  func run(onOpen: () async -> Void, onLinkStatus: (LinkStatusChange) -> Void) async -> Stop? {
+  func run(
+    onOpen: () async -> Void,
+    onLinkStatus: (LinkStatusChange) -> Void,
+    onEventCreated: (Event) -> Void,
+    onEventUpdated: (Event) -> Void
+  ) async -> Stop? {
     var backoff = backoff
     while !Task.isCancelled {
       var openedAt: Duration?
@@ -66,6 +71,8 @@ struct LiveUpdates {
           case .message(let text):
             switch LiveMessage(text: text) {
             case .linkStatus(let change): onLinkStatus(change)
+            case .eventCreated(let event): onEventCreated(event)
+            case .eventUpdated(let event): onEventUpdated(event)
             case .closing(reason: "account_deleted"): return .accountDeleted
             case .closing, .ignored: break
             }

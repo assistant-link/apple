@@ -56,6 +56,34 @@ struct LiveMessageTests {
     #expect(message == .closing(reason: "account_deleted"))
   }
 
+  private func notification(_ method: String) -> String {
+    #"""
+    {"jsonrpc": "2.0", "method": "\#(method)", "params": {"event": {
+      "id": "e-1", "assistant_id": "as-1", "type": "text_message", "sender": "user",
+      "link_id": null, "created_at": "2026-10-08T12:30:15Z", "deleted": false,
+      "delivery_status": "delivered", "idempotency_key": "k-1", "text_message": {"text": "Hi"}}}}
+    """#
+  }
+
+  private let event = Event(
+    id: "e-1", assistantID: "as-1", type: .textMessage, sender: .user,
+    createdAt: Date(timeIntervalSince1970: 1_791_462_615), deliveryStatus: .delivered,
+    idempotencyKey: "k-1", text: "Hi")
+
+  @Test func decodesACreatedEvent() {
+    #expect(LiveMessage(text: notification("event.created")) == .eventCreated(event))
+  }
+
+  @Test func decodesAnUpdatedEvent() {
+    #expect(LiveMessage(text: notification("event.updated")) == .eventUpdated(event))
+  }
+
+  @Test func ignoresAnEventNotificationWithoutAnEvent() {
+    let text = #"{"jsonrpc": "2.0", "method": "event.created", "params": {}}"#
+
+    #expect(LiveMessage(text: text) == .ignored)
+  }
+
   @Test(arguments: [
     #"{"jsonrpc": "2.0", "method": "message.new", "params": {"id": "m-1"}}"#,
     #"{"jsonrpc": "2.0", "id": 1, "result": {}}"#,

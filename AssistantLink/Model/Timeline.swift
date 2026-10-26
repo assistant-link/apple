@@ -1,6 +1,20 @@
 import Foundation
 
 enum UUIDv7 {
+  /// A new id for `date`: 48 bits of Unix milliseconds, then the version and variant bits
+  /// around 74 random bits.
+  static func make(at date: Date = .now, random: (UInt64, UInt64)? = nil) -> String {
+    let first = random?.0 ?? .random(in: 0...UInt64.max)
+    let second = random?.1 ?? .random(in: 0...UInt64.max)
+    let milliseconds = UInt64(max(0, (date.timeIntervalSince1970 * 1000).rounded()))
+    let high: UInt64 = (milliseconds & 0xFFFF_FFFF_FFFF) << 16 | 0x7000 | (first & 0x0FFF)
+    let low: UInt64 = 0x8000_0000_0000_0000 | (second & 0x3FFF_FFFF_FFFF_FFFF)
+    let hex = String(format: "%016llx%016llx", high, low)
+    let groups = [hex.prefix(8), hex.dropFirst(8).prefix(4), hex.dropFirst(12).prefix(4)]
+    let rest = [hex.dropFirst(16).prefix(4), hex.dropFirst(20)]
+    return (groups + rest).joined(separator: "-")
+  }
+
   /// The creation time a UUIDv7 carries in its leading 48 bits (Unix milliseconds).
   static func date(fromID id: String) -> Date? {
     let hex = id.replacingOccurrences(of: "-", with: "")
@@ -11,22 +25,51 @@ enum UUIDv7 {
   }
 }
 
-/// A system event in an Assistant's conversation. The service stores no timeline yet, so the
-/// app derives these from the Assistant's Links.
-struct TimelineEvent: Equatable, Identifiable {
-  let link: Link
+/// The events of one Assistant's conversation loaded so far, oldest first.
+struct Timeline: Equatable, Sendable {
+  var events: [Event] = []
+  /// Whether events older than the first loaded one exist.
+  var hasMore = false
 
-  var id: Link.ID { link.id }
-  var date: Date? { UUIDv7.date(fromID: link.id) }
-}
-
-extension Assistant {
-  /// Oldest first; ids are UUIDv7, so ordering by id is creation order.
-  var events: [TimelineEvent] {
-    links.sorted { $0.id < $1.id }.map(TimelineEvent.init)
+  /// Adds an event the service just stored, or replaces the loaded one with the same id.
+  mutating func receive(_ event: Event) {
+    if let index = events.firstIndex(where: { $0.id == event.id }) {
+      events[index] = event
+    } else {
+      events.append(event)
+    }
   }
 
-  var latestEvent: TimelineEvent? { events.last }
+  /// Replaces a loaded event; an event that isn't loaded stays out.
+  mutating func update(_ event: Event) {
+    if let index = events.firstIndex(where: { $0.id == event.id }) {
+      events[index] = event
+    }
+  }
+
+  /// Takes the latest page. If it shares an event with the loaded ones, they merge by id and
+  /// the older loaded events stay; otherwise the page replaces them.
+  mutating func refetch(with page: EventPage) {
+    let pageIDs = Set(page.events.map(\.id))
+    guard let overlap = events.firstIndex(where: { pageIDs.contains($0.id) }) else {
+      events = page.events
+      hasMore = page.hasMore
+      return
+    }
+    let older = Array(events[..<overlap])
+    let newer = events[overlap...].filter { !pageIDs.contains($0.id) }
+    events = older + page.events + newer
+    if overlap == 0 {
+      hasMore = page.hasMore
+    }
+  }
+
+  /// Adds the page that precedes the first loaded event.
+  mutating func prepend(_ page: EventPage) {
+    let loadedIDs = Set(events.map(\.id))
+    events = page.events.filter { !loadedIDs.contains($0.id) } + events
+    hasMore = page.hasMore
+  }
 }
 
 enum EventTime {

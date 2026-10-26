@@ -38,13 +38,16 @@ struct ConversationView: View {
   private func timeline(_ assistant: Assistant) -> some View {
     ScrollView {
       LazyVStack(spacing: 20) {
-        ForEach(assistant.events) { event in
-          SystemEventView(
-            event: event,
-            linkName: event.link.displayName(
-              position: assistant.links.firstIndex(of: event.link) ?? 0)
-          ) {
-            pairingLink = event.link
+        ForEach(model.timelines[assistant.id]?.events ?? []) { event in
+          if event.type == .linkCreated,
+            let position = assistant.links.firstIndex(where: { $0.id == event.linkID })
+          {
+            let link = assistant.links[position]
+            SystemEventView(
+              event: event, link: link, linkName: link.displayName(position: position)
+            ) {
+              pairingLink = link
+            }
           }
         }
       }
@@ -52,6 +55,7 @@ struct ConversationView: View {
       .padding(.vertical, 24)
     }
     .defaultScrollAnchor(.bottom)
+    .task { try? await model.openConversation(assistantID: assistant.id) }
     .refreshable { try? await model.refresh() }
   }
 }
@@ -91,24 +95,23 @@ private struct BubbleBackground: ViewModifier {
 }
 
 private struct SystemEventView: View {
-  let event: TimelineEvent
+  let event: Event
+  let link: Link
   let linkName: String
   let showPairingText: () -> Void
 
   var body: some View {
     VStack(spacing: 6) {
-      if let date = event.date {
-        Text(date.formatted(.dateTime.month(.abbreviated).day().hour().minute()))
-          .font(.footnote)
-          .foregroundStyle(.tertiary)
-      }
+      Text(event.createdAt.formatted(.dateTime.month(.abbreviated).day().hour().minute()))
+        .font(.footnote)
+        .foregroundStyle(.tertiary)
       Label("Assistant Link created", systemImage: "link")
         .font(.subheadline)
         .foregroundStyle(.secondary)
-      Text(event.link.status == .notPaired ? "\(linkName) · not paired yet" : linkName)
+      Text(link.status == .notPaired ? "\(linkName) · not paired yet" : linkName)
         .font(.footnote)
         .foregroundStyle(.tertiary)
-      if event.link.status == .notPaired {
+      if link.status == .notPaired {
         Button("Show pairing text", action: showPairingText)
           .font(.subheadline)
       }
@@ -201,7 +204,7 @@ private struct SetupGuideView: View {
   NavigationStack {
     ConversationView(assistantID: Assistant.samples[0].id)
   }
-  .environment(AppModel.preview(Assistant.samples))
+  .environment(AppModel.preview(Assistant.samples, timelines: Assistant.sampleTimelines))
 }
 
 #Preview("Setup guide") {

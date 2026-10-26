@@ -55,6 +55,27 @@ struct APIClient: Sendable {
     try await send("POST", "links/\(linkID)/pairing_code", body: [String: String]())
   }
 
+  /// The newest `limit` events, or the `limit` events before the event `before`.
+  func events(assistantID: String, limit: Int, before: String? = nil) async throws -> EventPage {
+    var query = [URLQueryItem(name: "limit", value: String(limit))]
+    if let before {
+      query.append(URLQueryItem(name: "before", value: before))
+    }
+    let response: EventsResponse = try await send(
+      "GET", "assistants/\(assistantID)/events", query: query)
+    return EventPage(events: response.events, hasMore: response.hasMore)
+  }
+
+  /// Posting the same `idempotencyKey` again returns the stored event instead of a new one.
+  func sendMessage(
+    assistantID: String, text: String, idempotencyKey: String
+  ) async throws -> Event {
+    let response: MessageResponse = try await send(
+      "POST", "assistants/\(assistantID)/messages",
+      body: ["text": text, "idempotency_key": idempotencyKey])
+    return response.message
+  }
+
   func deleteAccount() async throws {
     _ = try await perform("DELETE", "account")
   }
@@ -73,9 +94,10 @@ struct APIClient: Sendable {
   }
 
   private func send<Response: Decodable>(
-    _ method: String, _ path: String, body: (some Encodable)? = String?.none
+    _ method: String, _ path: String, query: [URLQueryItem] = [],
+    body: (some Encodable)? = String?.none
   ) async throws -> Response {
-    let (data, status) = try await perform(method, path, body: body)
+    let (data, status) = try await perform(method, path, query: query, body: body)
     do {
       return try Self.decoder.decode(Response.self, from: data)
     } catch {
@@ -84,9 +106,14 @@ struct APIClient: Sendable {
   }
 
   private func perform(
-    _ method: String, _ path: String, body: (some Encodable)? = String?.none
+    _ method: String, _ path: String, query: [URLQueryItem] = [],
+    body: (some Encodable)? = String?.none
   ) async throws -> (Data, Int) {
-    var request = URLRequest(url: baseURL.appending(path: "api/v1/\(path)"))
+    var url = baseURL.appending(path: "api/v1/\(path)")
+    if !query.isEmpty {
+      url.append(queryItems: query)
+    }
+    var request = URLRequest(url: url)
     request.httpMethod = method
     request.setValue("application/json", forHTTPHeaderField: "Accept")
     if let credential {
@@ -145,6 +172,20 @@ private struct AssistantResponse: Decodable {
 
 private struct LinkResponse: Decodable {
   let link: Link
+}
+
+private struct EventsResponse: Decodable {
+  let events: [Event]
+  let hasMore: Bool
+
+  enum CodingKeys: String, CodingKey {
+    case events
+    case hasMore = "has_more"
+  }
+}
+
+private struct MessageResponse: Decodable {
+  let message: Event
 }
 
 private struct ErrorResponse: Decodable {

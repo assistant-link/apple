@@ -13,9 +13,12 @@ final class AppModel {
 
   private(set) var phase = Phase.loading
   private(set) var assistants: [Assistant] = []
+  /// The conversations opened so far, by Assistant.
+  private(set) var timelines: [Assistant.ID: Timeline] = [:]
   /// Changes whenever the app starts using an account, so live updates restart with it.
   private(set) var session = 0
 
+  private static let pageSize = 50
   private static let logger = Logger(subsystem: "ai.assistantlink.app", category: "live")
 
   private let connect: @Sendable () async throws -> APIClient
@@ -42,9 +45,12 @@ final class AppModel {
       forget: { try store.delete() })
   }
 
-  static func preview(_ assistants: [Assistant]) -> AppModel {
+  static func preview(
+    _ assistants: [Assistant], timelines: [Assistant.ID: Timeline] = [:]
+  ) -> AppModel {
     let model = AppModel(connect: { throw APIError.unreachable })
     model.assistants = assistants
+    model.timelines = timelines
     model.phase = .ready
     return model
   }
@@ -55,6 +61,7 @@ final class AppModel {
       let api = try await connect()
       self.api = api
       session += 1
+      timelines = [:]
       assistants = try await api.listAssistants()
       phase = .ready
     } catch {
@@ -66,8 +73,10 @@ final class AppModel {
     assistants = try await client().listAssistants()
   }
 
-  /// Keeps statuses current until cancelled. Each time the live connection opens, the
-  /// Assistants are fetched again, because changes made while it was closed were never sent.
+  /// Keeps statuses and conversations current until cancelled. Each time the live connection
+  /// opens, the Assistants and the opened conversations' latest events are fetched again,
+  /// because changes made while it was closed were never sent. The connection opens again
+  /// whenever the app returns to the foreground.
   func runLiveUpdates() async {
     guard let api, let updates = makeLiveUpdates(api) else { return }
     let session = session
@@ -78,8 +87,13 @@ final class AppModel {
         }
         self.assistants = assistants
         phase = .ready
+        for id in timelines.keys {
+          try? await loadLatest(assistantID: id, using: api)
+        }
       },
-      onLinkStatus: { apply($0) })
+      onLinkStatus: { apply($0) },
+      onEventCreated: { apply(created: $0) },
+      onEventUpdated: { apply(updated: $0) })
     if let stop {
       Self.logger.notice("Live updates stopped: \(String(describing: stop), privacy: .public)")
     }
@@ -98,6 +112,31 @@ final class AppModel {
     }
   }
 
+  func apply(created event: Event) {
+    timelines[event.assistantID]?.receive(event)
+    setLatestEvent(event, onlyIfLatest: false)
+  }
+
+  func apply(updated event: Event) {
+    timelines[event.assistantID]?.update(event)
+    setLatestEvent(event, onlyIfLatest: true)
+  }
+
+  /// Loads the conversation's latest events when it opens.
+  func openConversation(assistantID: Assistant.ID) async throws {
+    try await loadLatest(assistantID: assistantID, using: client())
+  }
+
+  /// Loads the page of events before the oldest loaded one.
+  func loadEarlier(assistantID: Assistant.ID) async throws {
+    guard let oldest = timelines[assistantID]?.events.first else { return }
+    let session = session
+    let page = try await client().events(
+      assistantID: assistantID, limit: Self.pageSize, before: oldest.id)
+    guard self.session == session, timelines[assistantID]?.events.first == oldest else { return }
+    timelines[assistantID]?.prepend(page)
+  }
+
   /// Deletes the account and everything it owns, then registers a new one as on first launch.
   func logOut() async throws {
     do {
@@ -108,6 +147,7 @@ final class AppModel {
     try forget()
     api = nil
     assistants = []
+    timelines = [:]
     pairingCodes = [:]
     await start()
   }
@@ -139,6 +179,30 @@ final class AppModel {
     let code = try await client().issuePairingCode(linkID: linkID)
     pairingCodes[linkID] = code
     return code
+  }
+
+  private func loadLatest(assistantID: Assistant.ID, using api: APIClient) async throws {
+    let session = session
+    let page = try await api.events(assistantID: assistantID, limit: Self.pageSize)
+    guard self.session == session else { return }
+    let previous = timelines[assistantID]
+    var timeline = previous ?? Timeline()
+    timeline.refetch(with: page)
+    keepUnsentMessages(of: previous, in: &timeline)
+    timelines[assistantID] = timeline
+    if let latest = timeline.events.last {
+      setLatestEvent(latest, onlyIfLatest: false)
+    }
+  }
+
+  /// Local messages the service hasn't stored survive a refetch that replaces the events.
+  private func keepUnsentMessages(of previous: Timeline?, in timeline: inout Timeline) {}
+
+  private func setLatestEvent(_ event: Event, onlyIfLatest: Bool) {
+    guard let index = assistants.firstIndex(where: { $0.id == event.assistantID }),
+      !onlyIfLatest || assistants[index].latestEvent?.id == event.id
+    else { return }
+    assistants[index].latestEvent = event
   }
 
   private func client() async throws -> APIClient {

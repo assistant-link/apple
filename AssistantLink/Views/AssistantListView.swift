@@ -136,16 +136,13 @@ private struct AssistantRow: View {
             .font(.headline)
             .lineLimit(1)
           Spacer()
-          if let date = assistant.latestEvent?.date {
+          if let date = assistant.latestEvent?.createdAt {
             Text(EventTime.short(date))
               .font(.subheadline)
               .foregroundStyle(.secondary)
           }
         }
-        Text(
-          assistant.latestEvent == nil
-            ? "Set up a Link to connect your agent" : "Assistant Link created"
-        )
+        Text(preview)
         .font(.subheadline)
         .foregroundStyle(.secondary)
         .lineLimit(1)
@@ -154,6 +151,17 @@ private struct AssistantRow: View {
     .padding(.vertical, 6)
     .accessibilityElement(children: .combine)
     .accessibilityValue(assistant.status == .online ? "Online" : "Offline")
+  }
+
+  private var preview: String {
+    guard let event = assistant.latestEvent else { return "Set up a Link to connect your agent" }
+    switch event.type {
+    case .linkCreated:
+      return "Assistant Link created"
+    case .textMessage:
+      let text = event.deleted ? "This message was deleted" : event.text ?? ""
+      return event.sender == .user ? "You: \(text)" : text
+    }
   }
 }
 
