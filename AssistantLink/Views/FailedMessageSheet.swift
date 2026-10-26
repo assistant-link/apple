@@ -26,6 +26,17 @@ private struct FailedMessageSheet: ViewModifier {
   }
 
   private func present(_ message: OutgoingMessage) {
+    // With the keyboard up, the sheet floated above it instead of sitting at the bottom.
+    UIApplication.shared.sendAction(
+      #selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+    Task { @MainActor in
+      try? await Task.sleep(for: .milliseconds(350))
+      guard item?.id == message.id else { return }
+      presentSheet(for: message)
+    }
+  }
+
+  private func presentSheet(for message: OutgoingMessage) {
     guard let top = Self.topViewController() else {
       item = nil
       return
