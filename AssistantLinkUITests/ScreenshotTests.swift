@@ -62,10 +62,11 @@ final class ScreenshotTests: XCTestCase {
         app.staticTexts["failover plan for the database"], "step 9: failed message text")
     }
     expect(dialogButton("Try Again", in: app), "step 9: Try Again button exists")
+    expect(dialogButton("Cancel Message", in: app), "step 9: Cancel Message button exists")
     expect(dialogButton("Cancel", in: app), "step 9: Cancel button exists")
     capture(app, "9-try-again-cancel")
-    tapWhenHittable(dialogButton("Cancel", in: app), "step 9: Cancel button")
-    expectGone(app.failedMessage, "step 9: failed message button is gone after Cancel")
+    tapWhenHittable(dialogButton("Cancel Message", in: app), "step 9: Cancel Message button")
+    expectGone(app.failedMessage, "step 9: failed message button is gone after Cancel Message")
 
     backButton(in: app).tap()
     expect(
@@ -101,8 +102,7 @@ final class ScreenshotTests: XCTestCase {
       .firstMatch
   }
 
-  /// Dialog buttons do not expose their accessibility identifiers, so find them by label. A popover
-  /// dismiss region can carry the same label as Cancel, so the first match is taken.
+  /// Action sheet buttons do not expose their accessibility identifiers, so find them by label.
   @MainActor private func dialogButton(_ label: String, in app: XCUIApplication) -> XCUIElement {
     app.buttons.matching(NSPredicate(format: "label == %@", label)).firstMatch
   }

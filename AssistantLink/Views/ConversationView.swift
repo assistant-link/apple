@@ -70,17 +70,10 @@ struct ConversationView: View {
         ComposerView(assistant: assistant)
       }
     }
-    .confirmationDialog(
-      "Not Delivered",
-      isPresented: Binding(
-        get: { failedMessage != nil }, set: { if !$0 { failedMessage = nil } }),
-      titleVisibility: .visible, presenting: failedMessage
-    ) { message in
-      Button("Try Again") { Task { await model.retry(message) } }
-        .accessibilityIdentifier("tryAgain")
-      Button("Cancel", role: .destructive) { model.cancel(message) }
-        .accessibilityIdentifier("cancelSend")
-    }
+    .failedMessageSheet(
+      item: $failedMessage,
+      onTryAgain: { message in Task { await model.retry(message) } },
+      onCancelMessage: { message in model.cancel(message) })
     .task { try? await model.openConversation(assistantID: assistant.id) }
     .refreshable {
       try? await model.refresh()
