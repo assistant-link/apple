@@ -62,16 +62,17 @@ final class ScreenshotTests: XCTestCase {
         app.staticTexts["failover plan for the database"], "step 9: failed message text")
     }
     expect(dialogButton("Try Again", in: app), "step 9: Try Again button exists")
-    expect(dialogButton("Cancel", in: app), "step 9: Cancel button exists")
+    expect(dialogButton("Close", in: app), "step 9: Close button exists")
     capture(app, "9-try-again-cancel")
-    tapWhenHittable(dialogButton("Cancel", in: app), "step 9: Cancel button")
-    expectGone(app.failedMessage, "step 9: failed message button is gone after Cancel")
+    tapWhenHittable(dialogButton("Close", in: app), "step 9: Close button")
+    expectGone(dialogButton("Try Again", in: app), "step 9: sheet is gone after Close")
+    expect(app.failedMessage, "step 9: failed message is still there after Close")
 
     backButton(in: app).tap()
     expect(
       app.descendants(matching: .any)
-        .matching(NSPredicate(format: "label CONTAINS %@", "You: slow cooker recipes"))
-        .firstMatch, "step 12: list preview of the sent message exists")
+        .matching(NSPredicate(format: "label CONTAINS %@", "You: failover plan"))
+        .firstMatch, "step 12: list preview of the failed message exists")
     capture(app, "12-list-after-send")
 
     row("Grok Bot", in: app).tap()

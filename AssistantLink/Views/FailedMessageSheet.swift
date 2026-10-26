@@ -4,18 +4,16 @@ extension View {
   /// Presents the Not Delivered options as a bottom sheet while `item` is set.
   func failedMessageSheet(
     item: Binding<OutgoingMessage?>,
-    onTryAgain: @escaping (OutgoingMessage) -> Void,
-    onCancel: @escaping (OutgoingMessage) -> Void
+    onTryAgain: @escaping (OutgoingMessage) -> Void
   ) -> some View {
-    modifier(FailedMessageSheet(item: item, onTryAgain: onTryAgain, onCancel: onCancel))
+    modifier(FailedMessageSheet(item: item, onTryAgain: onTryAgain))
   }
 }
 
 private struct FailedMessageSheet: ViewModifier {
   @Binding var item: OutgoingMessage?
   let onTryAgain: (OutgoingMessage) -> Void
-  let onCancel: (OutgoingMessage) -> Void
-  @State private var contentHeight: CGFloat = 132
+  @State private var contentHeight: CGFloat = 122
   /// The detent height includes the bottom safe area, which the measured content excludes.
   private let homeIndicatorHeight: CGFloat = 34
 
@@ -26,10 +24,7 @@ private struct FailedMessageSheet: ViewModifier {
           item = nil
           onTryAgain(message)
         },
-        onCancel: {
-          item = nil
-          onCancel(message)
-        }
+        onClose: { item = nil }
       )
       .onGeometryChange(for: CGFloat.self) { proxy in
         proxy.size.height
@@ -45,23 +40,41 @@ private struct FailedMessageSheet: ViewModifier {
 
 private struct FailedMessageOptions: View {
   let onTryAgain: () -> Void
-  let onCancel: () -> Void
+  let onClose: () -> Void
 
   var body: some View {
     VStack(spacing: 8) {
-      optionButton("Try Again", action: onTryAgain)
-      optionButton("Cancel", action: onCancel)
+      titleRow
+      tryAgainButton
     }
-    .padding(.top, 12)
+    .padding(.top, 10)
     .padding(.horizontal, 10)
     .padding(.bottom, 8)
-    .accessibilityElement(children: .contain)
-    .accessibilityLabel("Not Delivered")
   }
 
-  private func optionButton(_ title: String, action: @escaping () -> Void) -> some View {
-    Button(action: action) {
-      Text(title)
+  private var titleRow: some View {
+    ZStack {
+      Text("Not Delivered")
+        .font(.system(size: 17, weight: .semibold))
+      HStack {
+        Spacer()
+        Button(action: onClose) {
+          Image(systemName: "xmark")
+            .font(.system(size: 13, weight: .semibold))
+            .foregroundStyle(.secondary)
+            .frame(width: 30, height: 30)
+            .background(Color(.tertiarySystemFill), in: Circle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Close")
+      }
+    }
+    .frame(height: 44)
+  }
+
+  private var tryAgainButton: some View {
+    Button(action: onTryAgain) {
+      Text("Try Again")
         .font(.system(size: 17))
         .foregroundStyle(.blue)
         .frame(maxWidth: .infinity)
