@@ -4,16 +4,18 @@ extension View {
   /// Presents the Not Delivered options as a bottom sheet while `item` is set.
   func failedMessageSheet(
     item: Binding<OutgoingMessage?>,
-    onTryAgain: @escaping (OutgoingMessage) -> Void
+    onTryAgain: @escaping (OutgoingMessage) -> Void,
+    onDelete: @escaping (OutgoingMessage) -> Void
   ) -> some View {
-    modifier(FailedMessageSheet(item: item, onTryAgain: onTryAgain))
+    modifier(FailedMessageSheet(item: item, onTryAgain: onTryAgain, onDelete: onDelete))
   }
 }
 
 private struct FailedMessageSheet: ViewModifier {
   @Binding var item: OutgoingMessage?
   let onTryAgain: (OutgoingMessage) -> Void
-  @State private var contentHeight: CGFloat = 122
+  let onDelete: (OutgoingMessage) -> Void
+  @State private var contentHeight: CGFloat = 182
   /// The detent height includes the bottom safe area, which the measured content excludes.
   private let homeIndicatorHeight: CGFloat = 34
 
@@ -23,6 +25,10 @@ private struct FailedMessageSheet: ViewModifier {
         onTryAgain: {
           item = nil
           onTryAgain(message)
+        },
+        onDelete: {
+          item = nil
+          onDelete(message)
         },
         onClose: { item = nil }
       )
@@ -40,12 +46,14 @@ private struct FailedMessageSheet: ViewModifier {
 
 private struct FailedMessageOptions: View {
   let onTryAgain: () -> Void
+  let onDelete: () -> Void
   let onClose: () -> Void
 
   var body: some View {
     VStack(spacing: 8) {
       titleRow
-      tryAgainButton
+      optionButton("Try Again", color: .blue, action: onTryAgain)
+      optionButton("Delete Message", color: .red, action: onDelete)
     }
     .padding(.top, 10)
     .padding(.horizontal, 10)
@@ -72,11 +80,13 @@ private struct FailedMessageOptions: View {
     .frame(height: 44)
   }
 
-  private var tryAgainButton: some View {
-    Button(action: onTryAgain) {
-      Text("Try Again")
+  private func optionButton(
+    _ title: String, color: Color, action: @escaping () -> Void
+  ) -> some View {
+    Button(action: action) {
+      Text(title)
         .font(.system(size: 17))
-        .foregroundStyle(.blue)
+        .foregroundStyle(color)
         .frame(maxWidth: .infinity)
         .frame(height: 52)
         .background(

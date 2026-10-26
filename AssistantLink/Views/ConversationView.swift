@@ -72,7 +72,8 @@ struct ConversationView: View {
     }
     .failedMessageSheet(
       item: $failedMessage,
-      onTryAgain: { message in Task { await model.retry(message) } }
+      onTryAgain: { message in Task { await model.retry(message) } },
+      onDelete: { message in model.cancel(message) }
     )
     .task { try? await model.openConversation(assistantID: assistant.id) }
     .refreshable {
