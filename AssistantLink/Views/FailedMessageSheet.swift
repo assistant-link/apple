@@ -1,67 +1,73 @@
 import SwiftUI
-import UIKit
 
 extension View {
-  /// Presents the Not Delivered action sheet while `item` is set and clears it when any button is
-  /// pressed. SwiftUI's `confirmationDialog` renders as a popover on iOS 26, so this uses UIKit.
+  /// Presents the Not Delivered options as a bottom sheet while `item` is set.
   func failedMessageSheet(
     item: Binding<OutgoingMessage?>,
     onTryAgain: @escaping (OutgoingMessage) -> Void,
-    onCancelMessage: @escaping (OutgoingMessage) -> Void
+    onCancel: @escaping (OutgoingMessage) -> Void
   ) -> some View {
-    modifier(
-      FailedMessageSheet(item: item, onTryAgain: onTryAgain, onCancelMessage: onCancelMessage))
+    modifier(FailedMessageSheet(item: item, onTryAgain: onTryAgain, onCancel: onCancel))
   }
 }
 
 private struct FailedMessageSheet: ViewModifier {
   @Binding var item: OutgoingMessage?
   let onTryAgain: (OutgoingMessage) -> Void
-  let onCancelMessage: (OutgoingMessage) -> Void
+  let onCancel: (OutgoingMessage) -> Void
+  @State private var contentHeight: CGFloat = 200
 
   func body(content: Content) -> some View {
-    content.onChange(of: item?.id) {
-      if let message = item { present(message) }
+    content.sheet(item: $item) { message in
+      FailedMessageOptions(
+        onTryAgain: {
+          item = nil
+          onTryAgain(message)
+        },
+        onCancel: {
+          item = nil
+          onCancel(message)
+        }
+      )
+      .onGeometryChange(for: CGFloat.self) { proxy in
+        proxy.size.height
+      } action: { height in
+        contentHeight = height
+      }
+      .presentationDetents([.height(contentHeight)])
+      .presentationDragIndicator(.hidden)
+      .presentationBackground(Color(.systemGroupedBackground))
     }
   }
+}
 
-  private func present(_ message: OutgoingMessage) {
-    // With the keyboard up, the sheet floated above it instead of sitting at the bottom.
-    UIApplication.shared.sendAction(
-      #selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
-    Task { @MainActor in
-      try? await Task.sleep(for: .milliseconds(350))
-      guard item?.id == message.id else { return }
-      presentSheet(for: message)
+private struct FailedMessageOptions: View {
+  let onTryAgain: () -> Void
+  let onCancel: () -> Void
+
+  var body: some View {
+    VStack(spacing: 8) {
+      Text("Not Delivered")
+        .font(.footnote)
+        .foregroundStyle(.secondary)
+        .padding(.top, 16)
+        .padding(.bottom, 4)
+      optionButton("Try Again", action: onTryAgain)
+      optionButton("Cancel", action: onCancel)
     }
+    .padding(.horizontal, 10)
+    .padding(.bottom, 10)
   }
 
-  private func presentSheet(for message: OutgoingMessage) {
-    guard let top = Self.topViewController() else {
-      item = nil
-      return
+  private func optionButton(_ title: String, action: @escaping () -> Void) -> some View {
+    Button(action: action) {
+      Text(title)
+        .font(.system(size: 17))
+        .foregroundStyle(.blue)
+        .frame(maxWidth: .infinity)
+        .frame(height: 56)
+        .background(Color(.systemBackground), in: RoundedRectangle(cornerRadius: 14))
     }
-    let sheet = UIAlertController(
-      title: "Not Delivered", message: nil, preferredStyle: .actionSheet)
-    sheet.addAction(
-      UIAlertAction(title: "Try Again", style: .default) { _ in
-        item = nil
-        onTryAgain(message)
-      })
-    sheet.addAction(
-      UIAlertAction(title: "Cancel Message", style: .destructive) { _ in
-        item = nil
-        onCancelMessage(message)
-      })
-    sheet.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in item = nil })
-    top.present(sheet, animated: true)
-  }
-
-  private static func topViewController() -> UIViewController? {
-    let scene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
-      .first { $0.activationState == .foregroundActive }
-    var top = scene?.keyWindow?.rootViewController
-    while let presented = top?.presentedViewController { top = presented }
-    return top
+    .buttonStyle(.plain)
   }
 }
