@@ -86,8 +86,6 @@ Release builds ignore the argument.
 `make device` needs a one-time setup (Xcode account, Developer Mode on the iPhone, and your
 team ID in a git-ignored `Local.mk`). See [docs/physical-device.md](docs/physical-device.md).
 
-To ship a build to TestFlight, see [docs/testflight.md](docs/testflight.md).
-
 ## Opening in Xcode
 
 To open the project in Xcode instead, run `make generate`, then
