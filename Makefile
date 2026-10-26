@@ -87,6 +87,8 @@ screenshots: $(PROJECT) ## Capture screenshots of the key screens in light and d
 	  xcrun simctl ui "$$udid" appearance $$style; \
 	  $(XCODEBUILD) -resultBundlePath $$bundle test || status=$$?; \
 	  if [[ -d $$bundle ]]; then \
+	    xcrun xcresulttool get test-results summary --path $$bundle --compact | jq -r \
+	      '"\(.result): \(.passedTests) passed, \(.failedTests) failed, \(.skippedTests) skipped on \(.devicesAndConfigurations[0].device.deviceName) (iOS \(.devicesAndConfigurations[0].device.osVersion))", (.testFailures[] | "  FAILED \(.testName): \(.failureText)")'; \
 	    xcrun xcresulttool export attachments --path $$bundle --output-path $$attachments; \
 	    mkdir -p $$out; \
 	    jq -r '.[].attachments[]? | select(.suggestedHumanReadableName | test("^[0-9]-")) | [.exportedFileName, (.suggestedHumanReadableName | sub("(_[0-9]+_[0-9A-Fa-f-]{36})?(\\.png)?$$"; ""))] | @tsv' \

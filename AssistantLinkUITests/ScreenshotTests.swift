@@ -43,11 +43,14 @@ final class ScreenshotTests: XCTestCase {
     XCTAssertTrue(app.failedMessage.waitForExistence(timeout: 15))
     capture(app, "8-not-delivered")
 
-    app.failedMessage.tap()
-    XCTAssertTrue(app.buttons["tryAgain"].waitForExistence(timeout: 15))
-    XCTAssertTrue(app.buttons["cancelSend"].waitForExistence(timeout: 15))
+    tapWhenHittable(app.failedMessage)
+    if !dialogButton("Try Again", in: app).waitForExistence(timeout: 5) {
+      tapWhenHittable(app.staticTexts["failover plan for the database"])
+    }
+    XCTAssertTrue(dialogButton("Try Again", in: app).waitForExistence(timeout: 15))
+    XCTAssertTrue(dialogButton("Cancel", in: app).waitForExistence(timeout: 15))
     capture(app, "9-try-again-cancel")
-    app.buttons["cancelSend"].tap()
+    tapWhenHittable(dialogButton("Cancel", in: app))
     XCTAssertTrue(waitUntil(app.failedMessage, "exists == false", timeout: 15))
 
     backButton(in: app).tap()
@@ -82,6 +85,18 @@ final class ScreenshotTests: XCTestCase {
     app.descendants(matching: .any)
       .matching(NSPredicate(format: "label BEGINSWITH %@", name))
       .firstMatch
+  }
+
+  /// Dialog buttons do not expose their accessibility identifiers, so find them by label.
+  @MainActor private func dialogButton(_ label: String, in app: XCUIApplication) -> XCUIElement {
+    let sheetButton = app.sheets.buttons[label]
+    return sheetButton.exists ? sheetButton : app.buttons[label]
+  }
+
+  @MainActor private func tapWhenHittable(_ element: XCUIElement) {
+    XCTAssertTrue(element.waitForExistence(timeout: 15))
+    XCTAssertTrue(waitUntil(element, "isHittable == true", timeout: 15))
+    element.tap()
   }
 
   @MainActor private func backButton(in app: XCUIApplication) -> XCUIElement {
