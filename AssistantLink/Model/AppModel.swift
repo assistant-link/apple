@@ -137,6 +137,84 @@ final class AppModel {
     timelines[assistantID]?.prepend(page)
   }
 
+  func canSend(_ text: String) -> Bool {
+    TextValidation.isValidMessage(text)
+  }
+
+  /// Shows `text` as a message being sent and posts it. Returns whether the text was valid.
+  @discardableResult
+  func send(text: String, assistantID: Assistant.ID) async -> Bool {
+    guard let message = queue(text: text, assistantID: assistantID) else { return false }
+    await post(message)
+    return true
+  }
+
+  /// Adds the message as "Sending…" under a fresh idempotency key, without posting it.
+  func queue(text: String, assistantID: Assistant.ID) -> OutgoingMessage? {
+    guard canSend(text) else { return nil }
+    let message = OutgoingMessage(
+      assistantID: assistantID, idempotencyKey: UUIDv7.make(), text: text, createdAt: .now)
+    timelines[assistantID, default: Timeline()].outgoing.append(message)
+    return message
+  }
+
+  /// Posts a queued message. Any error leaves it as "Not Delivered".
+  func post(_ message: OutgoingMessage) async {
+    let session = session
+    do {
+      let event = try await client().sendMessage(
+        assistantID: message.assistantID, text: message.text,
+        idempotencyKey: message.idempotencyKey)
+      guard self.session == session else { return }
+      if timelines[message.assistantID, default: Timeline()].store(event) {
+        setLatestEvent(event, onlyIfLatest: false)
+      }
+    } catch {
+      guard self.session == session else { return }
+      setState(.failed, of: message, from: .sending)
+    }
+  }
+
+  /// Posts a failed message again with its idempotency key.
+  func retry(_ message: OutgoingMessage) async {
+    guard setState(.sending, of: message, from: .failed) else { return }
+    await post(message)
+  }
+
+  /// Removes a failed message.
+  func cancel(_ message: OutgoingMessage) {
+    timelines[message.assistantID]?.outgoing.removeAll {
+      $0.id == message.id && $0.state == .failed
+    }
+  }
+
+  /// The Assistant's newest message if it failed and was never stored, for the Assistants list.
+  func failedLatestMessage(assistantID: Assistant.ID) -> OutgoingMessage? {
+    guard let message = timelines[assistantID]?.outgoing.last, message.state == .failed else {
+      return nil
+    }
+    let latest = assistant(id: assistantID)?.latestEvent
+    return (latest?.createdAt ?? .distantPast) > message.createdAt ? nil : message
+  }
+
+  func caption(forMessageID id: String, assistantID: Assistant.ID) -> MessageCaption? {
+    timelines[assistantID]?.caption(forMessageID: id)
+  }
+
+  @discardableResult
+  private func setState(
+    _ state: OutgoingMessage.State, of message: OutgoingMessage,
+    from current: OutgoingMessage.State
+  ) -> Bool {
+    guard
+      let index = timelines[message.assistantID]?.outgoing.firstIndex(where: {
+        $0.id == message.id && $0.state == current
+      })
+    else { return false }
+    timelines[message.assistantID]?.outgoing[index].state = state
+    return true
+  }
+
   /// Deletes the account and everything it owns, then registers a new one as on first launch.
   func logOut() async throws {
     do {
@@ -196,7 +274,10 @@ final class AppModel {
   }
 
   /// Local messages the service hasn't stored survive a refetch that replaces the events.
-  private func keepUnsentMessages(of previous: Timeline?, in timeline: inout Timeline) {}
+  private func keepUnsentMessages(of previous: Timeline?, in timeline: inout Timeline) {
+    let stored = Set(timeline.events.compactMap(\.idempotencyKey))
+    timeline.outgoing = (previous?.outgoing ?? []).filter { !stored.contains($0.idempotencyKey) }
+  }
 
   private func setLatestEvent(_ event: Event, onlyIfLatest: Bool) {
     guard let index = assistants.firstIndex(where: { $0.id == event.assistantID }),

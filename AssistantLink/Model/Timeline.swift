@@ -25,14 +25,85 @@ enum UUIDv7 {
   }
 }
 
+/// A message the user sent from this app that the service has not stored yet.
+struct OutgoingMessage: Equatable, Identifiable, Sendable {
+  enum State: Equatable, Sendable {
+    case sending
+    case failed
+  }
+
+  let assistantID: String
+  let idempotencyKey: String
+  let text: String
+  let createdAt: Date
+  var state = State.sending
+
+  var id: String { idempotencyKey }
+}
+
+/// The caption under the latest user message.
+enum MessageCaption: Equatable, Sendable {
+  case sending
+  case sent
+  case delivered
+  case notDelivered
+
+  var text: String {
+    switch self {
+    case .sending: "Sending…"
+    case .sent: "Sent"
+    case .delivered: "Delivered"
+    case .notDelivered: "Not Delivered"
+    }
+  }
+}
+
 /// The events of one Assistant's conversation loaded so far, oldest first.
 struct Timeline: Equatable, Sendable {
   var events: [Event] = []
   /// Whether events older than the first loaded one exist.
   var hasMore = false
+  /// Messages sent from this app and not stored yet, oldest first; they show after the events.
+  var outgoing: [OutgoingMessage] = []
+
+  /// The id of the latest user message, an outgoing one or a stored event.
+  var latestUserMessageID: String? {
+    outgoing.last?.id
+      ?? events.last(where: { $0.type == .textMessage && $0.sender == .user })?.id
+  }
+
+  /// The caption of the message `id`; only the latest user message has one.
+  func caption(forMessageID id: String) -> MessageCaption? {
+    guard id == latestUserMessageID else { return nil }
+    if let message = outgoing.first(where: { $0.id == id }) {
+      return message.state == .sending ? .sending : .notDelivered
+    }
+    switch events.first(where: { $0.id == id })?.deliveryStatus {
+    case .sent: return .sent
+    case .delivered: return .delivered
+    case nil: return nil
+    }
+  }
+
+  /// Stores the event the service answered a post with, unless the live connection delivered
+  /// it first, which is at least as current. Returns whether the event was new.
+  mutating func store(_ event: Event) -> Bool {
+    let isNew = !events.contains { $0.id == event.id }
+    if isNew {
+      events.append(event)
+    }
+    removeOutgoing(matching: event)
+    return isNew
+  }
+
+  private mutating func removeOutgoing(matching event: Event) {
+    guard let key = event.idempotencyKey else { return }
+    outgoing.removeAll { $0.idempotencyKey == key }
+  }
 
   /// Adds an event the service just stored, or replaces the loaded one with the same id.
   mutating func receive(_ event: Event) {
+    removeOutgoing(matching: event)
     if let index = events.firstIndex(where: { $0.id == event.id }) {
       events[index] = event
     } else {
