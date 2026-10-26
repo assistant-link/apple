@@ -21,10 +21,10 @@ struct ConversationPresentationTests {
   }
 
   @Test func composerShowsOnlyWithAPairedLink() {
-    #expect(assistant(status: .online, links: [.online]).showsComposer)
-    #expect(assistant(status: .offline, links: [.notPaired, .offline]).showsComposer)
-    #expect(!assistant(status: .offline, links: [.notPaired]).showsComposer)
-    #expect(!assistant(status: .offline, links: []).showsComposer)
+    #expect(assistant(status: .online, links: [.online]).hasPairedLink)
+    #expect(assistant(status: .offline, links: [.notPaired, .offline]).hasPairedLink)
+    #expect(!assistant(status: .offline, links: [.notPaired]).hasPairedLink)
+    #expect(!assistant(status: .offline, links: []).hasPairedLink)
   }
 
   @Test func offlineNoticeNamesTheAssistant() {

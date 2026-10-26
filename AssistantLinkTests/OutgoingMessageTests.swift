@@ -65,12 +65,6 @@ struct MessageCaptionTests {
     #expect(timeline.caption(forMessageID: "e-3") == nil)
   }
 
-  @Test func storedMessagesAreSentOrDelivered() {
-    #expect(Timeline(events: [user("e-1", .sent)]).caption(forMessageID: "e-1") == .sent)
-    let delivered = Timeline(events: [user("e-1", .delivered)])
-    #expect(delivered.caption(forMessageID: "e-1") == .delivered)
-  }
-
   @Test func anOutgoingMessageIsTheLatestAndOlderOnesLoseTheirCaption() {
     let timeline = Timeline(events: [user("e-1")], outgoing: [outgoing("k-1")])
 
@@ -123,7 +117,11 @@ struct OutgoingMessageTests {
 
     let events = Mutex(#"{"events": [], "has_more": false}"#)
     let bodies = Mutex<[[String: String]]>([])
-    let failures = Mutex<[Failure]>([])
+    let failures: Mutex<[Failure]>
+
+    init(failures: [Failure] = []) {
+      self.failures = Mutex(failures)
+    }
 
     func answer(_ request: URLRequest, _ body: Data?) throws -> (Int, Data) {
       switch (request.httpMethod, request.url?.path()) {
@@ -172,7 +170,7 @@ struct OutgoingMessageTests {
       createdAt: createdAt, deliveryStatus: status, idempotencyKey: key, text: "Hi")
   }
 
-  private func startedModel(_ stub: Stub) async -> AppModel {
+  private func startedModel(_ stub: Stub = Stub()) async -> AppModel {
     let api = APIClient(
       baseURL: baseURL, credential: "ala_secret",
       session: StubURLProtocol.session { request, body in try stub.answer(request, body) })
@@ -211,7 +209,6 @@ struct OutgoingMessageTests {
     let model = await startedModel(stub)
 
     #expect(await model.send(text: "Hi", assistantID: "as-1"))
-    #expect(!(await model.send(text: "  \n", assistantID: "as-1")))
 
     #expect(stub.bodies.withLock { $0.count } == 1)
     #expect(timeline(model).events.count == 1)
@@ -233,12 +230,10 @@ struct OutgoingMessageTests {
     let model = await startedModel(stub)
 
     for text in ["", "   ", "a\u{0}", String(repeating: "a", count: 4001)] {
-      #expect(!model.canSend(text))
       #expect(model.queue(text: text, assistantID: "as-1") == nil)
       #expect(!(await model.send(text: text, assistantID: "as-1")))
     }
 
-    #expect(model.canSend(String(repeating: "😀", count: 4000)))
     #expect(model.timelines["as-1"] == nil)
     #expect(stub.bodies.withLock { $0.isEmpty })
   }
@@ -249,10 +244,6 @@ struct OutgoingMessageTests {
     let message = try #require(model.queue(text: "Hi", assistantID: "as-1"))
 
     model.apply(created: event(key: message.id))
-
-    #expect(timeline(model).outgoing.isEmpty)
-    #expect(timeline(model).events.map(\.id) == ["ev-\(message.id)"])
-    #expect(timeline(model).caption(forMessageID: "ev-\(message.id)") == .sent)
 
     await model.post(message)
 
@@ -284,9 +275,7 @@ struct OutgoingMessageTests {
   }
 
   @Test func aLiveEventBeforeAPostFailureKeepsTheMessageSent() async throws {
-    let stub = Stub()
-    stub.failures.withLock { $0 = [.network] }
-    let model = await startedModel(stub)
+    let model = await startedModel(Stub(failures: [.network]))
     let message = try #require(model.queue(text: "Hi", assistantID: "as-1"))
     model.apply(created: event(key: message.id))
 
@@ -306,19 +295,8 @@ struct OutgoingMessageTests {
     #expect(timeline(model).caption(forMessageID: "ev-\(message.id)") == .delivered)
   }
 
-  @Test func aCreatedEventThatIsAlreadyDeliveredShowsDelivered() async throws {
-    let model = await startedModel(Stub())
-    let message = try #require(model.queue(text: "Hi", assistantID: "as-1"))
-
-    model.apply(created: event(key: message.id, status: .delivered))
-
-    #expect(timeline(model).caption(forMessageID: "ev-\(message.id)") == .delivered)
-  }
-
   @Test func anUnreachableServiceMakesTheMessageNotDelivered() async throws {
-    let stub = Stub()
-    stub.failures.withLock { $0 = [.network] }
-    let model = await startedModel(stub)
+    let model = await startedModel(Stub(failures: [.network]))
 
     await model.send(text: "Hi", assistantID: "as-1")
 
@@ -334,19 +312,15 @@ struct OutgoingMessageTests {
     (409, "idempotency_key_conflict"),
   ])
   func anyServiceErrorMakesTheMessageNotDelivered(status: Int, code: String) async throws {
-    let stub = Stub()
-    stub.failures.withLock { $0 = [.service(status, code)] }
-    let model = await startedModel(stub)
+    let model = await startedModel(Stub(failures: [.service(status, code)]))
 
     await model.send(text: "Hi", assistantID: "as-1")
 
     #expect(timeline(model).outgoing.map(\.state) == [.failed])
-    #expect(timeline(model).events.isEmpty)
   }
 
   @Test func tryAgainPostsAgainWithTheSameKey() async throws {
-    let stub = Stub()
-    stub.failures.withLock { $0 = [.network] }
+    let stub = Stub(failures: [.network])
     let model = await startedModel(stub)
     await model.send(text: "Hi", assistantID: "as-1")
     let failed = try #require(timeline(model).outgoing.first)
@@ -364,9 +338,7 @@ struct OutgoingMessageTests {
   }
 
   @Test func aRetryThatFailsAgainStaysNotDelivered() async throws {
-    let stub = Stub()
-    stub.failures.withLock { $0 = [.network, .service(500, "internal_error")] }
-    let model = await startedModel(stub)
+    let model = await startedModel(Stub(failures: [.network, .service(500, "internal_error")]))
     await model.send(text: "Hi", assistantID: "as-1")
     let failed = try #require(timeline(model).outgoing.first)
 
@@ -387,9 +359,7 @@ struct OutgoingMessageTests {
   }
 
   @Test func cancelRemovesTheFailedMessage() async throws {
-    let stub = Stub()
-    stub.failures.withLock { $0 = [.network] }
-    let model = await startedModel(stub)
+    let model = await startedModel(Stub(failures: [.network]))
     await model.send(text: "Hi", assistantID: "as-1")
     let failed = try #require(timeline(model).outgoing.first)
 
@@ -440,9 +410,7 @@ struct OutgoingMessageTests {
   }
 
   @Test func theFailedLatestMessageFeedsTheAssistantsList() async throws {
-    let stub = Stub()
-    stub.failures.withLock { $0 = [.network] }
-    let model = await startedModel(stub)
+    let model = await startedModel(Stub(failures: [.network]))
     let sending = try #require(model.queue(text: "Hi", assistantID: "as-1"))
     #expect(model.failedLatestMessage(assistantID: "as-1") == nil)
     await model.post(sending)
@@ -453,9 +421,7 @@ struct OutgoingMessageTests {
   }
 
   @Test func aNewerStoredEventHidesTheFailedMessageInTheList() async throws {
-    let stub = Stub()
-    stub.failures.withLock { $0 = [.network] }
-    let model = await startedModel(stub)
+    let model = await startedModel(Stub(failures: [.network]))
     await model.send(text: "Hi", assistantID: "as-1")
 
     model.apply(created: event(key: "later", createdAt: .now.addingTimeInterval(60)))

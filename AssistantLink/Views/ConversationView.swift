@@ -67,7 +67,7 @@ struct ConversationView: View {
       .onChange(of: content.events.last?.id) { proxy.scrollTo(Self.bottomID, anchor: .bottom) }
     }
     .safeAreaInset(edge: .bottom) {
-      if assistant.showsComposer {
+      if assistant.hasPairedLink {
         ComposerView(assistant: assistant)
       }
     }

@@ -108,7 +108,7 @@ struct ComposerView: View {
         Button("Send", systemImage: "arrow.up.circle.fill", action: send)
           .labelStyle(.iconOnly)
           .font(.largeTitle)
-          .disabled(!model.canSend(draft))
+          .disabled(!TextValidation.isValidMessage(draft))
           .accessibilityIdentifier("sendButton")
       }
     }
@@ -119,7 +119,6 @@ struct ComposerView: View {
 
   private func send() {
     let text = draft
-    guard model.canSend(text) else { return }
     draft = ""
     Task { await model.send(text: text, assistantID: assistant.id) }
   }

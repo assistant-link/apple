@@ -137,10 +137,6 @@ final class AppModel {
     timelines[assistantID]?.prepend(page)
   }
 
-  func canSend(_ text: String) -> Bool {
-    TextValidation.isValidMessage(text)
-  }
-
   /// Shows `text` as a message being sent and posts it. Returns whether the text was valid.
   @discardableResult
   func send(text: String, assistantID: Assistant.ID) async -> Bool {
@@ -151,7 +147,7 @@ final class AppModel {
 
   /// Adds the message as "Sending…" under a fresh idempotency key, without posting it.
   func queue(text: String, assistantID: Assistant.ID) -> OutgoingMessage? {
-    guard canSend(text) else { return nil }
+    guard TextValidation.isValidMessage(text) else { return nil }
     let message = OutgoingMessage(
       assistantID: assistantID, idempotencyKey: UUIDv7.make(), text: text, createdAt: .now)
     timelines[assistantID, default: Timeline()].outgoing.append(message)

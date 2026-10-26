@@ -6,8 +6,6 @@ extension Assistant {
     links.contains { $0.status != .notPaired }
   }
 
-  var showsComposer: Bool { hasPairedLink }
-
   /// Shown above the composer while messages wait for the Assistant to connect.
   var offlineNotice: String? {
     guard status == .offline, hasPairedLink else { return nil }
