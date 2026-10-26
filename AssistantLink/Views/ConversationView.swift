@@ -5,6 +5,8 @@ struct ConversationView: View {
 
   @Environment(AppModel.self) private var model
   @State private var pairingLink: Link?
+  @State private var failedMessage: OutgoingMessage?
+  @State private var position = ScrollPosition(edge: .bottom)
 
   var body: some View {
     if let assistant = model.assistant(id: assistantID) {
@@ -36,23 +38,67 @@ struct ConversationView: View {
   }
 
   private func timeline(_ assistant: Assistant) -> some View {
-    ScrollView {
-      LazyVStack(spacing: 20) {
-        ForEach(assistant.events) { event in
-          SystemEventView(
-            event: event,
-            linkName: event.link.displayName(
-              position: assistant.links.firstIndex(of: event.link) ?? 0)
-          ) {
-            pairingLink = event.link
+    let content = model.timelines[assistant.id] ?? Timeline()
+    return ScrollView {
+      LazyVStack(spacing: 12) {
+        if content.hasMore {
+          LoadEarlierButton(assistantID: assistant.id) { first in
+            // Scrolling back to the old first event keeps the messages on screen in place.
+            if let first { position.scrollTo(id: first, anchor: .top) }
           }
         }
+        ForEach(content.events) { event in
+          eventView(event, in: assistant, timeline: content)
+        }
+        ForEach(content.outgoing) { message in
+          MessageBubble(
+            text: message.text, isFromUser: true,
+            caption: content.caption(forMessageID: message.id),
+            onFailureTap: message.state == .failed ? { failedMessage = message } : nil)
+        }
       }
+      .scrollTargetLayout()
       .padding(.horizontal)
       .padding(.vertical, 24)
     }
     .defaultScrollAnchor(.bottom)
-    .refreshable { try? await model.refresh() }
+    .scrollPosition($position)
+    .onChange(of: content.outgoing.last?.id) { position.scrollTo(edge: .bottom) }
+    .onChange(of: content.events.last?.id) { position.scrollTo(edge: .bottom) }
+    .safeAreaInset(edge: .bottom) {
+      if assistant.hasPairedLink {
+        ComposerView(assistant: assistant)
+      }
+    }
+    .failedMessageSheet(
+      item: $failedMessage,
+      onTryAgain: { message in Task { await model.retry(message) } },
+      onDelete: { message in model.cancel(message) }
+    )
+    .task { try? await model.openConversation(assistantID: assistant.id) }
+    .refreshable {
+      try? await model.refresh()
+      try? await model.openConversation(assistantID: assistant.id)
+    }
+  }
+
+  @ViewBuilder
+  private func eventView(_ event: Event, in assistant: Assistant, timeline: Timeline)
+    -> some View
+  {
+    switch event.type {
+    case .textMessage:
+      MessageBubble(
+        text: event.text ?? "", isFromUser: event.sender == .user, isDeleted: event.deleted,
+        caption: timeline.caption(forMessageID: event.id))
+    case .linkCreated:
+      if let position = assistant.links.firstIndex(where: { $0.id == event.linkID }) {
+        let link = assistant.links[position]
+        SystemEventView(event: event, link: link, linkName: link.displayName(position: position)) {
+          pairingLink = link
+        }
+      }
+    }
   }
 }
 
@@ -91,24 +137,23 @@ private struct BubbleBackground: ViewModifier {
 }
 
 private struct SystemEventView: View {
-  let event: TimelineEvent
+  let event: Event
+  let link: Link
   let linkName: String
   let showPairingText: () -> Void
 
   var body: some View {
     VStack(spacing: 6) {
-      if let date = event.date {
-        Text(date.formatted(.dateTime.month(.abbreviated).day().hour().minute()))
-          .font(.footnote)
-          .foregroundStyle(.tertiary)
-      }
+      Text(event.createdAt.formatted(.dateTime.month(.abbreviated).day().hour().minute()))
+        .font(.footnote)
+        .foregroundStyle(.tertiary)
       Label("Assistant Link created", systemImage: "link")
         .font(.subheadline)
         .foregroundStyle(.secondary)
-      Text(event.link.status == .notPaired ? "\(linkName) · not paired yet" : linkName)
+      Text(link.status == .notPaired ? "\(linkName) · not paired yet" : linkName)
         .font(.footnote)
         .foregroundStyle(.tertiary)
-      if event.link.status == .notPaired {
+      if link.status == .notPaired {
         Button("Show pairing text", action: showPairingText)
           .font(.subheadline)
       }
@@ -201,12 +246,54 @@ private struct SetupGuideView: View {
   NavigationStack {
     ConversationView(assistantID: Assistant.samples[0].id)
   }
-  .environment(AppModel.preview(Assistant.samples))
+  .environment(AppModel.preview(Assistant.samples, timelines: Assistant.sampleTimelines))
 }
 
 #Preview("Setup guide") {
   NavigationStack {
     ConversationView(assistantID: Assistant.samples[1].id)
+  }
+  .environment(AppModel.preview(Assistant.samples))
+}
+
+#Preview("Load earlier and deleted") {
+  var events = Event.samples
+  events[2].deleted = true
+  events[2].text = nil
+  let id = Assistant.samples[0].id
+  return NavigationStack {
+    ConversationView(assistantID: id)
+  }
+  .environment(
+    AppModel.preview(
+      Assistant.samples, timelines: [id: Timeline(events: events, hasMore: true)]))
+}
+
+#Preview("Not delivered") {
+  let id = Assistant.samples[0].id
+  let message = OutgoingMessage(
+    assistantID: id, idempotencyKey: "01a11a4e-0a6b-7000-8000-0000000000b1",
+    text: "Are you there?", createdAt: .now, state: .failed)
+  return NavigationStack {
+    ConversationView(assistantID: id)
+  }
+  .environment(
+    AppModel.preview(
+      Assistant.samples, timelines: [id: Timeline(events: Event.samples, outgoing: [message])]))
+}
+
+#Preview("Offline") {
+  var assistants = Assistant.samples
+  assistants[0].status = .offline
+  return NavigationStack {
+    ConversationView(assistantID: assistants[0].id)
+  }
+  .environment(AppModel.preview(assistants, timelines: Assistant.sampleTimelines))
+}
+
+#Preview("No paired Link") {
+  NavigationStack {
+    ConversationView(assistantID: Assistant.samples[2].id)
   }
   .environment(AppModel.preview(Assistant.samples))
 }

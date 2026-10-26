@@ -16,6 +16,8 @@ struct LinkStatusChange: Decodable, Equatable, Sendable {
 /// (responses, errors, unknown notifications, malformed frames) is `.ignored`.
 enum LiveMessage: Equatable, Sendable {
   case linkStatus(LinkStatusChange)
+  case eventCreated(Event)
+  case eventUpdated(Event)
   case closing(reason: String)
   case ignored
 
@@ -33,6 +35,14 @@ enum LiveMessage: Equatable, Sendable {
       self =
         (try? decoder.decode(Notification<LinkStatusChange>.self, from: data))
         .map { .linkStatus($0.params) } ?? .ignored
+    case "event.created":
+      self =
+        (try? decoder.decode(Notification<EventParams>.self, from: data))
+        .map { .eventCreated($0.params.event) } ?? .ignored
+    case "event.updated":
+      self =
+        (try? decoder.decode(Notification<EventParams>.self, from: data))
+        .map { .eventUpdated($0.params.event) } ?? .ignored
     case "connection.closing":
       self =
         (try? decoder.decode(Notification<Closing>.self, from: data))
@@ -63,6 +73,10 @@ private struct Header: Decodable {
 
 private struct Notification<Params: Decodable>: Decodable {
   let params: Params
+}
+
+private struct EventParams: Decodable {
+  let event: Event
 }
 
 private struct Closing: Decodable {

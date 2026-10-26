@@ -184,6 +184,271 @@ struct AppModelTests {
     #expect(model.assistant(id: "as-1")?.status == .online)
   }
 
+  private nonisolated static func eventJSON(_ id: String) -> String {
+    #"""
+    {"id": "\#(id)", "assistant_id": "as-1", "type": "text_message", "sender": "assistant",
+     "link_id": "l-1", "created_at": "2026-10-08T12:30:15Z", "deleted": false,
+     "idempotency_key": null, "text_message": {"text": "\#(id)"}}
+    """#
+  }
+
+  private nonisolated static func pageJSON(_ ids: [String], hasMore: Bool = false) -> String {
+    let events = ids.map { eventJSON($0) }.joined(separator: ",")
+    return #"{"events": [\#(events)], "has_more": \#(hasMore)}"#
+  }
+
+  private nonisolated static func eventsPath(_ request: URLRequest) -> Bool {
+    request.url?.path() == "/api/v1/assistants/as-1/events"
+  }
+
+  private nonisolated static func query(_ request: URLRequest) -> [String: String] {
+    let items = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems
+    return Dictionary(uniqueKeysWithValues: (items ?? []).map { ($0.name, $0.value ?? "") })
+  }
+
+  /// A client whose Assistant "as-1" answers its events requests from `page`.
+  private func eventsAPI(
+    _ page: @escaping @Sendable ([String: String]) -> String
+  ) -> APIClient {
+    APIClient(
+      baseURL: baseURL, credential: "ala_secret",
+      session: StubURLProtocol.session { [hermes] request, _ in
+        if Self.eventsPath(request) {
+          return (200, Data(json: page(Self.query(request))))
+        }
+        return (200, Data(json: #"{"assistants": [\#(hermes)]}"#))
+      })
+  }
+
+  private func liveModel(api: APIClient, messages: [String]) -> AppModel {
+    AppModel(
+      connect: { api },
+      liveUpdates: { _ in
+        LiveUpdates(
+          connect: {
+            AsyncThrowingStream { continuation in
+              continuation.yield(.opened)
+              for message in messages { continuation.yield(.message(message)) }
+              continuation.finish()
+            }
+          },
+          sleep: { _ in }, uptime: { .zero }, backoff: Backoff(jitter: { 1 }))
+      })
+  }
+
+  private static let accountDeleted =
+    #"{"jsonrpc": "2.0", "method": "connection.closing", "params": {"reason": "account_deleted"}}"#
+
+  @Test func openingAConversationLoadsTheLatestFiftyEvents() async throws {
+    let queries = Mutex<[[String: String]]>([])
+    let api = eventsAPI { query in
+      queries.withLock { $0.append(query) }
+      return Self.pageJSON(["e-1", "e-2"], hasMore: true)
+    }
+    let model = AppModel(connect: { api })
+    await model.start()
+
+    try await model.openConversation(assistantID: "as-1")
+
+    #expect(queries.withLock { $0 } == [["limit": "50"]])
+    #expect(model.timelines["as-1"]?.events.map(\.id) == ["e-1", "e-2"])
+    #expect(model.timelines["as-1"]?.hasMore == true)
+    #expect(model.assistant(id: "as-1")?.latestEvent?.id == "e-2")
+  }
+
+  @Test func loadingEarlierPrependsThe50EventsBeforeTheOldestWithoutDuplicates() async throws {
+    let queries = Mutex<[[String: String]]>([])
+    let api = eventsAPI { query in
+      queries.withLock { $0.append(query) }
+      return query["before"] == nil
+        ? Self.pageJSON(["e-3", "e-4"], hasMore: true) : Self.pageJSON(["e-2", "e-3"])
+    }
+    let model = AppModel(connect: { api })
+    await model.start()
+    try await model.openConversation(assistantID: "as-1")
+
+    try await model.loadEarlier(assistantID: "as-1")
+
+    #expect(queries.withLock { $0.last } == ["limit": "50", "before": "e-3"])
+    #expect(model.timelines["as-1"]?.events.map(\.id) == ["e-2", "e-3", "e-4"])
+    #expect(model.timelines["as-1"]?.hasMore == false)
+  }
+
+  @Test func loadingEarlierWithoutAConversationRequestsNothing() async throws {
+    let api = eventsAPI { _ in
+      Issue.record("unexpected events request")
+      return Self.pageJSON([])
+    }
+    let model = AppModel(connect: { api })
+    await model.start()
+
+    try await model.loadEarlier(assistantID: "as-1")
+
+    #expect(model.timelines.isEmpty)
+  }
+
+  @Test func createdEventsAreAppendedAndBecomeTheLatestEvent() async throws {
+    let api = eventsAPI { _ in Self.pageJSON(["e-1"]) }
+    let model = AppModel(connect: { api })
+    await model.start()
+
+    model.apply(created: .stub("e-0"))
+    #expect(model.assistant(id: "as-1")?.latestEvent?.id == "e-0")
+
+    try await model.openConversation(assistantID: "as-1")
+    model.apply(created: .stub("e-2"))
+
+    #expect(model.timelines["as-1"]?.events.map(\.id) == ["e-1", "e-2"])
+    #expect(model.assistant(id: "as-1")?.latestEvent?.id == "e-2")
+  }
+
+  @Test func aCreatedEventArrivingDuringTheFirstFetchSurvivesIt() async throws {
+    let api = eventsAPI { _ in Self.pageJSON(["e-1"]) }
+    let model = AppModel(connect: { api })
+    await model.start()
+
+    let opening = Task { try await model.openConversation(assistantID: "as-1") }
+    await Task.yield()
+    model.apply(created: .stub("e-2"))
+    try await opening.value
+
+    #expect(model.timelines["as-1"]?.events.map(\.id) == ["e-1", "e-2"])
+  }
+
+  @Test func aFailedFirstFetchLeavesTheConversationForTheNextOne() async throws {
+    let fail = Mutex(true)
+    let api = eventsAPI { _ in fail.withLock { $0 } ? "" : Self.pageJSON(["e-1"]) }
+    let model = AppModel(connect: { api })
+    await model.start()
+
+    try? await model.openConversation(assistantID: "as-1")
+    model.apply(created: .stub("e-2"))
+    #expect(model.timelines["as-1"]?.events.map(\.id) == ["e-2"])
+
+    fail.withLock { $0 = false }
+    try await model.openConversation(assistantID: "as-1")
+
+    #expect(model.timelines["as-1"]?.events.map(\.id) == ["e-1", "e-2"])
+  }
+
+  @Test func loadingEarlierIgnoresAChangeToTheOldestEventMeanwhile() async throws {
+    let api = eventsAPI { query in
+      if query["before"] == nil { return Self.pageJSON(["e-3", "e-4"], hasMore: true) }
+      return Self.pageJSON(["e-2"])
+    }
+    let model = AppModel(connect: { api })
+    await model.start()
+    try await model.openConversation(assistantID: "as-1")
+
+    let loading = Task { try await model.loadEarlier(assistantID: "as-1") }
+    await Task.yield()
+    model.apply(updated: .stub("e-3", text: "edited"))
+    try await loading.value
+
+    #expect(model.timelines["as-1"]?.events.map(\.id) == ["e-2", "e-3", "e-4"])
+  }
+
+  @Test func createdLinksRefreshTheLatestEvents() async throws {
+    let linkCreated = #"""
+      {"id": "e-9", "assistant_id": "as-1", "type": "link_created", "sender": "system",
+       "link_id": "l-1", "created_at": "2026-10-08T12:30:15Z", "deleted": false,
+       "idempotency_key": null}
+      """#
+    let model = model { [hermes] request, _ in
+      if Self.eventsPath(request) {
+        return (200, Data(json: #"{"events": [\#(linkCreated)], "has_more": false}"#))
+      }
+      return request.httpMethod == "GET"
+        ? (200, Data(json: #"{"assistants": [\#(hermes)]}"#))
+        : (
+          201,
+          Data(
+            json: #"""
+              {"link": {"id": "l-1", "label": "laptop", "status": "not_paired",
+                        "last_active_at": null}}
+              """#)
+        )
+    }
+    await model.start()
+
+    _ = try await model.createLink(assistantID: "as-1")
+
+    #expect(model.timelines["as-1"]?.events.map(\.id) == ["e-9"])
+    #expect(model.assistant(id: "as-1")?.latestEvent?.id == "e-9")
+  }
+
+  @Test func updatedEventsReplaceTheLoadedOne() async throws {
+    let api = eventsAPI { _ in Self.pageJSON(["e-1", "e-2"]) }
+    let model = AppModel(connect: { api })
+    await model.start()
+    try await model.openConversation(assistantID: "as-1")
+    var delivered = Event.stub("e-2")
+    delivered.deliveryStatus = .delivered
+
+    model.apply(updated: delivered)
+    model.apply(updated: .stub("e-0"))
+
+    #expect(model.timelines["as-1"]?.events.map(\.id) == ["e-1", "e-2"])
+    #expect(model.timelines["as-1"]?.events.last?.deliveryStatus == .delivered)
+    #expect(model.assistant(id: "as-1")?.latestEvent?.deliveryStatus == .delivered)
+    #expect(model.assistant(id: "as-1")?.latestEvent?.id == "e-2")
+  }
+
+  @Test func reconnectingRefetchesTheLatestEventsAndMergesOverlap() async throws {
+    let fetches = Mutex(0)
+    let api = eventsAPI { _ in
+      let count = fetches.withLock {
+        $0 += 1
+        return $0
+      }
+      return Self.pageJSON(count == 1 ? ["e-1", "e-2"] : ["e-2", "e-3"])
+    }
+    let created = #"""
+      {"jsonrpc": "2.0", "method": "event.created", "params": {"event": \#(Self.eventJSON("e-4"))}}
+      """#
+    let model = liveModel(api: api, messages: [created, Self.accountDeleted])
+    await model.start()
+    try await model.openConversation(assistantID: "as-1")
+
+    await model.runLiveUpdates()
+
+    #expect(fetches.withLock { $0 } == 2)
+    #expect(model.timelines["as-1"]?.events.map(\.id) == ["e-1", "e-2", "e-3", "e-4"])
+    #expect(model.assistant(id: "as-1")?.latestEvent?.id == "e-4")
+  }
+
+  @Test func reconnectingReplacesTheEventsWhenNothingOverlaps() async throws {
+    let fetches = Mutex(0)
+    let api = eventsAPI { _ in
+      let count = fetches.withLock {
+        $0 += 1
+        return $0
+      }
+      return Self.pageJSON(count == 1 ? ["e-1", "e-2"] : ["e-8", "e-9"], hasMore: count > 1)
+    }
+    let model = liveModel(api: api, messages: [Self.accountDeleted])
+    await model.start()
+    try await model.openConversation(assistantID: "as-1")
+
+    await model.runLiveUpdates()
+
+    #expect(model.timelines["as-1"]?.events.map(\.id) == ["e-8", "e-9"])
+    #expect(model.timelines["as-1"]?.hasMore == true)
+  }
+
+  @Test func reconnectingDoesNotLoadConversationsThatWereNeverOpened() async throws {
+    let api = eventsAPI { _ in
+      Issue.record("unexpected events request")
+      return Self.pageJSON([])
+    }
+    let model = liveModel(api: api, messages: [Self.accountDeleted])
+    await model.start()
+
+    await model.runLiveUpdates()
+
+    #expect(model.timelines.isEmpty)
+  }
+
   private final class Requests: Sendable {
     let log = Mutex<[String]>([])
 

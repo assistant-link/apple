@@ -30,4 +30,14 @@ enum TextValidation {
     }
     return breaksLine ? .failure(.multiline) : .success(text)
   }
+
+  static let maxMessageLength = 4000
+
+  /// The service's rules for message text, counted in Unicode code points.
+  static func isValidMessage(_ text: String) -> Bool {
+    let scalars = text.unicodeScalars
+    return (1...maxMessageLength).contains(scalars.count)
+      && !scalars.allSatisfy(\.properties.isWhitespace)
+      && !scalars.contains { $0.value == 0 }
+  }
 }

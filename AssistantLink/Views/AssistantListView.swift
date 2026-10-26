@@ -126,6 +126,8 @@ struct AssistantListView: View {
 private struct AssistantRow: View {
   let assistant: Assistant
 
+  @Environment(AppModel.self) private var model
+
   var body: some View {
     HStack(spacing: 14) {
       AvatarView(
@@ -136,24 +138,34 @@ private struct AssistantRow: View {
             .font(.headline)
             .lineLimit(1)
           Spacer()
-          if let date = assistant.latestEvent?.date {
+          if let date = assistant.latestEvent?.createdAt {
             Text(EventTime.short(date))
               .font(.subheadline)
               .foregroundStyle(.secondary)
           }
         }
-        Text(
-          assistant.latestEvent == nil
-            ? "Set up a Link to connect your agent" : "Assistant Link created"
-        )
-        .font(.subheadline)
-        .foregroundStyle(.secondary)
-        .lineLimit(1)
+        HStack(spacing: 4) {
+          if preview.isFailed {
+            Image(systemName: "exclamationmark.circle.fill")
+              .foregroundStyle(.red)
+              .accessibilityLabel("Not Delivered")
+          }
+          Text(preview.text)
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+        }
       }
     }
     .padding(.vertical, 6)
     .accessibilityElement(children: .combine)
     .accessibilityValue(assistant.status == .online ? "Online" : "Offline")
+  }
+
+  private var preview: ListPreview {
+    ListPreview(
+      event: assistant.latestEvent,
+      failedMessage: model.failedLatestMessage(assistantID: assistant.id))
   }
 }
 
