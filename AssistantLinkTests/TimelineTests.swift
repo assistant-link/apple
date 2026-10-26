@@ -159,7 +159,8 @@ struct TimelineTests {
 
     #expect(isNew)
     #expect(timeline.events.map(\.id) == ["a", "b", "c", "d"])
-    #expect(!timeline.store(.stub("b")))
+    let isStoredAgain = timeline.store(.stub("b"))
+    #expect(!isStoredAgain)
     #expect(timeline.events.map(\.id) == ["a", "b", "c", "d"])
   }
 
