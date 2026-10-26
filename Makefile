@@ -91,7 +91,7 @@ screenshots: $(PROJECT) ## Capture screenshots of the key screens in light and d
 	      '"\(.result): \(.passedTests) passed, \(.failedTests) failed, \(.skippedTests) skipped on \(.devicesAndConfigurations[0].device.deviceName) (iOS \(.devicesAndConfigurations[0].device.osVersion))", (.testFailures[] | "  FAILED \(.testName): \(.failureText)")'; \
 	    xcrun xcresulttool export attachments --path $$bundle --output-path $$attachments; \
 	    mkdir -p $$out; \
-	    jq -r '.[].attachments[]? | select(.suggestedHumanReadableName | test("^[0-9]-")) | [.exportedFileName, (.suggestedHumanReadableName | sub("(_[0-9]+_[0-9A-Fa-f-]{36})?(\\.png)?$$"; ""))] | @tsv' \
+	    jq -r '.[].attachments[]? | select(.suggestedHumanReadableName | test("^[0-9]+-")) | [.exportedFileName, (.suggestedHumanReadableName | sub("(_[0-9]+_[0-9A-Fa-f-]{36})?(\\.png)?$$"; ""))] | @tsv' \
 	      $$attachments/manifest.json | \
 	    while IFS=$$'\t' read -r file name; do cp "$$attachments/$$file" "$$out/$$name.png"; done; \
 	  fi; \
