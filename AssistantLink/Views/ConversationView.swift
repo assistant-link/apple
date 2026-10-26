@@ -5,6 +5,9 @@ struct ConversationView: View {
 
   @Environment(AppModel.self) private var model
   @State private var pairingLink: Link?
+  @State private var failedMessage: OutgoingMessage?
+
+  private static let bottomID = "bottom"
 
   var body: some View {
     if let assistant = model.assistant(id: assistantID) {
@@ -36,27 +39,70 @@ struct ConversationView: View {
   }
 
   private func timeline(_ assistant: Assistant) -> some View {
-    ScrollView {
-      LazyVStack(spacing: 20) {
-        ForEach(model.timelines[assistant.id]?.events ?? []) { event in
-          if event.type == .linkCreated,
-            let position = assistant.links.firstIndex(where: { $0.id == event.linkID })
-          {
-            let link = assistant.links[position]
-            SystemEventView(
-              event: event, link: link, linkName: link.displayName(position: position)
-            ) {
-              pairingLink = link
+    let content = model.timelines[assistant.id] ?? Timeline()
+    return ScrollViewReader { proxy in
+      ScrollView {
+        LazyVStack(spacing: 12) {
+          if content.hasMore {
+            LoadEarlierButton(assistantID: assistant.id) { first in
+              if let first { proxy.scrollTo(first, anchor: .top) }
             }
           }
+          ForEach(content.events) { event in
+            eventView(event, in: assistant, timeline: content)
+          }
+          ForEach(content.outgoing) { message in
+            MessageBubble(
+              text: message.text, isFromUser: true,
+              caption: content.caption(forMessageID: message.id),
+              onFailureTap: message.state == .failed ? { failedMessage = message } : nil)
+          }
+          Color.clear.frame(height: 1).id(Self.bottomID)
         }
+        .padding(.horizontal)
+        .padding(.vertical, 24)
       }
-      .padding(.horizontal)
-      .padding(.vertical, 24)
+      .defaultScrollAnchor(.bottom)
+      .onChange(of: content.outgoing.last?.id) { proxy.scrollTo(Self.bottomID, anchor: .bottom) }
+      .onChange(of: content.events.last?.id) { proxy.scrollTo(Self.bottomID, anchor: .bottom) }
     }
-    .defaultScrollAnchor(.bottom)
+    .safeAreaInset(edge: .bottom) {
+      if assistant.showsComposer {
+        ComposerView(assistant: assistant)
+      }
+    }
+    .confirmationDialog(
+      "Not Delivered",
+      isPresented: Binding(
+        get: { failedMessage != nil }, set: { if !$0 { failedMessage = nil } }),
+      titleVisibility: .visible, presenting: failedMessage
+    ) { message in
+      Button("Try Again") { Task { await model.retry(message) } }
+        .accessibilityIdentifier("tryAgain")
+      Button("Cancel", role: .cancel) { model.cancel(message) }
+        .accessibilityIdentifier("cancelSend")
+    }
     .task { try? await model.openConversation(assistantID: assistant.id) }
     .refreshable { try? await model.refresh() }
+  }
+
+  @ViewBuilder
+  private func eventView(_ event: Event, in assistant: Assistant, timeline: Timeline)
+    -> some View
+  {
+    switch event.type {
+    case .textMessage:
+      MessageBubble(
+        text: event.text ?? "", isFromUser: event.sender == .user, isDeleted: event.deleted,
+        caption: timeline.caption(forMessageID: event.id))
+    case .linkCreated:
+      if let position = assistant.links.firstIndex(where: { $0.id == event.linkID }) {
+        let link = assistant.links[position]
+        SystemEventView(event: event, link: link, linkName: link.displayName(position: position)) {
+          pairingLink = link
+        }
+      }
+    }
   }
 }
 
@@ -210,6 +256,48 @@ private struct SetupGuideView: View {
 #Preview("Setup guide") {
   NavigationStack {
     ConversationView(assistantID: Assistant.samples[1].id)
+  }
+  .environment(AppModel.preview(Assistant.samples))
+}
+
+#Preview("Load earlier and deleted") {
+  var events = Event.samples
+  events[2].deleted = true
+  events[2].text = nil
+  let id = Assistant.samples[0].id
+  return NavigationStack {
+    ConversationView(assistantID: id)
+  }
+  .environment(
+    AppModel.preview(
+      Assistant.samples, timelines: [id: Timeline(events: events, hasMore: true)]))
+}
+
+#Preview("Not delivered") {
+  let id = Assistant.samples[0].id
+  let message = OutgoingMessage(
+    assistantID: id, idempotencyKey: "01a11a4e-0a6b-7000-8000-0000000000b1",
+    text: "Are you there?", createdAt: .now, state: .failed)
+  return NavigationStack {
+    ConversationView(assistantID: id)
+  }
+  .environment(
+    AppModel.preview(
+      Assistant.samples, timelines: [id: Timeline(events: Event.samples, outgoing: [message])]))
+}
+
+#Preview("Offline") {
+  var assistants = Assistant.samples
+  assistants[0].status = .offline
+  return NavigationStack {
+    ConversationView(assistantID: assistants[0].id)
+  }
+  .environment(AppModel.preview(assistants, timelines: Assistant.sampleTimelines))
+}
+
+#Preview("No paired Link") {
+  NavigationStack {
+    ConversationView(assistantID: Assistant.samples[2].id)
   }
   .environment(AppModel.preview(Assistant.samples))
 }
