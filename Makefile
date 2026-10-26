@@ -26,7 +26,8 @@ DERIVED_DATA := $(BUILD_DIR)/DerivedData
 APP_PATH := $(DERIVED_DATA)/Build/Products/Debug-iphonesimulator/AssistantLink.app
 DEVICE_APP_PATH := $(DERIVED_DATA)/Build/Products/Debug-iphoneos/AssistantLink.app
 TEST_RESULTS := $(BUILD_DIR)/TestResults.xcresult
-SOURCES := AssistantLink AssistantLinkTests
+SCREENSHOT_DIR := $(BUILD_DIR)/screenshots
+SOURCES := AssistantLink AssistantLinkTests AssistantLinkUITests
 SIMULATOR ?=
 DEVICE ?=
 DEVELOPMENT_TEAM ?=
@@ -45,10 +46,10 @@ XCODEBUILD = xcodebuild -project $(PROJECT) -scheme $(SCHEME) -configuration Deb
 	-destination "platform=iOS Simulator,id=$$udid,arch=$(HOST_ARCH)" -derivedDataPath $(DERIVED_DATA) \
 	$(XCODEBUILD_FLAGS)
 
-.PHONY: help generate build test run device lint format clean
+.PHONY: help generate build test screenshots run device lint format clean
 
 help: ## Show this help
-	@grep -E '^[a-z]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  make %-9s %s\n", $$1, $$2}'
+	@grep -E '^[a-z]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  make %-12s %s\n", $$1, $$2}'
 
 generate: ## Generate AssistantLink.xcodeproj from project.yml
 	xcodegen generate --spec project.yml
@@ -66,6 +67,36 @@ test: $(PROJECT) ## Run the unit tests on the Simulator
 	  xcrun xcresulttool get test-results summary --path $(TEST_RESULTS) --compact | jq -r \
 	    '"\(.result): \(.passedTests) passed, \(.failedTests) failed, \(.skippedTests) skipped on \(.devicesAndConfigurations[0].device.deviceName) (iOS \(.devicesAndConfigurations[0].device.osVersion))", (.testFailures[] | "  FAILED \(.testName): \(.failureText)")'; \
 	fi; \
+	exit $$status
+
+screenshots: SCHEME := AssistantLinkScreenshots
+screenshots: $(PROJECT) ## Capture screenshots of the key screens in light and dark into build/screenshots
+	@rm -rf $(BUILD_DIR)/Screenshots-*.xcresult $(SCREENSHOT_DIR) $(BUILD_DIR)/attachments
+	@$(PICK_SIMULATOR) \
+	xcrun simctl bootstatus "$$udid" -b > /dev/null; \
+	original="$$(xcrun simctl ui "$$udid" appearance)"; \
+	python3 scripts/mock-service.py & mock=$$!; \
+	trap 'kill $$mock 2>/dev/null || true; xcrun simctl ui "$$udid" appearance "$$original" || true' EXIT; \
+	sleep 1; \
+	kill -0 $$mock 2>/dev/null || { echo "error: the mock service did not start; is port 8765 in use?" >&2; exit 1; }; \
+	status=0; \
+	for style in light dark; do \
+	  bundle=$(BUILD_DIR)/Screenshots-$$style.xcresult; \
+	  attachments=$(BUILD_DIR)/attachments/$$style; \
+	  out=$(SCREENSHOT_DIR)/$$style; \
+	  xcrun simctl ui "$$udid" appearance $$style; \
+	  $(XCODEBUILD) -resultBundlePath $$bundle test || status=$$?; \
+	  if [[ -d $$bundle ]]; then \
+	    xcrun xcresulttool export attachments --path $$bundle --output-path $$attachments; \
+	    mkdir -p $$out; \
+	    jq -r '.[].attachments[]? | select(.suggestedHumanReadableName | test("^[0-9]-")) | [.exportedFileName, (.suggestedHumanReadableName | sub("(_[0-9]+_[0-9A-Fa-f-]{36})?(\\.png)?$$"; ""))] | @tsv' \
+	      $$attachments/manifest.json | \
+	    while IFS=$$'\t' read -r file name; do cp "$$attachments/$$file" "$$out/$$name.png"; done; \
+	  fi; \
+	  count=$$(ls $$out 2>/dev/null | wc -l || true); \
+	  echo "Exported $$count $$style screenshots to $$out"; \
+	  [[ $$count -gt 0 ]] || { echo "error: no $$style screenshot was exported." >&2; status=1; }; \
+	done; \
 	exit $$status
 
 run: build ## Boot the Simulator, install and launch the app
