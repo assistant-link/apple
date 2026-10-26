@@ -35,10 +35,11 @@ final class ScreenshotTests: XCTestCase {
 
     app.buttons["loadEarlier"].tap()
     expectGone(app.buttons["loadEarlier"], "step 5: Load Earlier button is gone")
-    scrollToTop(app) { app.staticTexts["Assistant Link created"].isHittable }
-    XCTAssertTrue(
-      app.staticTexts["Assistant Link created"].isHittable,
-      failure("step 5: Assistant Link created text is hittable"))
+    let created = app.staticTexts.matching(
+      NSPredicate(format: "label == %@", "Assistant Link created")
+    ).firstMatch
+    scrollToTop(app) { created.isHittable }
+    XCTAssertTrue(created.isHittable, failure("step 5: Assistant Link created text is hittable"))
     capture(app, "5-earlier-loaded")
 
     send("Can you check my flight status?", in: app)
