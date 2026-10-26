@@ -293,7 +293,6 @@ struct AppModelTests {
     await model.start()
 
     model.apply(created: .stub("e-0"))
-    #expect(model.timelines["as-1"] == nil)
     #expect(model.assistant(id: "as-1")?.latestEvent?.id == "e-0")
 
     try await model.openConversation(assistantID: "as-1")
@@ -301,6 +300,80 @@ struct AppModelTests {
 
     #expect(model.timelines["as-1"]?.events.map(\.id) == ["e-1", "e-2"])
     #expect(model.assistant(id: "as-1")?.latestEvent?.id == "e-2")
+  }
+
+  @Test func aCreatedEventArrivingDuringTheFirstFetchSurvivesIt() async throws {
+    let api = eventsAPI { _ in Self.pageJSON(["e-1"]) }
+    let model = AppModel(connect: { api })
+    await model.start()
+
+    let opening = Task { try await model.openConversation(assistantID: "as-1") }
+    await Task.yield()
+    model.apply(created: .stub("e-2"))
+    try await opening.value
+
+    #expect(model.timelines["as-1"]?.events.map(\.id) == ["e-1", "e-2"])
+  }
+
+  @Test func aFailedFirstFetchLeavesTheConversationForTheNextOne() async throws {
+    let fail = Mutex(true)
+    let api = eventsAPI { _ in fail.withLock { $0 } ? "" : Self.pageJSON(["e-1"]) }
+    let model = AppModel(connect: { api })
+    await model.start()
+
+    try? await model.openConversation(assistantID: "as-1")
+    model.apply(created: .stub("e-2"))
+    #expect(model.timelines["as-1"]?.events.map(\.id) == ["e-2"])
+
+    fail.withLock { $0 = false }
+    try await model.openConversation(assistantID: "as-1")
+
+    #expect(model.timelines["as-1"]?.events.map(\.id) == ["e-1", "e-2"])
+  }
+
+  @Test func loadingEarlierIgnoresAChangeToTheOldestEventMeanwhile() async throws {
+    let api = eventsAPI { query in
+      query["before"] == nil ? Self.pageJSON(["e-3", "e-4"], hasMore: true) : Self.pageJSON(["e-2"])
+    }
+    let model = AppModel(connect: { api })
+    await model.start()
+    try await model.openConversation(assistantID: "as-1")
+
+    let loading = Task { try await model.loadEarlier(assistantID: "as-1") }
+    await Task.yield()
+    model.apply(updated: .stub("e-3", text: "edited"))
+    try await loading.value
+
+    #expect(model.timelines["as-1"]?.events.map(\.id) == ["e-2", "e-3", "e-4"])
+  }
+
+  @Test func createdLinksRefreshTheLatestEvents() async throws {
+    let linkCreated = #"""
+      {"id": "e-9", "assistant_id": "as-1", "type": "link_created", "sender": "system",
+       "link_id": "l-1", "created_at": "2026-10-08T12:30:15Z", "deleted": false,
+       "idempotency_key": null}
+      """#
+    let model = model { [hermes] request, _ in
+      if Self.eventsPath(request) {
+        return (200, Data(json: #"{"events": [\#(linkCreated)], "has_more": false}"#))
+      }
+      return request.httpMethod == "GET"
+        ? (200, Data(json: #"{"assistants": [\#(hermes)]}"#))
+        : (
+          201,
+          Data(
+            json: #"""
+              {"link": {"id": "l-1", "label": "laptop", "status": "not_paired",
+                        "last_active_at": null}}
+              """#)
+        )
+    }
+    await model.start()
+
+    _ = try await model.createLink(assistantID: "as-1")
+
+    #expect(model.timelines["as-1"]?.events.map(\.id) == ["e-9"])
+    #expect(model.assistant(id: "as-1")?.latestEvent?.id == "e-9")
   }
 
   @Test func updatedEventsReplaceTheLoadedOne() async throws {

@@ -6,6 +6,7 @@ struct ConversationView: View {
   @Environment(AppModel.self) private var model
   @State private var pairingLink: Link?
   @State private var failedMessage: OutgoingMessage?
+  @State private var topEventID: String?
 
   private static let bottomID = "bottom"
 
@@ -44,9 +45,7 @@ struct ConversationView: View {
       ScrollView {
         LazyVStack(spacing: 12) {
           if content.hasMore {
-            LoadEarlierButton(assistantID: assistant.id) { first in
-              if let first { proxy.scrollTo(first, anchor: .top) }
-            }
+            LoadEarlierButton(assistantID: assistant.id)
           }
           ForEach(content.events) { event in
             eventView(event, in: assistant, timeline: content)
@@ -59,10 +58,13 @@ struct ConversationView: View {
           }
           Color.clear.frame(height: 1).id(Self.bottomID)
         }
+        .scrollTargetLayout()
         .padding(.horizontal)
         .padding(.vertical, 24)
       }
       .defaultScrollAnchor(.bottom)
+      // Tracking the top event keeps the messages on screen in place when earlier ones load.
+      .scrollPosition(id: $topEventID, anchor: .top)
       .onChange(of: content.outgoing.last?.id) { proxy.scrollTo(Self.bottomID, anchor: .bottom) }
       .onChange(of: content.events.last?.id) { proxy.scrollTo(Self.bottomID, anchor: .bottom) }
     }
@@ -83,7 +85,10 @@ struct ConversationView: View {
         .accessibilityIdentifier("cancelSend")
     }
     .task { try? await model.openConversation(assistantID: assistant.id) }
-    .refreshable { try? await model.refresh() }
+    .refreshable {
+      try? await model.refresh()
+      try? await model.openConversation(assistantID: assistant.id)
+    }
   }
 
   @ViewBuilder

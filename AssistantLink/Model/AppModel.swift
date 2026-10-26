@@ -122,18 +122,25 @@ final class AppModel {
     setLatestEvent(event, onlyIfLatest: true)
   }
 
-  /// Loads the conversation's latest events when it opens.
+  /// Loads the conversation's latest events when it opens. The timeline exists before the
+  /// fetch so live events arriving meanwhile are kept, and so a failed fetch is retried when
+  /// the live connection opens again.
   func openConversation(assistantID: Assistant.ID) async throws {
-    try await loadLatest(assistantID: assistantID, using: client())
+    let api = try await client()
+    if timelines[assistantID] == nil {
+      timelines[assistantID] = Timeline()
+    }
+    try await loadLatest(assistantID: assistantID, using: api)
   }
 
-  /// Loads the page of events before the oldest loaded one.
   func loadEarlier(assistantID: Assistant.ID) async throws {
     guard let oldest = timelines[assistantID]?.events.first else { return }
     let session = session
     let page = try await client().events(
       assistantID: assistantID, limit: Self.pageSize, before: oldest.id)
-    guard self.session == session, timelines[assistantID]?.events.first == oldest else { return }
+    guard self.session == session, timelines[assistantID]?.events.first?.id == oldest.id else {
+      return
+    }
     timelines[assistantID]?.prepend(page)
   }
 
@@ -149,7 +156,8 @@ final class AppModel {
   func queue(text: String, assistantID: Assistant.ID) -> OutgoingMessage? {
     guard TextValidation.isValidMessage(text) else { return nil }
     let message = OutgoingMessage(
-      assistantID: assistantID, idempotencyKey: UUIDv7.make(), text: text, createdAt: .now)
+      assistantID: assistantID, idempotencyKey: UUIDv7.make(), text: text, createdAt: .now,
+      receivedBefore: timelines[assistantID]?.received ?? 0)
     timelines[assistantID, default: Timeline()].outgoing.append(message)
     return message
   }
@@ -171,13 +179,11 @@ final class AppModel {
     }
   }
 
-  /// Posts a failed message again with its idempotency key.
   func retry(_ message: OutgoingMessage) async {
     guard setState(.sending, of: message, from: .failed) else { return }
     await post(message)
   }
 
-  /// Removes a failed message.
   func cancel(_ message: OutgoingMessage) {
     timelines[message.assistantID]?.outgoing.removeAll {
       $0.id == message.id && $0.state == .failed
@@ -186,11 +192,10 @@ final class AppModel {
 
   /// The Assistant's newest message if it failed and was never stored, for the Assistants list.
   func failedLatestMessage(assistantID: Assistant.ID) -> OutgoingMessage? {
-    guard let message = timelines[assistantID]?.outgoing.last, message.state == .failed else {
-      return nil
-    }
-    let latest = assistant(id: assistantID)?.latestEvent
-    return (latest?.createdAt ?? .distantPast) > message.createdAt ? nil : message
+    guard let timeline = timelines[assistantID], let message = timeline.outgoing.last,
+      message.state == .failed
+    else { return nil }
+    return timeline.received > message.receivedBefore ? nil : message
   }
 
   func caption(forMessageID id: String, assistantID: Assistant.ID) -> MessageCaption? {
@@ -237,10 +242,13 @@ final class AppModel {
   }
 
   func createLink(assistantID: Assistant.ID) async throws -> Link {
-    let link = try await client().createLink(assistantID: assistantID)
+    let api = try await client()
+    let link = try await api.createLink(assistantID: assistantID)
     if let index = assistants.firstIndex(where: { $0.id == assistantID }) {
       assistants[index].links.append(link)
     }
+    // The service adds a link_created event that the live connection may not deliver.
+    try? await loadLatest(assistantID: assistantID, using: api)
     return link
   }
 

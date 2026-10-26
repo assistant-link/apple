@@ -120,6 +120,49 @@ struct TimelineTests {
     #expect(timeline.hasMore)
   }
 
+  @Test func refetchNeverDowngradesADeliveredMessage() {
+    var delivered = Event.stub("b")
+    delivered.deliveryStatus = .delivered
+    var timeline = Timeline(events: [.stub("a"), delivered])
+    var stale = Event.stub("b")
+    stale.deliveryStatus = .sent
+
+    timeline.refetch(with: EventPage(events: [.stub("a"), stale], hasMore: false))
+
+    #expect(timeline.events[1].deliveryStatus == .delivered)
+  }
+
+  @Test func refetchKeepsADeletedMessageDeleted() {
+    var deleted = Event.stub("b")
+    deleted.deleted = true
+    deleted.text = nil
+    var timeline = Timeline(events: [.stub("a"), deleted])
+
+    timeline.refetch(with: page(["a", "b"]))
+
+    #expect(timeline.events[1].deleted)
+    #expect(timeline.events[1].text == nil)
+  }
+
+  @Test func refetchKeepsLiveEventsNewerThanAPageWithoutOverlap() {
+    var timeline = loaded(["e-3"])
+
+    timeline.refetch(with: page(["e-1", "e-2"]))
+
+    #expect(timeline.events.map(\.id) == ["e-1", "e-2", "e-3"])
+  }
+
+  @Test func aStoredEventTheServiceHadAlreadyKeptItsPlaceById() {
+    var timeline = loaded(["a", "c", "d"])
+
+    let isNew = timeline.store(.stub("b"))
+
+    #expect(isNew)
+    #expect(timeline.events.map(\.id) == ["a", "b", "c", "d"])
+    #expect(!timeline.store(.stub("b")))
+    #expect(timeline.events.map(\.id) == ["a", "b", "c", "d"])
+  }
+
   @Test func prependAddsTheEarlierPageWithoutDuplicates() {
     var timeline = loaded(["c", "d"], hasMore: true)
 

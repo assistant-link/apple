@@ -37,6 +37,9 @@ struct OutgoingMessage: Equatable, Identifiable, Sendable {
   let text: String
   let createdAt: Date
   var state = State.sending
+  /// The timeline's `received` count when the message was queued; later events mean the message
+  /// is no longer the newest, which the device and server clocks could not tell reliably.
+  var receivedBefore = 0
 
   var id: String { idempotencyKey }
 }
@@ -65,6 +68,8 @@ struct Timeline: Equatable, Sendable {
   var hasMore = false
   /// Messages sent from this app and not stored yet, oldest first; they show after the events.
   var outgoing: [OutgoingMessage] = []
+  /// How many events were added to a loaded conversation; it only grows.
+  var received = 0
 
   /// The id of the latest user message, an outgoing one or a stored event.
   var latestUserMessageID: String? {
@@ -90,7 +95,9 @@ struct Timeline: Equatable, Sendable {
   mutating func store(_ event: Event) -> Bool {
     let isNew = !events.contains { $0.id == event.id }
     if isNew {
-      events.append(event)
+      // A retry the service had already stored answers with that older event; ids sort by time.
+      events.insert(event, at: events.firstIndex { $0.id > event.id } ?? events.endIndex)
+      received += 1
     }
     removeOutgoing(matching: event)
     return isNew
@@ -108,10 +115,10 @@ struct Timeline: Equatable, Sendable {
       events[index] = event
     } else {
       events.append(event)
+      received += 1
     }
   }
 
-  /// Replaces a loaded event; an event that isn't loaded stays out.
   mutating func update(_ event: Event) {
     if let index = events.firstIndex(where: { $0.id == event.id }) {
       events[index] = event
@@ -119,23 +126,36 @@ struct Timeline: Equatable, Sendable {
   }
 
   /// Takes the latest page. If it shares an event with the loaded ones, they merge by id and
-  /// the older loaded events stay; otherwise the page replaces them.
+  /// the older loaded events stay; otherwise the page replaces them, except the loaded events
+  /// after it, which the live connection delivered while the page loaded.
   mutating func refetch(with page: EventPage) {
-    let pageIDs = Set(page.events.map(\.id))
+    let loaded = Dictionary(events.map { ($0.id, $0) }, uniquingKeysWith: { $1 })
+    if !events.isEmpty {
+      received += page.events.filter { loaded[$0.id] == nil }.count
+    }
+    // The page can be older than a live copy, and these fields only move forward.
+    let fetched = page.events.map { event in
+      guard let current = loaded[event.id] else { return event }
+      if current.deleted && !event.deleted { return current }
+      var merged = event
+      if current.deliveryStatus == .delivered { merged.deliveryStatus = .delivered }
+      return merged
+    }
+    let pageIDs = Set(fetched.map(\.id))
     guard let overlap = events.firstIndex(where: { pageIDs.contains($0.id) }) else {
-      events = page.events
+      let newer = fetched.last.map { last in events.filter { $0.id > last.id } } ?? events
+      events = fetched + newer
       hasMore = page.hasMore
       return
     }
     let older = Array(events[..<overlap])
     let newer = events[overlap...].filter { !pageIDs.contains($0.id) }
-    events = older + page.events + newer
+    events = older + fetched + newer
     if overlap == 0 {
       hasMore = page.hasMore
     }
   }
 
-  /// Adds the page that precedes the first loaded event.
   mutating func prepend(_ page: EventPage) {
     let loadedIDs = Set(events.map(\.id))
     events = page.events.filter { !loadedIDs.contains($0.id) } + events

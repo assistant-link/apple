@@ -52,8 +52,6 @@ struct MessageBubble: View {
 
 struct LoadEarlierButton: View {
   let assistantID: Assistant.ID
-  /// Called with the id of the event that is first before the page loads.
-  let onLoaded: (String?) -> Void
 
   @Environment(AppModel.self) private var model
   @State private var isLoading = false
@@ -64,9 +62,7 @@ struct LoadEarlierButton: View {
       isLoading = true
       Task {
         defer { isLoading = false }
-        let first = model.timelines[assistantID]?.events.first?.id
         try? await model.loadEarlier(assistantID: assistantID)
-        onLoaded(first)
       }
     } label: {
       if isLoading {

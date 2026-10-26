@@ -424,9 +424,27 @@ struct OutgoingMessageTests {
     let model = await startedModel(Stub(failures: [.network]))
     await model.send(text: "Hi", assistantID: "as-1")
 
-    model.apply(created: event(key: "later", createdAt: .now.addingTimeInterval(60)))
+    model.apply(created: event(key: "later"))
 
     #expect(model.failedLatestMessage(assistantID: "as-1") == nil)
+  }
+
+  @Test func aStoredEventWithAnEarlierServerTimeStillHidesTheFailedMessage() async throws {
+    let model = await startedModel(Stub(failures: [.network]))
+    await model.send(text: "Hi", assistantID: "as-1")
+
+    model.apply(created: event(key: "later", createdAt: .distantPast))
+
+    #expect(model.failedLatestMessage(assistantID: "as-1") == nil)
+  }
+
+  @Test func eventsReceivedBeforeTheMessageDoNotHideIt() async throws {
+    let model = await startedModel(Stub(failures: [.network]))
+    model.apply(created: event(key: "earlier", createdAt: .distantFuture))
+    try await model.openConversation(assistantID: "as-1")
+    await model.send(text: "Hi", assistantID: "as-1")
+
+    #expect(model.failedLatestMessage(assistantID: "as-1")?.text == "Hi")
   }
 
   @Test func theModelCaptionsTheLatestUserMessageOfAnAssistant() async throws {
