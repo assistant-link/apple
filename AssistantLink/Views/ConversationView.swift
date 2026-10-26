@@ -6,9 +6,7 @@ struct ConversationView: View {
   @Environment(AppModel.self) private var model
   @State private var pairingLink: Link?
   @State private var failedMessage: OutgoingMessage?
-  @State private var topEventID: String?
-
-  private static let bottomID = "bottom"
+  @State private var position = ScrollPosition(edge: .bottom)
 
   var body: some View {
     if let assistant = model.assistant(id: assistantID) {
@@ -41,33 +39,32 @@ struct ConversationView: View {
 
   private func timeline(_ assistant: Assistant) -> some View {
     let content = model.timelines[assistant.id] ?? Timeline()
-    return ScrollViewReader { proxy in
-      ScrollView {
-        LazyVStack(spacing: 12) {
-          if content.hasMore {
-            LoadEarlierButton(assistantID: assistant.id)
+    return ScrollView {
+      LazyVStack(spacing: 12) {
+        if content.hasMore {
+          LoadEarlierButton(assistantID: assistant.id) { first in
+            // Scrolling back to the old first event keeps the messages on screen in place.
+            if let first { position.scrollTo(id: first, anchor: .top) }
           }
-          ForEach(content.events) { event in
-            eventView(event, in: assistant, timeline: content)
-          }
-          ForEach(content.outgoing) { message in
-            MessageBubble(
-              text: message.text, isFromUser: true,
-              caption: content.caption(forMessageID: message.id),
-              onFailureTap: message.state == .failed ? { failedMessage = message } : nil)
-          }
-          Color.clear.frame(height: 1).id(Self.bottomID)
         }
-        .scrollTargetLayout()
-        .padding(.horizontal)
-        .padding(.vertical, 24)
+        ForEach(content.events) { event in
+          eventView(event, in: assistant, timeline: content)
+        }
+        ForEach(content.outgoing) { message in
+          MessageBubble(
+            text: message.text, isFromUser: true,
+            caption: content.caption(forMessageID: message.id),
+            onFailureTap: message.state == .failed ? { failedMessage = message } : nil)
+        }
       }
-      .defaultScrollAnchor(.bottom)
-      // Tracking the top event keeps the messages on screen in place when earlier ones load.
-      .scrollPosition(id: $topEventID, anchor: .top)
-      .onChange(of: content.outgoing.last?.id) { proxy.scrollTo(Self.bottomID, anchor: .bottom) }
-      .onChange(of: content.events.last?.id) { proxy.scrollTo(Self.bottomID, anchor: .bottom) }
+      .scrollTargetLayout()
+      .padding(.horizontal)
+      .padding(.vertical, 24)
     }
+    .defaultScrollAnchor(.bottom)
+    .scrollPosition($position)
+    .onChange(of: content.outgoing.last?.id) { position.scrollTo(edge: .bottom) }
+    .onChange(of: content.events.last?.id) { position.scrollTo(edge: .bottom) }
     .safeAreaInset(edge: .bottom) {
       if assistant.hasPairedLink {
         ComposerView(assistant: assistant)
