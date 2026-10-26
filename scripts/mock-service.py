@@ -27,6 +27,10 @@ GROK_BOT = "01a11a4f-0000-7000-8000-000000000001"
 MUSE = "01a11a4f-0000-7000-8000-000000000002"
 LAPTOP = "01a11a4e-0a6a-7edf-996d-7e8f06fc11ed"
 ATLAS_LINK = "01a11a4e-9999-7edf-996d-7e8f06fc11ee"
+CLOUD = "01a11a4e-42ee-7ebf-b82d-d195d2252d57"
+HERMES_UNPAIRED = "01a11a5f-1c00-7a1b-9c2d-3e4f5a6b7c8d"
+MUSE_LINK = "01a0f5c2-8000-7000-8000-000000000003"
+NEW_LINK = "01a11a60-0000-7000-8000-000000000004"
 
 MAX_TEXT_LENGTH = 4000
 SLOW_SECONDS = 6
@@ -86,6 +90,20 @@ def make_event(assistant_id, sender, minutes_ago, text=None, **extra):
     return event
 
 
+def link_created_event(assistant_id, link_id, minutes_ago):
+    moment = datetime.now(timezone.utc) - timedelta(minutes=minutes_ago)
+    return {
+        "id": event_id(moment),
+        "assistant_id": assistant_id,
+        "type": "link_created",
+        "sender": "system",
+        "link_id": link_id,
+        "idempotency_key": None,
+        "created_at": stamp(moment),
+        "deleted": False,
+    }
+
+
 PROMPTS = [
     "Remind me to call David tomorrow",
     "What is on my calendar this week?",
@@ -114,19 +132,7 @@ def hermes_events():
     for index in range(total):
         minutes_ago = (total - 1 - index) * 95 + 2
         if index == 0:
-            moment = datetime.now(timezone.utc) - timedelta(minutes=minutes_ago + 5)
-            events.append(
-                {
-                    "id": event_id(moment),
-                    "assistant_id": HERMES,
-                    "type": "link_created",
-                    "sender": "system",
-                    "link_id": LAPTOP,
-                    "idempotency_key": None,
-                    "created_at": stamp(moment),
-                    "deleted": False,
-                }
-            )
+            events.append(link_created_event(HERMES, LAPTOP, minutes_ago + 5))
             continue
         pair = (index - 1) // 2
         if index % 2 == 1:
@@ -135,11 +141,16 @@ def hermes_events():
         else:
             text = None if index == 34 else REPLIES[pair % len(REPLIES)]
             events.append(make_event(HERMES, "assistant", minutes_ago, text, link_id=LAPTOP))
-    return events
+    return [
+        link_created_event(HERMES, CLOUD, (total - 1) * 95 + 40),
+        link_created_event(HERMES, HERMES_UNPAIRED, (total - 1) * 95 + 30),
+        *events,
+    ]
 
 
 def atlas_events():
     return [
+        link_created_event(ATLAS, ATLAS_LINK, 700),
         make_event(ATLAS, "user", 600, "Is the backup finished?"),
         make_event(ATLAS, "assistant", 598, "Yes, it finished at 02:14.", link_id=ATLAS_LINK),
         make_event(ATLAS, "user", 300, "Check it again at noon"),
@@ -155,13 +166,8 @@ def seed():
                 "avatar": "avatar-3",
                 "links": [
                     link(LAPTOP, "laptop", "online", iso(timedelta())),
-                    link(
-                        "01a11a4e-42ee-7ebf-b82d-d195d2252d57",
-                        "cloud",
-                        "offline",
-                        iso(timedelta(hours=-2)),
-                    ),
-                    link("01a11a5f-1c00-7a1b-9c2d-3e4f5a6b7c8d", None, "not_paired", None),
+                    link(CLOUD, "cloud", "offline", iso(timedelta(hours=-2))),
+                    link(HERMES_UNPAIRED, None, "not_paired", None),
                 ],
             },
             {
@@ -175,14 +181,14 @@ def seed():
                 "id": MUSE,
                 "name": "Muse",
                 "avatar": "avatar-1",
-                "links": [link("01a0f5c2-8000-7000-8000-000000000003", None, "not_paired", None)],
+                "links": [link(MUSE_LINK, None, "not_paired", None)],
             },
         ],
         "events": {
             HERMES: hermes_events(),
             ATLAS: atlas_events(),
             GROK_BOT: [],
-            MUSE: [],
+            MUSE: [link_created_event(MUSE, MUSE_LINK, 240)],
         },
     }
 
@@ -265,8 +271,12 @@ def route(method, path, query, body):
     match = re.fullmatch(r"/api/v1/assistants/([^/]+)/messages", path)
     if method == "POST" and match:
         return create_message(match.group(1), body)
-    if method == "POST" and re.fullmatch(r"/api/v1/assistants/[^/]+/links", path):
-        return 201, {"link": link("01a11a60-0000-7000-8000-000000000004", None, "not_paired", None)}
+    match = re.fullmatch(r"/api/v1/assistants/([^/]+)/links", path)
+    if method == "POST" and match:
+        if match.group(1) not in STATE["events"]:
+            return error(404, "not_found", "Not found.")
+        STATE["events"][match.group(1)].append(link_created_event(match.group(1), NEW_LINK, 0))
+        return 201, {"link": link(NEW_LINK, None, "not_paired", None)}
     if method == "POST" and re.fullmatch(r"/api/v1/links/[^/]+/pairing_code", path):
         return 201, {
             "code": "K7QM-2XPA",
