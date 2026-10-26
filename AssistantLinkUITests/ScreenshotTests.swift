@@ -3,6 +3,20 @@ import XCTest
 final class ScreenshotTests: XCTestCase {
   private static let service = "http://127.0.0.1:8765"
 
+  override func tearDown() async throws {
+    if testRun?.hasBeenSkipped == false, (testRun?.totalFailureCount ?? 0) > 0 {
+      await MainActor.run {
+        let app = XCUIApplication()
+        capture(app, "99-failure")
+        let hierarchy = XCTAttachment(string: String(app.debugDescription.prefix(3000)))
+        hierarchy.name = "99-hierarchy"
+        hierarchy.lifetime = .keepAlways
+        add(hierarchy)
+      }
+    }
+    try await super.tearDown()
+  }
+
   @MainActor func testCaptureKeyScreens() {
     continueAfterFailure = false
     Self.resetService()
@@ -10,74 +24,78 @@ final class ScreenshotTests: XCTestCase {
     app.launchArguments = ["-serviceURL", Self.service]
     app.launch()
 
-    XCTAssertTrue(row("Hermes", in: app).waitForExistence(timeout: 30))
-    XCTAssertTrue(row("Atlas", in: app).waitForExistence(timeout: 15))
+    expect(row("Hermes", in: app), "step 1: Hermes row exists", timeout: 30)
+    expect(row("Atlas", in: app), "step 1: Atlas row exists")
     capture(app, "1-list")
 
     row("Hermes", in: app).tap()
-    XCTAssertTrue(app.messageField.waitForExistence(timeout: 15))
-    XCTAssertTrue(app.staticTexts["Delivered"].waitForExistence(timeout: 15))
+    expect(app.messageField, "step 2: message field exists")
+    expect(app.staticTexts["Delivered"], "step 2: Delivered caption exists")
     capture(app, "2-hermes")
 
     scrollToTop(app) { app.buttons["loadEarlier"].isHittable }
-    XCTAssertTrue(app.buttons["loadEarlier"].isHittable)
+    XCTAssertTrue(
+      app.buttons["loadEarlier"].isHittable, failure("step 4: Load Earlier button is hittable"))
     capture(app, "4-load-earlier")
 
     app.buttons["loadEarlier"].tap()
-    XCTAssertTrue(waitUntil(app.buttons["loadEarlier"], "exists == false", timeout: 15))
+    expectGone(app.buttons["loadEarlier"], "step 5: Load Earlier button is gone")
     scrollToTop(app) { app.staticTexts["Assistant Link created"].isHittable }
-    XCTAssertTrue(app.staticTexts["Assistant Link created"].isHittable)
+    XCTAssertTrue(
+      app.staticTexts["Assistant Link created"].isHittable,
+      failure("step 5: Assistant Link created text is hittable"))
     capture(app, "5-earlier-loaded")
 
     send("Can you check my flight status?", in: app)
-    XCTAssertTrue(app.staticTexts["Sent"].waitForExistence(timeout: 15))
+    expect(app.staticTexts["Sent"], "step 6: Sent caption exists")
     capture(app, "6-sent")
 
     send("slow cooker recipes for dinner", in: app)
-    XCTAssertTrue(app.staticTexts["Sending…"].waitForExistence(timeout: 15))
+    expect(app.staticTexts["Sending…"], "step 7: Sending caption exists")
     capture(app, "7-sending")
-    XCTAssertTrue(waitUntil(app.staticTexts["Sending…"], "exists == false", timeout: 30))
+    expectGone(app.staticTexts["Sending…"], "step 7: Sending caption is gone", timeout: 30)
 
     send("failover plan for the database", in: app)
-    XCTAssertTrue(app.staticTexts["Not Delivered"].waitForExistence(timeout: 30))
-    XCTAssertTrue(app.failedMessage.waitForExistence(timeout: 15))
+    expect(app.staticTexts["Not Delivered"], "step 8: Not Delivered caption exists", timeout: 30)
+    expect(app.failedMessage, "step 8: failed message button exists")
     capture(app, "8-not-delivered")
 
-    tapWhenHittable(app.failedMessage)
+    tapWhenHittable(app.failedMessage, "step 9: failed message button")
     if !dialogButton("Try Again", in: app).waitForExistence(timeout: 5) {
-      tapWhenHittable(app.staticTexts["failover plan for the database"])
+      tapWhenHittable(
+        app.staticTexts["failover plan for the database"], "step 9: failed message text")
     }
-    XCTAssertTrue(dialogButton("Try Again", in: app).waitForExistence(timeout: 15))
-    XCTAssertTrue(dialogButton("Cancel", in: app).waitForExistence(timeout: 15))
+    expect(dialogButton("Try Again", in: app), "step 9: Try Again button exists")
+    expect(dialogButton("Cancel", in: app), "step 9: Cancel button exists")
     capture(app, "9-try-again-cancel")
-    tapWhenHittable(dialogButton("Cancel", in: app))
-    XCTAssertTrue(waitUntil(app.failedMessage, "exists == false", timeout: 15))
+    tapWhenHittable(dialogButton("Cancel", in: app), "step 9: Cancel button")
+    expectGone(app.failedMessage, "step 9: failed message button is gone after Cancel")
 
     backButton(in: app).tap()
-    XCTAssertTrue(
+    expect(
       app.descendants(matching: .any)
         .matching(NSPredicate(format: "label CONTAINS %@", "You: slow cooker recipes"))
-        .firstMatch.waitForExistence(timeout: 15))
+        .firstMatch, "step 12: list preview of the sent message exists")
     capture(app, "12-list-after-send")
 
     row("Grok Bot", in: app).tap()
-    XCTAssertTrue(backButton(in: app).waitForExistence(timeout: 10))
-    XCTAssertTrue(app.buttons["createLink"].waitForExistence(timeout: 10))
+    expect(backButton(in: app), "step 3: back button exists", timeout: 10)
+    expect(app.buttons["createLink"], "step 3: Create Link button exists", timeout: 10)
     capture(app, "3-grok-bot-setup")
 
     backButton(in: app).tap()
-    XCTAssertTrue(row("Atlas", in: app).waitForExistence(timeout: 10))
+    expect(row("Atlas", in: app), "step 10: Atlas row exists", timeout: 10)
     row("Atlas", in: app).tap()
-    XCTAssertTrue(app.messageField.waitForExistence(timeout: 15))
-    XCTAssertTrue(app.offlineNotice.waitForExistence(timeout: 15))
-    XCTAssertTrue(app.messageField.isEnabled)
+    expect(app.messageField, "step 10: message field exists")
+    expect(app.offlineNotice, "step 10: offline notice exists")
+    XCTAssertTrue(app.messageField.isEnabled, failure("step 10: message field is enabled"))
     capture(app, "10-offline")
 
     backButton(in: app).tap()
-    XCTAssertTrue(row("Muse", in: app).waitForExistence(timeout: 10))
+    expect(row("Muse", in: app), "step 11: Muse row exists", timeout: 10)
     row("Muse", in: app).tap()
-    XCTAssertTrue(app.buttons["Show pairing text"].waitForExistence(timeout: 15))
-    XCTAssertFalse(app.messageField.exists)
+    expect(app.buttons["Show pairing text"], "step 11: Show pairing text button exists")
+    XCTAssertFalse(app.messageField.exists, failure("step 11: message field does not exist"))
     capture(app, "11-no-composer")
   }
 
@@ -87,15 +105,33 @@ final class ScreenshotTests: XCTestCase {
       .firstMatch
   }
 
-  /// Dialog buttons do not expose their accessibility identifiers, so find them by label.
+  /// Dialog buttons do not expose their accessibility identifiers, so find them by label. A popover
+  /// dismiss region can carry the same label as Cancel, so the first match is taken.
   @MainActor private func dialogButton(_ label: String, in app: XCUIApplication) -> XCUIElement {
-    let sheetButton = app.sheets.buttons[label]
-    return sheetButton.exists ? sheetButton : app.buttons[label]
+    app.buttons.matching(NSPredicate(format: "label == %@", label)).firstMatch
   }
 
-  @MainActor private func tapWhenHittable(_ element: XCUIElement) {
-    XCTAssertTrue(element.waitForExistence(timeout: 15))
-    XCTAssertTrue(waitUntil(element, "isHittable == true", timeout: 15))
+  /// Adds the start of the view hierarchy, which the CI summary does not otherwise show.
+  @MainActor private func failure(_ what: String) -> String {
+    "\(what)\n\(XCUIApplication().debugDescription.prefix(1500))"
+  }
+
+  @MainActor private func expect(
+    _ element: XCUIElement, _ what: String, timeout: TimeInterval = 15
+  ) {
+    XCTAssertTrue(element.waitForExistence(timeout: timeout), failure(what))
+  }
+
+  @MainActor private func expectGone(
+    _ element: XCUIElement, _ what: String, timeout: TimeInterval = 15
+  ) {
+    XCTAssertTrue(waitUntil(element, "exists == false", timeout: timeout), failure(what))
+  }
+
+  @MainActor private func tapWhenHittable(_ element: XCUIElement, _ what: String) {
+    expect(element, "\(what) exists")
+    XCTAssertTrue(
+      waitUntil(element, "isHittable == true", timeout: 15), failure("\(what) is hittable"))
     element.tap()
   }
 
@@ -113,16 +149,18 @@ final class ScreenshotTests: XCTestCase {
 
   @MainActor private func send(_ text: String, in app: XCUIApplication) {
     let field = app.messageField
-    XCTAssertTrue(field.waitForExistence(timeout: 15))
+    expect(field, "send \"\(text)\": message field exists")
     var focused = false
     for _ in 0..<3 where !focused {
       field.tap()
       focused = waitUntil(field, "hasKeyboardFocus == true", timeout: 5)
     }
-    XCTAssertTrue(focused)
+    XCTAssertTrue(focused, failure("send \"\(text)\": message field has keyboard focus"))
     field.typeText(text)
     let button = app.buttons["sendButton"]
-    XCTAssertTrue(waitUntil(button, "isEnabled == true", timeout: 15))
+    XCTAssertTrue(
+      waitUntil(button, "isEnabled == true", timeout: 15),
+      failure("send \"\(text)\": send button is enabled"))
     button.tap()
   }
 
