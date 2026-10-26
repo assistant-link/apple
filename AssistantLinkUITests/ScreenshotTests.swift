@@ -3,22 +3,17 @@ import XCTest
 final class ScreenshotTests: XCTestCase {
   private static let service = "http://127.0.0.1:8765"
 
-  override func tearDown() async throws {
-    if testRun?.hasBeenSkipped == false, (testRun?.totalFailureCount ?? 0) > 0 {
-      await MainActor.run {
-        let app = XCUIApplication()
-        capture(app, "99-failure")
-        let hierarchy = XCTAttachment(string: String(app.debugDescription.prefix(3000)))
-        hierarchy.name = "99-hierarchy"
-        hierarchy.lifetime = .keepAlways
-        add(hierarchy)
-      }
-    }
-    try await super.tearDown()
-  }
-
   @MainActor func testCaptureKeyScreens() {
     continueAfterFailure = false
+    addTeardownBlock { @MainActor [self] in
+      guard (testRun?.totalFailureCount ?? 0) > 0 else { return }
+      let app = XCUIApplication()
+      capture(app, "99-failure")
+      let hierarchy = XCTAttachment(string: String(app.debugDescription.prefix(3000)))
+      hierarchy.name = "99-hierarchy"
+      hierarchy.lifetime = .keepAlways
+      add(hierarchy)
+    }
     Self.resetService()
     let app = XCUIApplication()
     app.launchArguments = ["-serviceURL", Self.service]
