@@ -333,7 +333,8 @@ struct AppModelTests {
 
   @Test func loadingEarlierIgnoresAChangeToTheOldestEventMeanwhile() async throws {
     let api = eventsAPI { query in
-      query["before"] == nil ? Self.pageJSON(["e-3", "e-4"], hasMore: true) : Self.pageJSON(["e-2"])
+      if query["before"] == nil { return Self.pageJSON(["e-3", "e-4"], hasMore: true) }
+      return Self.pageJSON(["e-2"])
     }
     let model = AppModel(connect: { api })
     await model.start()
