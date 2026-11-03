@@ -16,6 +16,7 @@ struct MessageBubble: View {
           FailureBadge(action: onFailureTap)
         }
         ChatBubble(text: isDeleted ? "This message was deleted" : text, style: style)
+          .frame(maxWidth: 295, alignment: isFromUser ? .trailing : .leading)
           .onTapGesture { onFailureTap?() }
         if !isFromUser { Spacer(minLength: 48) }
       }
@@ -82,33 +83,12 @@ struct ComposerView: View {
           .frame(maxWidth: .infinity)
           .accessibilityIdentifier("offlineNotice")
       }
-      HStack(alignment: .bottom, spacing: 8) {
-        TextField("Message", text: $draft, axis: .vertical)
-          .lineLimit(1...5)
-          // Without it the field takes any extra height it is offered and draws its text at the top.
-          .fixedSize(horizontal: false, vertical: true)
-          .padding(.horizontal, 14)
-          .padding(.vertical, 9)
-          .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 20))
-          .accessibilityIdentifier("messageField")
-        if draft.isEmpty {
-          Button("Voice chat", systemImage: "mic.circle.fill", action: startCall)
-            .labelStyle(.iconOnly)
-            .font(.largeTitle)
-            .disabled(model.voiceCall.state != .idle)
-            .accessibilityIdentifier("voiceButton")
-        } else {
-          Button("Send", systemImage: "arrow.up.circle.fill", action: send)
-            .labelStyle(.iconOnly)
-            .font(.largeTitle)
-            .disabled(!TextValidation.isValidMessage(draft))
-            .accessibilityIdentifier("sendButton")
-        }
-      }
+      MessageComposer(
+        draft: $draft, isInCall: model.voiceCall.state != .idle, onSend: send,
+        onVoiceChat: startCall)
     }
-    .padding(.horizontal)
+    .padding(.horizontal, 16)
     .padding(.vertical, 8)
-    .background(.bar)
     .alert("Can't start the voice chat", isPresented: $isVoiceUnavailable) {
       Button("Open Settings") {
         if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }

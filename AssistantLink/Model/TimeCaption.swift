@@ -16,4 +16,10 @@ enum TimeCaption {
     }
     return date.formatted(style.month(.abbreviated).day().hour().minute())
   }
+
+  /// A caption heads a message sent an hour or more after the one before it, and the first one.
+  static func isShown(for date: Date, after previous: Date?) -> Bool {
+    guard let previous else { return true }
+    return date.timeIntervalSince(previous) >= 3_600
+  }
 }
