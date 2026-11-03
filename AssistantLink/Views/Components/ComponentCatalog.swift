@@ -29,7 +29,7 @@ struct ComponentCatalog: View {
     }
     .padding(16)
     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-    .background(Color(.systemGroupedBackground))
+    .background(Color(.systemBackground))
   }
 
   private var messages: some View {

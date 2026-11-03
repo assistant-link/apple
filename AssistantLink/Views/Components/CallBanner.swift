@@ -21,9 +21,15 @@ struct CallBanner: View {
       )
       .labelStyle(.iconOnly)
       .buttonStyle(.plain)
-      .foregroundStyle(phase == .muted ? Color(.systemBackground) : .primary)
+      .foregroundStyle(phase == .muted ? Color(.systemBackground) : Color.primary)
       .frame(width: 40, height: 40)
-      .background(phase == .muted ? AnyShapeStyle(.primary) : AnyShapeStyle(.clear), in: Circle())
+      .background {
+        if phase == .muted {
+          Circle().fill(Color.primary)
+        } else {
+          Circle().fill(Color(.tertiarySystemFill))
+        }
+      }
       .accessibilityIdentifier("voiceMute")
       Button("End", systemImage: "xmark", action: onEnd)
         .labelStyle(.iconOnly)
