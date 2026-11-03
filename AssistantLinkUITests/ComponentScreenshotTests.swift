@@ -43,7 +43,8 @@ final class ComponentScreenshotTests: XCTestCase {
     app.launchArguments = ["-componentCatalog", "pairing"]
     app.launch()
     XCTAssertTrue(
-      app.buttons["createLink"].waitForExistence(timeout: 30), "the first-pairing screen did not appear")
+      app.buttons["createLink"].waitForExistence(timeout: 30),
+      "the first-pairing screen did not appear")
     Thread.sleep(forTimeInterval: 1)
     capture(app, "32-first-pairing")
   }
