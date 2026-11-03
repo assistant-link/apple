@@ -14,6 +14,7 @@ struct CallPresentation: Equatable {
     }
   }
 
+  @MainActor
   init(_ call: VoiceCall, assistantID: Assistant.ID) {
     self.init(
       state: call.state, isMuted: call.isMuted, callAssistantID: call.assistantID,
