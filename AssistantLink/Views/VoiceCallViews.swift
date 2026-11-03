@@ -1,21 +1,22 @@
 import SwiftUI
 
-/// Bars that move with `amplitude` (0 to 1).
+/// Bars that move with `amplitude` (0 to 1); with `growing`, they rise toward the right.
 struct WaveformView: View {
   let amplitude: Double
   let height: CGFloat
   var barWidth: CGFloat = 3
-
-  private static let barCount = 5
+  var barCount = 5
+  var growing = false
 
   var body: some View {
     TimelineView(.animation) { context in
       let time = context.date.timeIntervalSinceReferenceDate
       HStack(spacing: barWidth) {
-        ForEach(0..<Self.barCount, id: \.self) { index in
+        ForEach(0..<barCount, id: \.self) { index in
           let wave = abs(sin(time * 6 + Double(index) * 0.9))
+          let envelope = growing ? Double(index + 1) / Double(barCount) : 1
           Capsule()
-            .frame(width: barWidth, height: height * (0.2 + 0.8 * amplitude * wave))
+            .frame(width: barWidth, height: height * (0.15 + 0.85 * amplitude * wave * envelope))
         }
       }
       .frame(height: height)
