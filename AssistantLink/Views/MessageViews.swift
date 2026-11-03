@@ -5,6 +5,7 @@ struct MessageBubble: View {
   let isFromUser: Bool
   var isDeleted = false
   var caption: MessageCaption?
+  var isVoice = false
   var onFailureTap: (() -> Void)?
 
   var body: some View {
@@ -30,10 +31,16 @@ struct MessageBubble: View {
         if !isFromUser { Spacer(minLength: 48) }
       }
       if let caption {
-        Text(caption.text)
-          .font(.caption)
-          .foregroundStyle(caption == .notDelivered ? Color.red : Color.secondary)
-          .padding(.horizontal, 4)
+        HStack(spacing: 4) {
+          if isVoice {
+            Image(systemName: "mic.fill")
+              .accessibilityLabel("Voice")
+          }
+          Text(caption.text)
+        }
+        .font(.caption)
+        .foregroundStyle(caption == .notDelivered ? Color.red : Color.secondary)
+        .padding(.horizontal, 4)
       }
     }
     .frame(maxWidth: .infinity, alignment: isFromUser ? .trailing : .leading)
@@ -87,6 +94,8 @@ struct ComposerView: View {
 
   @Environment(AppModel.self) private var model
   @State private var draft = ""
+  @State private var isVoiceUnavailable = false
+  @Environment(\.openURL) private var openURL
 
   var body: some View {
     VStack(spacing: 8) {
@@ -105,16 +114,38 @@ struct ComposerView: View {
           .padding(.vertical, 9)
           .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 20))
           .accessibilityIdentifier("messageField")
-        Button("Send", systemImage: "arrow.up.circle.fill", action: send)
-          .labelStyle(.iconOnly)
-          .font(.largeTitle)
-          .disabled(!TextValidation.isValidMessage(draft))
-          .accessibilityIdentifier("sendButton")
+        if draft.isEmpty {
+          Button("Voice chat", systemImage: "mic.circle.fill", action: startCall)
+            .labelStyle(.iconOnly)
+            .font(.largeTitle)
+            .disabled(model.voiceCall.state != .idle)
+            .accessibilityIdentifier("voiceButton")
+        } else {
+          Button("Send", systemImage: "arrow.up.circle.fill", action: send)
+            .labelStyle(.iconOnly)
+            .font(.largeTitle)
+            .disabled(!TextValidation.isValidMessage(draft))
+            .accessibilityIdentifier("sendButton")
+        }
       }
     }
     .padding(.horizontal)
     .padding(.vertical, 8)
     .background(.bar)
+    .alert("Can't start the voice chat", isPresented: $isVoiceUnavailable) {
+      Button("Open Settings") {
+        if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
+      }
+      Button("Cancel", role: .cancel) {}
+    } message: {
+      Text("Allow Microphone and Speech Recognition for Assistant Link in Settings.")
+    }
+  }
+
+  private func startCall() {
+    Task {
+      isVoiceUnavailable = !(await model.startVoiceCall(assistantID: assistant.id))
+    }
   }
 
   private func send() {

@@ -24,6 +24,43 @@ struct EventDecodingTests {
           idempotencyKey: "k-1", text: "Hi"))
   }
 
+  @Test func decodesAMessageSentByVoice() throws {
+    let event = try decode(
+      #"""
+      {"id": "e-1", "assistant_id": "as-1", "type": "text_message", "sender": "user",
+       "link_id": null, "created_at": "2026-10-08T12:30:15Z", "deleted": false,
+       "delivery_status": "sent", "idempotency_key": "k-1",
+       "text_message": {"text": "Hi", "via": "voice"}}
+      """#)
+
+    #expect(event.text == "Hi")
+    #expect(event.via == .voice)
+  }
+
+  @Test func aMessageWithoutViaHasNone() throws {
+    let event = try decode(
+      #"""
+      {"id": "e-1", "assistant_id": "as-1", "type": "text_message", "sender": "user",
+       "link_id": null, "created_at": "2026-10-08T12:30:15Z", "deleted": false,
+       "delivery_status": "sent", "idempotency_key": "k-1", "text_message": {"text": "Hi"}}
+      """#)
+
+    #expect(event.via == nil)
+  }
+
+  @Test func anUnknownViaIsIgnored() throws {
+    let event = try decode(
+      #"""
+      {"id": "e-1", "assistant_id": "as-1", "type": "text_message", "sender": "user",
+       "link_id": null, "created_at": "2026-10-08T12:30:15Z", "deleted": false,
+       "delivery_status": "sent", "idempotency_key": "k-1",
+       "text_message": {"text": "Hi", "via": "telepathy"}}
+      """#)
+
+    #expect(event.text == "Hi")
+    #expect(event.via == nil)
+  }
+
   @Test func decodesAnAssistantMessageWithoutDeliveryStatus() throws {
     let event = try decode(
       #"""

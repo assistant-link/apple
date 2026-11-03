@@ -7,6 +7,8 @@ struct ConversationView: View {
   @State private var pairingLink: Link?
   @State private var failedMessage: OutgoingMessage?
   @State private var position = ScrollPosition(edge: .bottom)
+  @State private var isVoiceExpanded = false
+  @Environment(\.scenePhase) private var scenePhase
 
   var body: some View {
     if let assistant = model.assistant(id: assistantID) {
@@ -26,7 +28,26 @@ struct ConversationView: View {
           .buttonStyle(.plain)
           .accessibilityHint("Shows the Assistant's details and Links")
         }
+        if isCallOn(with: assistant) {
+          ToolbarItem(placement: .topBarTrailing) {
+            VoiceCallPill(call: model.voiceCall) { isVoiceExpanded.toggle() }
+          }
+        }
       }
+      .safeAreaInset(edge: .top) {
+        if isCallOn(with: assistant) && isVoiceExpanded {
+          VoiceCallBanner(
+            call: model.voiceCall, assistantName: assistant.name,
+            onCollapse: { isVoiceExpanded = false }, onEnd: { model.endVoiceCall() })
+        }
+      }
+      .onChange(of: model.voiceCall.state) {
+        if !isCallOn(with: assistant) { isVoiceExpanded = false }
+      }
+      .onChange(of: scenePhase) {
+        if scenePhase == .background { model.endVoiceCall() }
+      }
+      .onDisappear { if isCallOn(with: assistant) { model.endVoiceCall() } }
       .sheet(item: $pairingLink) { link in
         PairingView(
           assistantName: assistant.name, linkID: link.id,
@@ -35,6 +56,10 @@ struct ConversationView: View {
     } else {
       ContentUnavailableView("Assistant not found", systemImage: "questionmark.circle")
     }
+  }
+
+  private func isCallOn(with assistant: Assistant) -> Bool {
+    model.voiceCall.state != .idle && model.voiceCall.assistantID == assistant.id
   }
 
   private func timeline(_ assistant: Assistant) -> some View {
@@ -53,7 +78,7 @@ struct ConversationView: View {
         ForEach(content.outgoing) { message in
           MessageBubble(
             text: message.text, isFromUser: true,
-            caption: content.caption(forMessageID: message.id),
+            caption: content.caption(forMessageID: message.id), isVoice: message.via == .voice,
             onFailureTap: message.state == .failed ? { failedMessage = message } : nil)
         }
       }
@@ -90,7 +115,11 @@ struct ConversationView: View {
     case .textMessage:
       MessageBubble(
         text: event.text ?? "", isFromUser: event.sender == .user, isDeleted: event.deleted,
-        caption: timeline.caption(forMessageID: event.id))
+        caption: timeline.caption(forMessageID: event.id), isVoice: event.via == .voice)
+    case .callStarted:
+      EmptyView()
+    case .callEnded:
+      VoiceChatBubble(seconds: timeline.voiceChatSeconds(endedBy: event))
     case .linkCreated:
       if let position = assistant.links.firstIndex(where: { $0.id == event.linkID }) {
         let link = assistant.links[position]

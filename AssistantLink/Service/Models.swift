@@ -66,6 +66,8 @@ struct Event: Decodable, Equatable, Identifiable, Sendable {
   enum Kind: String, Decodable, Sendable {
     case textMessage = "text_message"
     case linkCreated = "link_created"
+    case callStarted = "call_started"
+    case callEnded = "call_ended"
   }
 
   enum Sender: String, Decodable, Sendable {
@@ -79,6 +81,11 @@ struct Event: Decodable, Equatable, Identifiable, Sendable {
     case delivered
   }
 
+  /// How the user made a text message, when not by typing it.
+  enum Via: String, Codable, Sendable {
+    case voice
+  }
+
   let id: String
   let assistantID: String
   let type: Kind
@@ -90,6 +97,7 @@ struct Event: Decodable, Equatable, Identifiable, Sendable {
   var deliveryStatus: DeliveryStatus?
   var idempotencyKey: String?
   var text: String?
+  var via: Via?
 }
 
 extension Event {
@@ -105,6 +113,8 @@ extension Event {
 
   private struct TextContent: Decodable {
     let text: String
+    /// Kept as text so a value this app doesn't know doesn't fail the whole event.
+    let via: String?
   }
 
   init(from decoder: any Decoder) throws {
@@ -118,7 +128,9 @@ extension Event {
     deleted = try container.decode(Bool.self, forKey: .deleted)
     deliveryStatus = try container.decodeIfPresent(DeliveryStatus.self, forKey: .deliveryStatus)
     idempotencyKey = try container.decodeIfPresent(String.self, forKey: .idempotencyKey)
-    text = try container.decodeIfPresent(TextContent.self, forKey: .textMessage)?.text
+    let content = try container.decodeIfPresent(TextContent.self, forKey: .textMessage)
+    text = content?.text
+    via = content?.via.flatMap(Via.init(rawValue:))
   }
 }
 

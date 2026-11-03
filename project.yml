@@ -35,6 +35,8 @@ targets:
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         ENABLE_PREVIEWS: YES
         INFOPLIST_KEY_CFBundleDisplayName: Assistant Link
+        INFOPLIST_KEY_NSMicrophoneUsageDescription: Assistant Link listens to you during a voice chat.
+        INFOPLIST_KEY_NSSpeechRecognitionUsageDescription: Assistant Link turns what you say into text messages for your Assistant.
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait

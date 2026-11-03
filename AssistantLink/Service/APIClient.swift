@@ -68,12 +68,22 @@ struct APIClient: Sendable {
 
   /// Posting the same `idempotencyKey` again returns the stored event instead of a new one.
   func sendMessage(
-    assistantID: String, text: String, idempotencyKey: String
+    assistantID: String, text: String, idempotencyKey: String, via: Event.Via? = nil
   ) async throws -> Event {
     let response: MessageResponse = try await send(
       "POST", "assistants/\(assistantID)/messages",
-      body: ["text": text, "idempotency_key": idempotencyKey])
+      body: MessageRequest(text: text, idempotencyKey: idempotencyKey, via: via))
     return response.message
+  }
+
+  /// Posting the same `idempotencyKey` again returns the stored event instead of a new one.
+  func sendCallEvent(
+    assistantID: String, type: Event.Kind, idempotencyKey: String
+  ) async throws -> Event {
+    let response: CallEventResponse = try await send(
+      "POST", "assistants/\(assistantID)/call_events",
+      body: ["type": type.rawValue, "idempotency_key": idempotencyKey])
+    return response.event
   }
 
   func deleteAccount() async throws {
@@ -182,6 +192,21 @@ private struct EventsResponse: Decodable {
     case events
     case hasMore = "has_more"
   }
+}
+
+private struct MessageRequest: Encodable {
+  let text: String
+  let idempotencyKey: String
+  let via: Event.Via?
+
+  enum CodingKeys: String, CodingKey {
+    case text, via
+    case idempotencyKey = "idempotency_key"
+  }
+}
+
+private struct CallEventResponse: Decodable {
+  let event: Event
 }
 
 private struct MessageResponse: Decodable {

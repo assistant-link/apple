@@ -17,8 +17,10 @@ final class AppModel {
   private(set) var timelines: [Assistant.ID: Timeline] = [:]
   /// Changes whenever the app starts using an account, so live updates restart with it.
   private(set) var session = 0
+  let voiceCall: VoiceCall
 
   private static let pageSize = 50
+  private static let callEventAttempts = 3
   private static let logger = Logger(subsystem: "ai.assistantlink.app", category: "live")
 
   private let connect: @Sendable () async throws -> APIClient
@@ -26,15 +28,18 @@ final class AppModel {
   private let makeLiveUpdates: @MainActor (APIClient) -> LiveUpdates?
   private var api: APIClient?
   private var pairingCodes: [Link.ID: PairingCode] = [:]
+  private(set) var callEvents: Task<Void, Never>?
 
   init(
     connect: @escaping @Sendable () async throws -> APIClient,
     forget: @escaping @Sendable () throws -> Void = {},
-    liveUpdates: @escaping @MainActor (APIClient) -> LiveUpdates? = LiveUpdates.live
+    liveUpdates: @escaping @MainActor (APIClient) -> LiveUpdates? = LiveUpdates.live,
+    voiceCall: VoiceCall = .live()
   ) {
     self.connect = connect
     self.forget = forget
     self.makeLiveUpdates = liveUpdates
+    self.voiceCall = voiceCall
   }
 
   static func live() -> AppModel {
@@ -71,6 +76,7 @@ final class AppModel {
 
   func refresh() async throws {
     assistants = try await client().listAssistants()
+    syncVoiceCall()
   }
 
   /// Keeps statuses and conversations current until cancelled. Each time the live connection
@@ -86,6 +92,7 @@ final class AppModel {
           return
         }
         self.assistants = assistants
+        syncVoiceCall()
         phase = .ready
         for id in timelines.keys {
           try? await loadLatest(assistantID: id, using: api)
@@ -108,6 +115,7 @@ final class AppModel {
         change.lastActiveAt ?? assistants[index].links[linkIndex].lastActiveAt
       assistants[index].status =
         assistants[index].links.contains { $0.status == .online } ? .online : .offline
+      syncVoiceCall()
       return
     }
   }
@@ -115,6 +123,7 @@ final class AppModel {
   func apply(created event: Event) {
     timelines[event.assistantID]?.receive(event)
     setLatestEvent(event, onlyIfLatest: false)
+    voiceCall.receive(event)
   }
 
   func apply(updated event: Event) {
@@ -146,18 +155,20 @@ final class AppModel {
 
   /// Shows `text` as a message being sent and posts it. Returns whether the text was valid.
   @discardableResult
-  func send(text: String, assistantID: Assistant.ID) async -> Bool {
-    guard let message = queue(text: text, assistantID: assistantID) else { return false }
+  func send(text: String, assistantID: Assistant.ID, via: Event.Via? = nil) async -> Bool {
+    guard let message = queue(text: text, assistantID: assistantID, via: via) else {
+      return false
+    }
     await post(message)
     return true
   }
 
   /// Adds the message as "Sending…" under a fresh idempotency key, without posting it.
-  func queue(text: String, assistantID: Assistant.ID) -> OutgoingMessage? {
+  func queue(text: String, assistantID: Assistant.ID, via: Event.Via? = nil) -> OutgoingMessage? {
     guard TextValidation.isValidMessage(text) else { return nil }
     let message = OutgoingMessage(
       assistantID: assistantID, idempotencyKey: UUIDv7.make(), text: text, createdAt: .now,
-      receivedBefore: timelines[assistantID]?.received ?? 0)
+      receivedBefore: timelines[assistantID]?.received ?? 0, via: via)
     timelines[assistantID, default: Timeline()].outgoing.append(message)
     return message
   }
@@ -168,7 +179,7 @@ final class AppModel {
     do {
       let event = try await client().sendMessage(
         assistantID: message.assistantID, text: message.text,
-        idempotencyKey: message.idempotencyKey)
+        idempotencyKey: message.idempotencyKey, via: message.via)
       guard self.session == session else { return }
       if timelines[message.assistantID, default: Timeline()].store(event) {
         setLatestEvent(event, onlyIfLatest: false)
@@ -177,6 +188,50 @@ final class AppModel {
       guard self.session == session else { return }
       setState(.failed, of: message, from: .sending)
     }
+  }
+
+  /// Starts a voice chat with the Assistant; what the user says is sent as messages. The
+  /// service is told when the chat starts and ends, which wakes and releases the agent.
+  func startVoiceCall(assistantID: Assistant.ID) async -> Bool {
+    let started = await voiceCall.start(
+      assistantID: assistantID, isOnline: assistant(id: assistantID)?.status == .online,
+      send: { text in
+        Task { await self.send(text: text, assistantID: assistantID, via: .voice) }
+      },
+      onEnd: { self.post(call: .callEnded, assistantID: assistantID) })
+    if started {
+      post(call: .callStarted, assistantID: assistantID)
+    }
+    return started
+  }
+
+  func endVoiceCall() {
+    voiceCall.end()
+  }
+
+  /// Posts in order, so a chat's end never overtakes its start.
+  private func post(call type: Event.Kind, assistantID: Assistant.ID) {
+    let previous = callEvents
+    let key = UUIDv7.make()
+    callEvents = Task {
+      await previous?.value
+      for attempt in 1...Self.callEventAttempts {
+        if attempt > 1 { try? await Task.sleep(for: .seconds(1)) }
+        guard
+          let event = try? await client().sendCallEvent(
+            assistantID: assistantID, type: type, idempotencyKey: key)
+        else { continue }
+        if timelines[assistantID, default: Timeline()].store(event) {
+          setLatestEvent(event, onlyIfLatest: false)
+        }
+        return
+      }
+    }
+  }
+
+  private func syncVoiceCall() {
+    guard let id = voiceCall.assistantID else { return }
+    voiceCall.setOnline(assistant(id: id)?.status == .online)
   }
 
   func retry(_ message: OutgoingMessage) async {

@@ -1,0 +1,250 @@
+import Foundation
+import Observation
+
+enum SpeechEvent: Equatable, Sendable {
+  case partial(String)
+  case final(String)
+  /// The recognizer ended without a final result, for example after a long silence.
+  case stopped
+  /// The microphone input level, 0 to 1.
+  case level(Float)
+}
+
+@MainActor
+protocol SpeechListener: AnyObject {
+  func start(_ handler: @escaping @MainActor (SpeechEvent) -> Void) throws
+  func stop()
+}
+
+@MainActor
+protocol SpeechSpeaker: AnyObject {
+  /// Speaks `text`, then calls `onFinish`, unless `stop()` ends it first.
+  func speak(_ text: String, onFinish: @escaping @MainActor () -> Void)
+  func stop()
+}
+
+@MainActor
+protocol VoiceAudio: AnyObject {
+  /// Asks for the microphone and speech recognition permissions; whether both are granted.
+  func requestPermission() async -> Bool
+  func activate() throws
+  func deactivate()
+}
+
+@MainActor
+protocol SilenceTimer: AnyObject {
+  /// Calls `fire` after the silence, unless `restart` or `cancel` comes first.
+  func restart(_ fire: @escaping @MainActor () -> Void)
+  func cancel()
+}
+
+@MainActor
+final class TaskSilenceTimer: SilenceTimer {
+  private let duration: Duration
+  private var task: Task<Void, Never>?
+
+  init(after duration: Duration = .milliseconds(1200)) {
+    self.duration = duration
+  }
+
+  func restart(_ fire: @escaping @MainActor () -> Void) {
+    task?.cancel()
+    task = Task { [duration] in
+      try? await Task.sleep(for: duration)
+      guard !Task.isCancelled else { return }
+      fire()
+    }
+  }
+
+  func cancel() {
+    task?.cancel()
+    task = nil
+  }
+}
+
+enum VoiceChat {
+  /// Minutes and seconds, `mm:ss`; minutes keep counting past an hour.
+  static func text(seconds: Int?) -> String {
+    guard let seconds else { return "Voice chat" }
+    return String(format: "Voice chat · %02d:%02d", seconds / 60, seconds % 60)
+  }
+}
+
+/// A hands-free conversation with one Assistant: it waits until the Assistant is online, then
+/// listens, sends what the user says, and speaks the Assistant's replies. It never listens while
+/// speaking, so it can't hear itself.
+@MainActor
+@Observable
+final class VoiceCall {
+  enum State: Equatable {
+    case idle
+    /// Waiting for the Assistant to come online.
+    case connecting
+    case listening
+    case speaking
+  }
+
+  private(set) var state = State.idle
+  private(set) var isMuted = false
+  private(set) var assistantID: Assistant.ID?
+  /// The microphone input level, 0 to 1, while listening.
+  private(set) var level: Float = 0
+
+  private let listener: any SpeechListener
+  private let speaker: any SpeechSpeaker
+  private let audio: any VoiceAudio
+  private let silence: any SilenceTimer
+  private var send: (@MainActor (String) -> Void)?
+  private var onEnd: (@MainActor () -> Void)?
+  private var isOnline = false
+  private var isStarting = false
+  private var heard = ""
+  private var replies: [String] = []
+  private var spokenIDs: Set<Event.ID> = []
+
+  init(
+    listener: any SpeechListener, speaker: any SpeechSpeaker, audio: any VoiceAudio,
+    silence: any SilenceTimer = TaskSilenceTimer()
+  ) {
+    self.listener = listener
+    self.speaker = speaker
+    self.audio = audio
+    self.silence = silence
+  }
+
+  /// Starts the call after asking for permission. Returns whether it started; only then
+  /// `onEnd` runs, once, when the call ends.
+  func start(
+    assistantID: Assistant.ID, isOnline: Bool, send: @escaping @MainActor (String) -> Void,
+    onEnd: @escaping @MainActor () -> Void
+  ) async -> Bool {
+    guard state == .idle, !isStarting else { return false }
+    isStarting = true
+    defer { isStarting = false }
+    guard await audio.requestPermission(), state == .idle else { return false }
+    do {
+      try audio.activate()
+    } catch {
+      return false
+    }
+    self.assistantID = assistantID
+    self.send = send
+    self.isOnline = isOnline
+    isMuted = false
+    state = isOnline ? .listening : .connecting
+    startListening()
+    guard state != .idle else { return false }
+    self.onEnd = onEnd
+    return true
+  }
+
+  /// Follows whether the Assistant is online: listening waits for it, and stops when it leaves.
+  /// A reply being spoken is finished first.
+  func setOnline(_ online: Bool) {
+    isOnline = online
+    if online, state == .connecting {
+      state = .listening
+      startListening()
+    } else if !online, state == .listening {
+      stopListening()
+      state = .connecting
+    }
+  }
+
+  func end() {
+    guard state != .idle else { return }
+    stopListening()
+    speaker.stop()
+    audio.deactivate()
+    replies = []
+    spokenIDs = []
+    send = nil
+    isMuted = false
+    state = .idle
+    let onEnd = onEnd
+    self.onEnd = nil
+    onEnd?()
+  }
+
+  func setMuted(_ muted: Bool) {
+    guard state != .idle, muted != isMuted else { return }
+    isMuted = muted
+    if muted {
+      stopListening()
+    } else {
+      startListening()
+    }
+  }
+
+  /// Queues a new text message of the Assistant to be spoken.
+  func receive(_ event: Event) {
+    guard state != .idle, event.assistantID == assistantID, event.type == .textMessage,
+      event.sender == .assistant, !event.deleted,
+      let text = event.text?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty,
+      spokenIDs.insert(event.id).inserted
+    else { return }
+    replies.append(text)
+    if state != .speaking {
+      speakNext()
+    }
+  }
+
+  private func speakNext() {
+    guard !replies.isEmpty else {
+      state = isOnline ? .listening : .connecting
+      startListening()
+      return
+    }
+    stopListening()
+    state = .speaking
+    speaker.speak(replies.removeFirst()) { [weak self] in
+      guard let self, state == .speaking else { return }
+      speakNext()
+    }
+  }
+
+  private func startListening() {
+    guard state == .listening, !isMuted else { return }
+    do {
+      try listener.start { [weak self] in self?.handle($0) }
+    } catch {
+      end()
+    }
+  }
+
+  private func stopListening() {
+    silence.cancel()
+    heard = ""
+    level = 0
+    listener.stop()
+  }
+
+  private func handle(_ event: SpeechEvent) {
+    guard state == .listening, !isMuted else { return }
+    switch event {
+    case .level(let value):
+      level = value
+    case .partial(let text):
+      heard = text
+      restartSilenceTimer()
+    case .final(let text):
+      heard = text
+      finishUtterance()
+    case .stopped:
+      finishUtterance()
+    }
+  }
+
+  private func restartSilenceTimer() {
+    silence.restart { [weak self] in self?.finishUtterance() }
+  }
+
+  private func finishUtterance() {
+    let text = heard.trimmingCharacters(in: .whitespacesAndNewlines)
+    stopListening()
+    if !text.isEmpty {
+      send?(text)
+    }
+    startListening()
+  }
+}
