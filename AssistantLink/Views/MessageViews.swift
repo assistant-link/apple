@@ -13,47 +13,22 @@ struct MessageBubble: View {
       HStack(spacing: 8) {
         if isFromUser { Spacer(minLength: 48) }
         if let onFailureTap {
-          Button(action: onFailureTap) {
-            Image(systemName: "exclamationmark.circle.fill")
-              .font(.title3)
-              .foregroundStyle(.red)
-          }
-          .accessibilityLabel("Not Delivered")
-          .accessibilityIdentifier("failedMessage")
+          FailureBadge(action: onFailureTap)
         }
-        Text(isDeleted ? "This message was deleted" : text)
-          .italic(isDeleted)
-          .foregroundStyle(foreground)
-          .padding(.horizontal, 14)
-          .padding(.vertical, 9)
-          .background(background, in: RoundedRectangle(cornerRadius: 18))
+        ChatBubble(text: isDeleted ? "This message was deleted" : text, style: style)
           .onTapGesture { onFailureTap?() }
         if !isFromUser { Spacer(minLength: 48) }
       }
       if let caption {
-        HStack(spacing: 4) {
-          if isVoice {
-            Image(systemName: "mic.fill")
-              .accessibilityLabel("Voice")
-          }
-          Text(caption.text)
-        }
-        .font(.caption)
-        .foregroundStyle(caption == .notDelivered ? Color.red : Color.secondary)
-        .padding(.horizontal, 4)
+        DeliveryCaption(caption: caption, isVoice: isVoice)
       }
     }
     .frame(maxWidth: .infinity, alignment: isFromUser ? .trailing : .leading)
   }
 
-  private var foreground: Color {
-    if isDeleted { return .secondary }
-    return isFromUser ? .white : .primary
-  }
-
-  private var background: Color {
-    if isDeleted { return Color(.secondarySystemFill) }
-    return isFromUser ? .accentColor : Color(.secondarySystemBackground)
+  private var style: ChatBubble.Style {
+    if isDeleted { return .deleted }
+    return isFromUser ? .outgoing : .incoming
   }
 }
 

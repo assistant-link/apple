@@ -23,7 +23,9 @@ struct ConversationView: View {
       .toolbar {
         ToolbarItem(placement: .principal) {
           NavigationLink(value: Route.details(assistant.id)) {
-            TitleBubble(assistant: assistant)
+            TitleBubble(
+              name: assistant.name, avatar: Avatar(id: assistant.avatar),
+              state: assistant.status == .online ? .online : .offline)
           }
           .buttonStyle(.plain)
           .accessibilityHint("Shows the Assistant's details and Links")
@@ -119,7 +121,7 @@ struct ConversationView: View {
     case .callStarted:
       EmptyView()
     case .callEnded:
-      VoiceChatBubble(seconds: timeline.voiceChatSeconds(endedBy: event))
+      VoiceChatCaption(seconds: timeline.voiceChatSeconds(endedBy: event))
     case .linkCreated:
       if let position = assistant.links.firstIndex(where: { $0.id == event.linkID }) {
         let link = assistant.links[position]
@@ -127,40 +129,6 @@ struct ConversationView: View {
           pairingLink = link
         }
       }
-    }
-  }
-}
-
-private struct TitleBubble: View {
-  let assistant: Assistant
-
-  var body: some View {
-    HStack(spacing: 8) {
-      AvatarView(
-        avatar: Avatar(id: assistant.avatar), size: 28, isOnline: assistant.status == .online)
-      VStack(alignment: .leading, spacing: 0) {
-        Text(assistant.name)
-          .font(.headline)
-          .lineLimit(1)
-        Text(assistant.status == .online ? "Online" : "Offline")
-          .font(.caption2)
-          .foregroundStyle(.secondary)
-      }
-    }
-    .padding(.vertical, 6)
-    .padding(.leading, 6)
-    .padding(.trailing, 14)
-    .modifier(BubbleBackground())
-    .accessibilityElement(children: .combine)
-  }
-}
-
-private struct BubbleBackground: ViewModifier {
-  func body(content: Content) -> some View {
-    if #available(iOS 26.0, *) {
-      content.glassEffect(.regular.interactive(), in: .capsule)
-    } else {
-      content.background(.regularMaterial, in: Capsule())
     }
   }
 }
