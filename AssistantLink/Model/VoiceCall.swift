@@ -70,15 +70,16 @@ enum VoiceChat {
   }
 }
 
-/// A hands-free conversation with one Assistant: it waits until the Assistant is online, then
-/// listens, sends what the user says, and speaks the Assistant's replies. It never listens while
-/// speaking, so it can't hear itself.
+/// A hands-free conversation with one Assistant: it listens for the whole call, sends what the
+/// user says, and speaks the Assistant's replies. It never listens while speaking, so it can't
+/// hear itself. Speech is sent whether or not the Assistant is online: the service keeps it until
+/// the Assistant connects.
 @MainActor
 @Observable
 final class VoiceCall {
   enum State: Equatable {
     case idle
-    /// Waiting for the Assistant to come online.
+    /// Listening like `listening`, while the Assistant is not online yet.
     case connecting
     case listening
     case speaking
@@ -138,15 +139,13 @@ final class VoiceCall {
     return true
   }
 
-  /// Follows whether the Assistant is online: listening waits for it, and stops when it leaves.
-  /// A reply being spoken is finished first.
+  /// Follows whether the Assistant is online, which only decides between `connecting` and
+  /// `listening`; the microphone and any utterance in progress are left alone.
   func setOnline(_ online: Bool) {
     isOnline = online
     if online, state == .connecting {
       state = .listening
-      startListening()
     } else if !online, state == .listening {
-      stopListening()
       state = .connecting
     }
   }
@@ -203,8 +202,10 @@ final class VoiceCall {
     }
   }
 
+  private var canHear: Bool { (state == .listening || state == .connecting) && !isMuted }
+
   private func startListening() {
-    guard state == .listening, !isMuted else { return }
+    guard canHear else { return }
     do {
       try listener.start { [weak self] in self?.handle($0) }
     } catch {
@@ -220,7 +221,7 @@ final class VoiceCall {
   }
 
   private func handle(_ event: SpeechEvent) {
-    guard state == .listening, !isMuted else { return }
+    guard canHear else { return }
     switch event {
     case .level(let value):
       level = value

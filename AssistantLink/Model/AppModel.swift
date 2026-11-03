@@ -196,7 +196,11 @@ final class AppModel {
     let started = await voiceCall.start(
       assistantID: assistantID, isOnline: assistant(id: assistantID)?.status == .online,
       send: { text in
-        Task { await self.send(text: text, assistantID: assistantID, via: .voice) }
+        // Speech can come before the Assistant is online, so keep it behind `call_started`.
+        Task {
+          await self.callEvents?.value
+          await self.send(text: text, assistantID: assistantID, via: .voice)
+        }
       },
       onEnd: { self.post(call: .callEnded, assistantID: assistantID) })
     if started {

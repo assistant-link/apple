@@ -58,7 +58,8 @@ let call = model.voiceCall
 
 let callStart = ContinuousClock.now
 check(await model.startVoiceCall(assistantID: assistantID), "the call started")
-check(call.state == .connecting, "the call waits for the Assistant")
+check(call.state == .connecting, "the call shows the Assistant as not online yet")
+check(listener.isListening, "the call listens before the Assistant is online")
 check(await until(60) { call.state == .listening }, "the Assistant came online")
 print("Online \(ms(.now - callStart)) ms after the call started")
 // The Assistant's `al read` ends before its `al call` connects, which takes it offline between.
