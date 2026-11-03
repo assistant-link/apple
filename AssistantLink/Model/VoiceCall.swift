@@ -31,6 +31,37 @@ protocol VoiceAudio: AnyObject {
   func deactivate()
 }
 
+@MainActor
+protocol SilenceTimer: AnyObject {
+  /// Calls `fire` after the silence, unless `restart` or `cancel` comes first.
+  func restart(_ fire: @escaping @MainActor () -> Void)
+  func cancel()
+}
+
+@MainActor
+final class TaskSilenceTimer: SilenceTimer {
+  private let duration: Duration
+  private var task: Task<Void, Never>?
+
+  init(after duration: Duration = .milliseconds(1200)) {
+    self.duration = duration
+  }
+
+  func restart(_ fire: @escaping @MainActor () -> Void) {
+    task?.cancel()
+    task = Task { [duration] in
+      try? await Task.sleep(for: duration)
+      guard !Task.isCancelled else { return }
+      fire()
+    }
+  }
+
+  func cancel() {
+    task?.cancel()
+    task = nil
+  }
+}
+
 enum VoiceChat {
   /// Minutes and seconds, `mm:ss`; minutes keep counting past an hour.
   static func text(seconds: Int?) -> String {
@@ -62,19 +93,18 @@ final class VoiceCall {
   private let listener: any SpeechListener
   private let speaker: any SpeechSpeaker
   private let audio: any VoiceAudio
-  private let silence: Duration
+  private let silence: any SilenceTimer
   private var send: (@MainActor (String) -> Void)?
   private var onEnd: (@MainActor () -> Void)?
   private var isOnline = false
   private var isStarting = false
   private var heard = ""
-  private var silenceTimer: Task<Void, Never>?
   private var replies: [String] = []
   private var spokenIDs: Set<Event.ID> = []
 
   init(
     listener: any SpeechListener, speaker: any SpeechSpeaker, audio: any VoiceAudio,
-    silence: Duration = .milliseconds(1200)
+    silence: any SilenceTimer = TaskSilenceTimer()
   ) {
     self.listener = listener
     self.speaker = speaker
@@ -183,8 +213,7 @@ final class VoiceCall {
   }
 
   private func stopListening() {
-    silenceTimer?.cancel()
-    silenceTimer = nil
+    silence.cancel()
     heard = ""
     level = 0
     listener.stop()
@@ -207,12 +236,7 @@ final class VoiceCall {
   }
 
   private func restartSilenceTimer() {
-    silenceTimer?.cancel()
-    silenceTimer = Task {
-      try? await Task.sleep(for: silence)
-      guard !Task.isCancelled else { return }
-      finishUtterance()
-    }
+    silence.restart { [weak self] in self?.finishUtterance() }
   }
 
   private func finishUtterance() {

@@ -7,7 +7,8 @@ extension VoiceCall {
   }
 }
 
-struct LiveVoiceAudio: VoiceAudio {
+@MainActor
+final class LiveVoiceAudio: VoiceAudio {
   func requestPermission() async -> Bool {
     guard await AVAudioApplication.requestRecordPermission() else { return false }
     return await Self.speechAuthorization() == .authorized
@@ -42,6 +43,7 @@ enum SpeechListenerError: Error {
 @MainActor
 final class LiveSpeechListener: SpeechListener {
   private let engine = AVAudioEngine()
+  private var recognizer: SFSpeechRecognizer?
   private var request: SFSpeechAudioBufferRecognitionRequest?
   private var task: SFSpeechRecognitionTask?
   /// Tells results of a recognition that was stopped from those of the current one.
@@ -52,6 +54,7 @@ final class LiveSpeechListener: SpeechListener {
     guard let recognizer = SFSpeechRecognizer(locale: .current), recognizer.isAvailable else {
       throw SpeechListenerError.recognizerUnavailable
     }
+    self.recognizer = recognizer
     let request = SFSpeechAudioBufferRecognitionRequest()
     request.shouldReportPartialResults = true
     request.requiresOnDeviceRecognition = recognizer.supportsOnDeviceRecognition
@@ -165,8 +168,8 @@ final class LiveSpeechSpeaker: NSObject, SpeechSpeaker, AVSpeechSynthesizerDeleg
     _ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance
   ) {
     Task { @MainActor in
-      let finish = onFinish
-      onFinish = nil
+      let finish = self.onFinish
+      self.onFinish = nil
       finish?()
     }
   }

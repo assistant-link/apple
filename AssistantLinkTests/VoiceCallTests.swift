@@ -68,17 +68,38 @@ private final class FakeAudio: VoiceAudio {
 }
 
 @MainActor
+private final class FakeSilence: SilenceTimer {
+  private(set) var restarts = 0
+  private var pending: (@MainActor () -> Void)?
+  var isPending: Bool { pending != nil }
+
+  func restart(_ fire: @escaping @MainActor () -> Void) {
+    restarts += 1
+    pending = fire
+  }
+
+  func cancel() { pending = nil }
+
+  func fire() {
+    let fire = pending
+    pending = nil
+    fire?()
+  }
+}
+
+@MainActor
 private final class Setup {
   let listener = FakeListener()
   let speaker = FakeSpeaker()
   let audio = FakeAudio()
+  let silence = FakeSilence()
   var sent: [String] = []
   private(set) var ends = 0
   private(set) var call: VoiceCall!
 
   init() {
     call = VoiceCall(
-      listener: listener, speaker: speaker, audio: audio, silence: .milliseconds(30))
+      listener: listener, speaker: speaker, audio: audio, silence: silence)
   }
 
   func start(isOnline: Bool = true) async {
@@ -95,10 +116,6 @@ private final class Setup {
   }
 
   func noteEnd() { ends += 1 }
-
-  func waitForSilence() async throws {
-    try await Task.sleep(for: .milliseconds(200))
-  }
 }
 
 @MainActor
@@ -322,32 +339,30 @@ struct VoiceCallStateTests {
 
 @MainActor
 struct VoiceCallUtteranceTests {
-  @Test func anUtteranceIsSentAfterTheSilenceAndListeningRestarts() async throws {
+  @Test func anUtteranceIsSentAfterTheSilenceAndListeningRestarts() async {
     let setup = Setup()
     await setup.start()
 
     setup.listener.hear(.partial("remind me"))
     #expect(setup.sent.isEmpty)
     setup.listener.hear(.partial("remind me to call David"))
-    try await setup.waitForSilence()
+    setup.silence.fire()
 
     #expect(setup.sent == ["remind me to call David"])
     #expect(setup.listener.isListening)
     #expect(setup.listener.starts == 2)
   }
 
-  @Test func newPartialResultsPostponeTheEndOfTheUtterance() async throws {
+  @Test func newPartialResultsRestartTheSilence() async {
     let setup = Setup()
     await setup.start()
 
     for words in ["a", "a b", "a b c"] {
       setup.listener.hear(.partial(words))
-      try await Task.sleep(for: .milliseconds(15))
     }
-    #expect(setup.sent.isEmpty)
 
-    try await setup.waitForSilence()
-    #expect(setup.sent == ["a b c"])
+    #expect(setup.silence.restarts == 3)
+    #expect(setup.sent.isEmpty)
   }
 
   @Test func aFinalResultEndsTheUtteranceAtOnce() async {
@@ -372,48 +387,48 @@ struct VoiceCallUtteranceTests {
   }
 
   @Test(arguments: ["", "   ", "\n\t"])
-  func emptyUtterancesAreNotSent(text: String) async throws {
+  func emptyUtterancesAreNotSent(text: String) async {
     let setup = Setup()
     await setup.start()
 
     setup.listener.hear(.partial(text))
-    try await setup.waitForSilence()
+    setup.silence.fire()
     setup.listener.hear(.final(text))
 
     #expect(setup.sent.isEmpty)
     #expect(setup.listener.isListening)
   }
 
-  @Test func muteDropsTheUtteranceInProgress() async throws {
+  @Test func muteDropsTheUtteranceInProgress() async {
     let setup = Setup()
     await setup.start()
 
     setup.listener.hear(.partial("Hello"))
     setup.call.setMuted(true)
-    try await setup.waitForSilence()
+    setup.silence.fire()
 
     #expect(setup.sent.isEmpty)
   }
 
-  @Test func aReplyDropsTheUtteranceInProgress() async throws {
+  @Test func aReplyDropsTheUtteranceInProgress() async {
     let setup = Setup()
     await setup.start()
 
     setup.listener.hear(.partial("Hello"))
     setup.call.receive(setup.assistantMessage("e-1", "Hi"))
-    try await setup.waitForSilence()
+    setup.silence.fire()
 
     #expect(setup.sent.isEmpty)
   }
 
-  @Test func endingCancelsTheSilenceTimer() async throws {
+  @Test func endingCancelsTheSilenceTimer() async {
     let setup = Setup()
     await setup.start()
 
     setup.listener.hear(.partial("Hello"))
     setup.call.end()
-    try await setup.waitForSilence()
 
+    #expect(!setup.silence.isPending)
     #expect(setup.sent.isEmpty)
   }
 }
@@ -573,19 +588,13 @@ struct VoiceCallAppModelTests {
     return model
   }
 
-  private func settle(_ stub: Stub, calls count: Int) async throws {
-    for _ in 0..<100 where stub.bodies.withLock({ $0.count }) < count {
-      try await Task.sleep(for: .milliseconds(20))
-    }
-  }
-
-  @Test func startingSendsCallStartedAndWaitsForTheAssistantToBeOnline() async throws {
+  @Test func startingSendsCallStartedAndWaitsForTheAssistantToBeOnline() async {
     let stub = Stub()
     let listener = FakeListener()
     let model = await startedModel(stub, listener: listener)
 
     #expect(await model.startVoiceCall(assistantID: "as-1"))
-    try await settle(stub, calls: 1)
+    await model.callEvents?.value
 
     let sent = stub.bodies.withLock { $0 }
     #expect(sent.map { $0["type"] } == ["call_started"])
@@ -601,7 +610,7 @@ struct VoiceCallAppModelTests {
     #expect(model.voiceCall.state == .connecting)
   }
 
-  @Test func endingSendsCallEndedOnceAfterCallStarted() async throws {
+  @Test func endingSendsCallEndedOnceAfterCallStarted() async {
     let stub = Stub()
     let listener = FakeListener()
     let model = await startedModel(stub, listener: listener)
@@ -609,8 +618,7 @@ struct VoiceCallAppModelTests {
 
     model.endVoiceCall()
     model.endVoiceCall()
-    try await settle(stub, calls: 2)
-    try await Task.sleep(for: .milliseconds(100))
+    await model.callEvents?.value
 
     let sent = stub.bodies.withLock { $0 }
     #expect(sent.map { $0["type"] } == ["call_started", "call_ended"])

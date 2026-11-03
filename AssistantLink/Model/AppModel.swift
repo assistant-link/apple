@@ -28,7 +28,7 @@ final class AppModel {
   private let makeLiveUpdates: @MainActor (APIClient) -> LiveUpdates?
   private var api: APIClient?
   private var pairingCodes: [Link.ID: PairingCode] = [:]
-  private var callEvents: Task<Void, Never>?
+  private(set) var callEvents: Task<Void, Never>?
 
   init(
     connect: @escaping @Sendable () async throws -> APIClient,
