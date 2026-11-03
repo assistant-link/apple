@@ -37,6 +37,17 @@ final class ComponentScreenshotTests: XCTestCase {
     capture(app, "31-chat-typing")
   }
 
+  /// The first-pairing screen of the design mock 06-first-pairing.
+  @MainActor func testCaptureFirstPairing() {
+    let app = XCUIApplication()
+    app.launchArguments = ["-componentCatalog", "pairing"]
+    app.launch()
+    XCTAssertTrue(
+      app.buttons["createLink"].waitForExistence(timeout: 30), "the first-pairing screen did not appear")
+    Thread.sleep(forTimeInterval: 1)
+    capture(app, "32-first-pairing")
+  }
+
   private func capture(_ app: XCUIApplication, _ name: String) {
     let attachment = XCTAttachment(screenshot: app.screenshot())
     attachment.name = name

@@ -8,6 +8,7 @@ struct ComponentCatalog: View {
     case composer
     case call
     case chat
+    case pairing
 
     static var launched: Section? {
       UserDefaults.standard.string(forKey: "componentCatalog").flatMap(Section.init)
@@ -18,19 +19,25 @@ struct ComponentCatalog: View {
 
   var body: some View {
     if section == .chat {
-      // Pushed over an empty root so the screenshot has the back button of a real conversation.
-      NavigationStack(path: .constant([0])) {
-        Color.clear.navigationDestination(for: Int.self) { _ in
-          ConversationView(assistantID: Assistant.samples[0].id)
-        }
-      }
-      .environment(
-        AppModel.preview(Assistant.samples, timelines: [Assistant.samples[0].id: .designMock])
-      )
-      .accessibilityIdentifier("componentCatalog")
+      conversation(
+        Assistant.samples[0].id,
+        AppModel.preview(Assistant.samples, timelines: [Assistant.samples[0].id: .designMock]))
+    } else if section == .pairing {
+      conversation(Assistant.samples[1].id, AppModel.preview(Assistant.samples))
     } else {
       sections
     }
+  }
+
+  /// Pushed over an empty root so the screenshot has the back button of a real conversation.
+  private func conversation(_ id: Assistant.ID, _ model: AppModel) -> some View {
+    NavigationStack(path: .constant([0])) {
+      Color.clear.navigationDestination(for: Int.self) { _ in
+        ConversationView(assistantID: id)
+      }
+    }
+    .environment(model)
+    .accessibilityIdentifier("componentCatalog")
   }
 
   private var sections: some View {
@@ -42,7 +49,7 @@ struct ComponentCatalog: View {
       case .messages: messages
       case .composer: composer
       case .call: call
-      case .chat: EmptyView()
+      case .chat, .pairing: EmptyView()
       }
       Spacer(minLength: 0)
     }
