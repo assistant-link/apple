@@ -18,11 +18,16 @@ struct ComponentCatalog: View {
 
   var body: some View {
     if section == .chat {
-      NavigationStack { ConversationView(assistantID: Assistant.samples[0].id) }
-        .environment(
-          AppModel.preview(Assistant.samples, timelines: [Assistant.samples[0].id: .designMock])
-        )
-        .accessibilityIdentifier("componentCatalog")
+      // Pushed over an empty root so the screenshot has the back button of a real conversation.
+      NavigationStack {
+        Color.clear.navigationDestination(isPresented: .constant(true)) {
+          ConversationView(assistantID: Assistant.samples[0].id)
+        }
+      }
+      .environment(
+        AppModel.preview(Assistant.samples, timelines: [Assistant.samples[0].id: .designMock])
+      )
+      .accessibilityIdentifier("componentCatalog")
     } else {
       sections
     }
