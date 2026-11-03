@@ -11,6 +11,7 @@ struct ComponentCatalog: View {
     case callConnecting = "call-connecting"
     case callLive = "call-live"
     case afterCall = "after-call"
+    case pairing
 
     static var launched: Section? {
       UserDefaults.standard.string(forKey: "componentCatalog").flatMap(Section.init)
@@ -20,7 +21,11 @@ struct ComponentCatalog: View {
   let section: Section
 
   var body: some View {
-    if let model = chatModel {
+    if section == .pairing {
+      NavigationStack { ConversationView(assistantID: Assistant.samples[1].id) }
+        .environment(AppModel.preview(Assistant.samples))
+        .accessibilityIdentifier("componentCatalog")
+    } else if let model = chatModel {
       NavigationStack { ConversationView(assistantID: Assistant.samples[0].id) }
         .environment(model)
         .task { await startCall(on: model) }
@@ -58,7 +63,7 @@ struct ComponentCatalog: View {
       case .messages: messages
       case .composer: composer
       case .call: call
-      case .chat, .callConnecting, .callLive, .afterCall: EmptyView()
+      case .chat, .callConnecting, .callLive, .afterCall, .pairing: EmptyView()
       }
       Spacer(minLength: 0)
     }
