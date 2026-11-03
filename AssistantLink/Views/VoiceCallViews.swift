@@ -110,12 +110,13 @@ struct VoiceCallBanner: View {
   }
 }
 
-struct VoiceChatBubble: View {
+/// A small caption under the last message of a voice chat; not a bubble.
+struct VoiceChatCaption: View {
   let seconds: Int?
 
   var body: some View {
     Label(VoiceChat.text(seconds: seconds), systemImage: "waveform")
-      .font(.subheadline)
+      .font(.footnote)
       .foregroundStyle(.secondary)
       .frame(maxWidth: .infinity)
   }
