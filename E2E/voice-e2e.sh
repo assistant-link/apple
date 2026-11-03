@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # Voice call end to end: a real AppModel and VoiceCall (fake speech engines) against a live
-# service, with an `al`-only assistant woken through a webhook. Env: SERVER, AL, VOICE_E2E_CACHE.
+# service, with an `al`-only assistant woken through a webhook. Env: SERVER, AL, NTFY, VOICE_E2E_CACHE.
 set -euo pipefail
 cd "$(dirname "$0")"
 
 export SERVER=${SERVER:-https://assistant-link.fly.dev}
 export AL_SERVER=$SERVER
+NTFY=${NTFY:-https://ntfy.sh}
 AL=${AL:-al}
 tmp=$(mktemp -d)
 export E2E_DIR=$PWD
@@ -32,17 +33,13 @@ code=$(api POST "links/$link/pairing_code" | jq -r .code)
 export AL="$AL --key-file $tmp/link.key"
 $AL pair "$code" >/dev/null
 
-token=$(head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n')
-./wake_receiver.py "Bearer $token" "$tmp" &
+topic=al-e2e-$(head -c 8 /dev/urandom | od -An -tx1 | tr -d ' \n')
+python3 wake_receiver.py "$NTFY" "$topic" "$tmp" &
 pids+=($!)
-while [[ ! -s $tmp/port ]]; do sleep 0.1; done
-cloudflared tunnel --url "http://localhost:$(<"$tmp/port")" >"$tmp/tunnel.log" 2>&1 &
-pids+=($!)
-until url=$(grep -om1 'https://[a-z0-9-]*\.trycloudflare\.com' "$tmp/tunnel.log"); do sleep 0.5; done
-AL_WEBHOOK_HEADER="Authorization: Bearer $token" $AL webhook set "$url" >/dev/null
-sleep 5 # the new tunnel hostname needs a moment to resolve
+until [[ -e $tmp/subscribed ]]; do sleep 0.1; done
+$AL webhook set "$NTFY/$topic" >/dev/null
 
-swift build -Xlinker --allow-shlib-undefined >&2
+swift build >&2
 status=0
 E2E_CREDENTIAL=$credential E2E_ASSISTANT_ID=$assistant "$(swift build --show-bin-path)/VoiceE2E" ||
   status=1

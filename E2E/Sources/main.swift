@@ -24,7 +24,7 @@ func transcribe(_ lines: [String]) throws -> [String] {
   return try JSONDecoder().decode([String].self, from: data)
 }
 
-func until(_ seconds: Int, _ condition: () -> Bool) async -> Bool {
+@MainActor func until(_ seconds: Int, _ condition: @MainActor () -> Bool) async -> Bool {
   let deadline = ContinuousClock.now + .seconds(seconds)
   while !condition() {
     if ContinuousClock.now > deadline { return false }
@@ -61,18 +61,21 @@ check(await model.startVoiceCall(assistantID: assistantID), "the call started")
 check(call.state == .connecting, "the call waits for the Assistant")
 check(await until(60) { call.state == .listening }, "the Assistant came online")
 print("Online \(ms(.now - callStart)) ms after the call started")
+// The Assistant's `al read` ends before its `al call` connects, which takes it offline between.
+try? await Task.sleep(for: .seconds(3))
+check(await until(60) { call.state == .listening }, "the Assistant stayed online for the call")
 
 var rows: [(received: Int, spoken: Int)] = []
 for (index, text) in heard.enumerated() {
   check(await until(10) { listener.isListening }, "listening for line \(index + 1)")
   await listener.hear(text)
-  let isSent = {
+  @MainActor func isSent() -> Bool {
     timeline().outgoing.contains { $0.text == text }
       || timeline().events.contains { $0.sender == .user && $0.text == text }
   }
   check(await until(10, isSent), "utterance \(index + 1) was sent after the silence")
   let sentAt = ContinuousClock.now
-  func replies() -> [Event] {
+  @MainActor func replies() -> [Event] {
     timeline().events.filter { $0.sender == .assistant && $0.type == .textMessage }
   }
   let replied = await until(30) { replies().count > index && speaker.spoken.count > index }

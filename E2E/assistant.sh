@@ -21,6 +21,6 @@ $in_call || exit 0
 echo "call on"
 n=0
 $AL call | while read -r event; do
-  [[ $(jq -r .type <<<"$event") == text_message ]] && reply $((++n)) "$event"
+  if [[ $(jq -r .type <<<"$event") == text_message ]]; then reply $((++n)) "$event"; fi
 done
 echo "al call exited"

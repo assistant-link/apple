@@ -89,6 +89,23 @@ Release builds ignore the argument.
 `make device` needs a one-time setup (Xcode account, Developer Mode on the iPhone, and your
 team ID in a git-ignored `Local.mk`). See [docs/physical-device.md](docs/physical-device.md).
 
+## Voice call end to end
+
+`E2E/voice-e2e.sh` runs the app's real `AppModel` and `VoiceCall` (with fake speech engines, built with SwiftPM on
+Linux or macOS) against a live service, in a throwaway account that it deletes at the end. Piper speaks three
+sentences, Vosk transcribes them, and an emulated Assistant that only uses `al` is woken by the webhook (through a
+random [ntfy.sh](https://ntfy.sh) topic) and answers by voice. It checks that exactly one wake ping arrives, that
+the messages are stored as voice, that the replies are spoken in order, that `al call` exits after `call_ended`,
+and prints the latency of each reply.
+
+It needs Swift 6.2, `python3` with `piper-tts` and `vosk`, `ffmpeg`, `jq`, `curl` and `al`. The Piper voice
+`en_US-lessac-low.onnx` and the Vosk model `vosk-model-small-en-us-0.15` go in `VOICE_E2E_CACHE`
+(default `~/.cache/voice-e2e`).
+
+```sh
+cd E2E && SERVER=https://assistant-link.fly.dev AL=al ./voice-e2e.sh
+```
+
 ## Opening in Xcode
 
 To open the project in Xcode instead, run `make generate`, then
