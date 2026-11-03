@@ -132,21 +132,22 @@ struct VoiceCallStateTests {
     #expect(setup.audio.isActive)
   }
 
-  @Test func anOfflineAssistantKeepsTheCallConnectingUntilItIsOnline() async {
+  @Test func anOfflineAssistantShowsConnectingButTheCallListensAtOnce() async {
     let setup = Setup()
     await setup.start(isOnline: false)
 
     #expect(setup.call.state == .connecting)
-    #expect(!setup.listener.isListening)
+    #expect(setup.listener.isListening)
     #expect(setup.audio.isActive)
 
     setup.call.setOnline(true)
 
     #expect(setup.call.state == .listening)
     #expect(setup.listener.isListening)
+    #expect(setup.listener.starts == 1)
   }
 
-  @Test func theAssistantGoingOfflineMidCallGoesBackToConnecting() async {
+  @Test func theAssistantGoingOfflineMidCallKeepsListeningAndTheUtterance() async {
     let setup = Setup()
     await setup.start()
     setup.listener.hear(.partial("Hello"))
@@ -154,8 +155,13 @@ struct VoiceCallStateTests {
     setup.call.setOnline(false)
 
     #expect(setup.call.state == .connecting)
-    #expect(!setup.listener.isListening)
+    #expect(setup.listener.isListening)
+    #expect(setup.listener.starts == 1)
     #expect(setup.sent.isEmpty)
+
+    setup.silence.fire()
+
+    #expect(setup.sent == ["Hello"])
 
     setup.call.setOnline(true)
 
@@ -163,7 +169,7 @@ struct VoiceCallStateTests {
     #expect(setup.listener.isListening)
   }
 
-  @Test func aReplyBeingSpokenIsFinishedBeforeConnectingAgain() async {
+  @Test func aReplyBeingSpokenIsFinishedBeforeListeningAgainWhileOffline() async {
     let setup = Setup()
     await setup.start()
     setup.call.receive(setup.assistantMessage("e-1", "Bye"))
@@ -173,7 +179,7 @@ struct VoiceCallStateTests {
 
     setup.speaker.finish()
     #expect(setup.call.state == .connecting)
-    #expect(!setup.listener.isListening)
+    #expect(setup.listener.isListening)
   }
 
   @Test func aReplyWhileConnectingIsSpoken() async {
@@ -399,6 +405,30 @@ struct VoiceCallUtteranceTests {
     #expect(setup.listener.isListening)
   }
 
+  @Test func anUtteranceFinishedWhileTheAssistantIsOfflineIsSent() async {
+    let setup = Setup()
+    await setup.start(isOnline: false)
+
+    setup.listener.hear(.partial("Hello"))
+    setup.silence.fire()
+    setup.listener.hear(.final("Are you there"))
+
+    #expect(setup.sent == ["Hello", "Are you there"])
+    #expect(setup.call.state == .connecting)
+    #expect(setup.listener.isListening)
+  }
+
+  @Test func muteWhileConnectingStopsAndUnmuteResumesListening() async {
+    let setup = Setup()
+    await setup.start(isOnline: false)
+
+    setup.call.setMuted(true)
+    #expect(!setup.listener.isListening)
+
+    setup.call.setMuted(false)
+    #expect(setup.listener.isListening)
+  }
+
   @Test func muteDropsTheUtteranceInProgress() async {
     let setup = Setup()
     await setup.start()
@@ -588,7 +618,7 @@ struct VoiceCallAppModelTests {
     return model
   }
 
-  @Test func startingSendsCallStartedAndWaitsForTheAssistantToBeOnline() async {
+  @Test func startingSendsCallStartedAndListensWhileTheAssistantIsOffline() async {
     let stub = Stub()
     let listener = FakeListener()
     let model = await startedModel(stub, listener: listener)
@@ -600,7 +630,7 @@ struct VoiceCallAppModelTests {
     #expect(sent.map { $0["type"] } == ["call_started"])
     #expect(UUIDv7.date(fromID: sent[0]["idempotency_key"] ?? "") != nil)
     #expect(model.voiceCall.state == .connecting)
-    #expect(!listener.isListening)
+    #expect(listener.isListening)
 
     model.apply(LinkStatusChange(linkID: "l-1", status: .online, lastActiveAt: nil))
     #expect(model.voiceCall.state == .listening)
@@ -608,6 +638,7 @@ struct VoiceCallAppModelTests {
 
     model.apply(LinkStatusChange(linkID: "l-1", status: .offline, lastActiveAt: nil))
     #expect(model.voiceCall.state == .connecting)
+    #expect(listener.isListening)
   }
 
   @Test func endingSendsCallEndedOnceAfterCallStarted() async {
