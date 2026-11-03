@@ -89,3 +89,39 @@ extension Timeline {
     return Timeline(events: events)
   }()
 }
+
+/// A voice chat that needs no microphone, for previews and the screenshot catalog.
+@MainActor
+private final class SilentVoice: SpeechListener, SpeechSpeaker, VoiceAudio, SilenceTimer {
+  func start(_ handler: @escaping @MainActor (SpeechEvent) -> Void) throws {}
+  func stop() {}
+  func speak(_ text: String, onFinish: @escaping @MainActor () -> Void) {}
+  func requestPermission() async -> Bool { true }
+  func activate() throws {}
+  func deactivate() {}
+  func restart(_ fire: @escaping @MainActor () -> Void) {}
+  func cancel() {}
+}
+
+extension VoiceCall {
+  static func preview() -> VoiceCall {
+    let voice = SilentVoice()
+    return VoiceCall(listener: voice, speaker: voice, audio: voice, silence: voice)
+  }
+}
+
+extension Timeline {
+  /// The design mock followed by a 15 second voice chat.
+  static let designMockAfterCall: Timeline = {
+    var events = designMock.events
+    let end = events.last?.createdAt ?? .now
+    for (index, kind) in [Event.Kind.callStarted, .callEnded].enumerated() {
+      events.append(
+        Event(
+          id: "01a11a4e-0a6b-7000-8000-\(String(format: "%012d", 200 + index))",
+          assistantID: Assistant.samples[0].id, type: kind, sender: .system,
+          createdAt: end.addingTimeInterval(60 + Double(index) * 15)))
+    }
+    return Timeline(events: events)
+  }()
+}

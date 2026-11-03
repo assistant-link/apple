@@ -46,7 +46,7 @@ While a call is active the nav bar gets a soft red glow behind the status bar, t
 
 States: Empty (plus, field, dictation, voice), Typing (plus, field, dictation, send; the capsule grows with the draft), In call (plus disabled; dictation and voice/send buttons hidden, as in the video; the field stays visible).
 
-### Voice call banner (`voiceSettings`, `voiceMute`, `voiceEnd`, `voiceCollapse`)
+### Voice call banner (`voiceMute`, `voiceEnd`)
 
 A glass capsule below the nav bar (x 16, 361 x 64, `.glassEffect(in: .capsule)`). No name and no status text: the name is in the nav title.
 
@@ -54,10 +54,8 @@ A glass capsule below the nav bar (x 16, 361 x 64, `.glassEffect(in: .capsule)`)
 |---|---|---|---|---|
 | Avatar | `Circle`, 36, left | none | avatar yellow | none |
 | Waveform | `WaveformView`, thin bars growing toward the right, `.red`; Connecting and Muted show a flat dotted line (`.tertiary`) | none | `.red` | none |
-| Settings (`voiceSettings`) | `Button`, glass circle 40 | `gearshape` | `.primary` | "Settings" |
 | Mute (`voiceMute`) | `Button`, glass circle 40; muted = filled `.primary` circle | `mic` / `mic.slash` | `.primary` | "Mute" / "Unmute" |
 | End (`voiceEnd`) | `Button`, filled `.red` circle 40, `.white` glyph | `xmark` | `.red` | "End" |
-| Grabber (`voiceCollapse`) | capsule 36 x 5 under the row; swipe up or tap hides the banner | none | `.tertiary` | accessibility label "Hide" |
 
 Variants: Connecting (dotted waveform), Live (bars), Muted (dotted waveform, filled mute button).
 
@@ -84,7 +82,7 @@ System keyboard (simplified in the mock); the composer sits directly on top of i
 - **01-chat.** Timeline ending with "Added both. Anything else?", Composer Empty. The red waveform button starts a voice chat; typing turns it into Send. Only the 2 pm request shows "Delivered".
 - **02-typing.** Newest message visible, draft "Remind me to call David tomorrow at 9" wraps to two lines and grows the capsule; keyboard below, home indicator hidden. The dictation mic stays; Send posts the message and clears the draft.
 - **03-call-connecting.** Call glow behind the nav bar, title bubble tinted red, banner Connecting (dotted waveform) under the nav bar, Composer In call. The video shows no collapsed state, so the banner is always visible during a call.
-- **04-call-live.** Same, banner Live (red bars). Mute toggles (Muted variant), Settings opens call settings, End ends the call; the grabber or a swipe up hides the banner.
+- **04-call-live.** Same, banner Live (red bars). Mute toggles (Muted variant), End ends the call. v1 has no settings button and no grabber: the banner stays while the call lasts.
 - **05-after-call.** End removes the glow and the banner and posts the "Voice chat · 00:15" caption under the last assistant message. Composer Empty again.
 - **06-first-pairing.** Hermes before any Link is paired: back button, title bubble Offline, empty state with the three steps and "Get Pairing Text". No composer.
 

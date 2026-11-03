@@ -7,7 +7,6 @@ struct ConversationView: View {
   @State private var pairingLink: Link?
   @State private var failedMessage: OutgoingMessage?
   @State private var position = ScrollPosition()
-  @State private var isVoiceExpanded = false
   @Environment(\.scenePhase) private var scenePhase
 
   var body: some View {
@@ -22,11 +21,6 @@ struct ConversationView: View {
       .navigationBarTitleDisplayMode(.inline)
       .toolbar {
         titleBubble(assistant)
-        if isCallOn(with: assistant) {
-          ToolbarItem(placement: .topBarTrailing) {
-            VoiceCallPill(call: model.voiceCall) { isVoiceExpanded.toggle() }
-          }
-        }
         ToolbarItem(placement: .topBarTrailing) {
           Menu("More", systemImage: "ellipsis") {
             NavigationLink(value: Route.details(assistant.id)) {
@@ -36,20 +30,29 @@ struct ConversationView: View {
           .accessibilityIdentifier("moreButton")
         }
       }
+      .overlay(alignment: .top) {
+        CallGlow()
+          .opacity(call(for: assistant).isInCall ? 1 : 0)
+          .ignoresSafeArea()
+      }
       .safeAreaInset(edge: .top) {
-        if isCallOn(with: assistant) && isVoiceExpanded {
-          VoiceCallBanner(
-            call: model.voiceCall, assistantName: assistant.name,
-            onCollapse: { isVoiceExpanded = false }, onEnd: { model.endVoiceCall() })
+        if let phase = call(for: assistant).bannerPhase {
+          CallBanner(
+            phase: phase, avatar: Avatar(id: assistant.avatar),
+            amplitude: model.voiceCall.amplitude,
+            onMute: { model.voiceCall.setMuted(!model.voiceCall.isMuted) },
+            onEnd: { model.endVoiceCall() }
+          )
+          .padding(.horizontal, 16)
+          .padding(.vertical, 4)
+          .transition(.move(edge: .top).combined(with: .opacity))
         }
       }
-      .onChange(of: model.voiceCall.state) {
-        if !isCallOn(with: assistant) { isVoiceExpanded = false }
-      }
+      .animation(.easeInOut(duration: 0.3), value: call(for: assistant).isInCall)
       .onChange(of: scenePhase) {
         if scenePhase == .background { model.endVoiceCall() }
       }
-      .onDisappear { if isCallOn(with: assistant) { model.endVoiceCall() } }
+      .onDisappear { if call(for: assistant).isInCall { model.endVoiceCall() } }
       .sheet(item: $pairingLink) { link in
         PairingView(
           assistantName: assistant.name, linkID: link.id,
@@ -75,14 +78,14 @@ struct ConversationView: View {
     NavigationLink(value: Route.details(assistant.id)) {
       TitleBubble(
         name: assistant.name, avatar: Avatar(id: assistant.avatar),
-        state: assistant.status == .online ? .online : .offline)
+        state: call(for: assistant).titleState(isOnline: assistant.status == .online))
     }
     .buttonStyle(.plain)
     .accessibilityHint("Shows the Assistant's details and Links")
   }
 
-  private func isCallOn(with assistant: Assistant) -> Bool {
-    model.voiceCall.state != .idle && model.voiceCall.assistantID == assistant.id
+  private func call(for assistant: Assistant) -> CallPresentation {
+    CallPresentation(model.voiceCall, assistantID: assistant.id)
   }
 
   private func timeline(_ assistant: Assistant) -> some View {
@@ -97,7 +100,7 @@ struct ConversationView: View {
         }
         ForEach(Array(content.events.enumerated()), id: \.element.id) { index, event in
           VStack(spacing: 12) {
-            if content.showsTimeCaption(beforeEventAt: index), event.type != .linkCreated {
+            if content.showsTimeCaption(beforeEventAt: index), event.type == .textMessage {
               TimeCaptionView(date: event.createdAt)
             }
             eventView(event, in: assistant, timeline: content)
