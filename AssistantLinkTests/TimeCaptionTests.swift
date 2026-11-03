@@ -34,4 +34,17 @@ struct TimeCaptionTests {
     #expect(result.contains("09:12"))
     #expect(!result.contains("Today") && !result.contains("Yesterday"))
   }
+
+  @Test func theFirstMessageAlwaysHasACaption() {
+    #expect(TimeCaption.isShown(for: date(21, 8, 5), after: nil))
+  }
+
+  @Test func messagesCloseTogetherShareOneCaption() {
+    #expect(!TimeCaption.isShown(for: date(21, 8, 40), after: date(21, 8, 5)))
+  }
+
+  @Test func aPauseOfAnHourOrMoreGetsACaption() {
+    #expect(TimeCaption.isShown(for: date(21, 9, 5), after: date(21, 8, 5)))
+    #expect(TimeCaption.isShown(for: date(21, 12, 0), after: date(21, 8, 5)))
+  }
 }

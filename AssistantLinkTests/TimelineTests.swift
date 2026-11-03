@@ -199,3 +199,42 @@ struct EventTimeTests {
     #expect(format(Date(timeIntervalSince1970: 1_759_276_800)) == "10/1/25")
   }
 }
+
+struct TimelineTimeCaptionTests {
+  private func stub(_ id: String, at seconds: TimeInterval) -> Event {
+    Event(
+      id: id, assistantID: "as-1", type: .textMessage, sender: .assistant,
+      createdAt: Date(timeIntervalSince1970: seconds), text: id)
+  }
+
+  private func outgoing(_ key: String, at seconds: TimeInterval) -> OutgoingMessage {
+    OutgoingMessage(
+      assistantID: "as-1", idempotencyKey: key, text: key,
+      createdAt: Date(timeIntervalSince1970: seconds))
+  }
+
+  @Test func eventsShowACaptionAfterAPause() {
+    let timeline = Timeline(events: [
+      stub("e-1", at: 0), stub("e-2", at: 60), stub("e-3", at: 7_200),
+    ])
+
+    #expect(timeline.showsTimeCaption(beforeEventAt: 0))
+    #expect(!timeline.showsTimeCaption(beforeEventAt: 1))
+    #expect(timeline.showsTimeCaption(beforeEventAt: 2))
+  }
+
+  @Test func anOutgoingMessageFollowsTheLatestEventOrThePreviousOutgoingMessage() {
+    let timeline = Timeline(
+      events: [stub("e-1", at: 0)],
+      outgoing: [outgoing("k-1", at: 60), outgoing("k-2", at: 9_000)])
+
+    #expect(!timeline.showsTimeCaption(beforeOutgoingAt: 0))
+    #expect(timeline.showsTimeCaption(beforeOutgoingAt: 1))
+  }
+
+  @Test func anOutgoingMessageInAnEmptyTimelineHasACaption() {
+    let timeline = Timeline(outgoing: [outgoing("k-1", at: 0)])
+
+    #expect(timeline.showsTimeCaption(beforeOutgoingAt: 0))
+  }
+}
