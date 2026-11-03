@@ -8,7 +8,6 @@ struct CallBanner: View {
   var amplitude = 0.7
   let onMute: () -> Void
   let onEnd: () -> Void
-  let onHide: () -> Void
 
   var body: some View {
     HStack(spacing: 12) {
@@ -42,19 +41,6 @@ struct CallBanner: View {
     .padding(.horizontal, 14)
     .frame(height: 64)
     .glassBackground(in: Capsule())
-    .overlay(alignment: .bottom) {
-      Button(action: onHide) {
-        Capsule()
-          .fill(Color(.tertiaryLabel))
-          .frame(width: 36, height: 5)
-          .padding(.vertical, 3)
-          .padding(.horizontal, 12)
-          .contentShape(Rectangle())
-      }
-      .buttonStyle(.plain)
-      .accessibilityLabel("Hide")
-      .accessibilityIdentifier("voiceCollapse")
-    }
   }
 
   @ViewBuilder

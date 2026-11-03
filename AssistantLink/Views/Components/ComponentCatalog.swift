@@ -8,6 +8,9 @@ struct ComponentCatalog: View {
     case composer
     case call
     case chat
+    case callConnecting = "call-connecting"
+    case callLive = "call-live"
+    case afterCall = "after-call"
 
     static var launched: Section? {
       UserDefaults.standard.string(forKey: "componentCatalog").flatMap(Section.init)
@@ -17,20 +20,38 @@ struct ComponentCatalog: View {
   let section: Section
 
   var body: some View {
-    if section == .chat {
+    if let model = chatModel {
       // Pushed over an empty root so the screenshot has the back button of a real conversation.
       NavigationStack(path: .constant([0])) {
         Color.clear.navigationDestination(for: Int.self) { _ in
           ConversationView(assistantID: Assistant.samples[0].id)
         }
       }
-      .environment(
-        AppModel.preview(Assistant.samples, timelines: [Assistant.samples[0].id: .designMock])
-      )
+      .environment(model)
+      .task { await startCall(on: model) }
       .accessibilityIdentifier("componentCatalog")
     } else {
       sections
     }
+  }
+
+  /// The chat screen of the design mocks, in the state of the section.
+  private var chatModel: AppModel? {
+    var assistants = Assistant.samples
+    switch section {
+    case .chat, .afterCall: break
+    case .callConnecting: assistants[0].status = .offline
+    case .callLive: break
+    default: return nil
+    }
+    let timeline = section == .afterCall ? Timeline.designMockAfterCall : .designMock
+    return AppModel.preview(
+      assistants, timelines: [assistants[0].id: timeline], voiceCall: .preview())
+  }
+
+  private func startCall(on model: AppModel) async {
+    guard section == .callConnecting || section == .callLive else { return }
+    _ = await model.startVoiceCall(assistantID: Assistant.samples[0].id)
   }
 
   private var sections: some View {
@@ -42,7 +63,7 @@ struct ComponentCatalog: View {
       case .messages: messages
       case .composer: composer
       case .call: call
-      case .chat: EmptyView()
+      case .chat, .callConnecting, .callLive, .afterCall: EmptyView()
       }
       Spacer(minLength: 0)
     }
@@ -95,7 +116,7 @@ struct ComponentCatalog: View {
       TitleBubble(name: "Hermes", avatar: Avatar(id: "avatar-3"), state: .inCall)
       ForEach([CallBannerPhase.connecting, .live, .muted], id: \.self) { phase in
         CallBanner(
-          phase: phase, avatar: Avatar(id: "avatar-3"), onMute: {}, onEnd: {}, onHide: {})
+          phase: phase, avatar: Avatar(id: "avatar-3"), onMute: {}, onEnd: {})
       }
     }
   }
@@ -112,6 +133,13 @@ struct ComponentCatalog: View {
 #Preview("Call") { ComponentCatalog(section: .call) }
 #Preview("Call, dark") {
   ComponentCatalog(section: .call).preferredColorScheme(.dark)
+}
+
+#Preview("Chat in a call, connecting") { ComponentCatalog(section: .callConnecting) }
+#Preview("Chat in a call, live") { ComponentCatalog(section: .callLive) }
+#Preview("Chat after a call") { ComponentCatalog(section: .afterCall) }
+#Preview("Chat in a call, live, dark") {
+  ComponentCatalog(section: .callLive).preferredColorScheme(.dark)
 }
 
 #Preview("Chat") { ComponentCatalog(section: .chat) }

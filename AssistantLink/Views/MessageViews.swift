@@ -84,8 +84,9 @@ struct ComposerView: View {
           .accessibilityIdentifier("offlineNotice")
       }
       MessageComposer(
-        draft: $draft, isInCall: model.voiceCall.state != .idle, onSend: send,
-        onVoiceChat: startCall)
+        draft: $draft,
+        isInCall: CallPresentation(model.voiceCall, assistantID: assistant.id).isInCall,
+        onSend: send, onVoiceChat: startCall)
     }
     .padding(.horizontal, 16)
     .padding(.vertical, 8)

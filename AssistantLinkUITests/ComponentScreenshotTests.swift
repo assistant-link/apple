@@ -37,6 +37,25 @@ final class ComponentScreenshotTests: XCTestCase {
     capture(app, "31-chat-typing")
   }
 
+  /// Design mocks 03-call-connecting, 04-call-live and 05-after-call, on sample data.
+  @MainActor func testCaptureCall() {
+    for (index, section) in ["call-connecting", "call-live", "after-call"].enumerated() {
+      let app = XCUIApplication()
+      app.launchArguments = ["-componentCatalog", section]
+      app.launch()
+      XCTAssertTrue(
+        app.descendants(matching: .any)["messageField"].waitForExistence(timeout: 30),
+        "the \(section) screen did not appear")
+      if section != "after-call" {
+        XCTAssertTrue(
+          app.buttons["voiceEnd"].waitForExistence(timeout: 10), "the call did not start")
+      }
+      Thread.sleep(forTimeInterval: 1)
+      capture(app, "\(index + 40)-\(section)")
+      app.terminate()
+    }
+  }
+
   private func capture(_ app: XCUIApplication, _ name: String) {
     let attachment = XCTAttachment(screenshot: app.screenshot())
     attachment.name = name
