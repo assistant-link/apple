@@ -40,6 +40,7 @@ struct OutgoingMessage: Equatable, Identifiable, Sendable {
   /// The timeline's `received` count when the message was queued; later events mean the message
   /// is no longer the newest, which the device and server clocks could not tell reliably.
   var receivedBefore = 0
+  var via: Event.Via?
 
   var id: String { idempotencyKey }
 }
@@ -88,6 +89,15 @@ struct Timeline: Equatable, Sendable {
     case .delivered: return .delivered
     case nil: return nil
     }
+  }
+
+  /// The seconds a voice chat lasted, from the latest `call_started` before its `call_ended`.
+  func voiceChatSeconds(endedBy event: Event) -> Int? {
+    guard
+      let started = events.prefix(while: { $0.id != event.id })
+        .last(where: { $0.type == .callStarted })
+    else { return nil }
+    return max(0, Int(event.createdAt.timeIntervalSince(started.createdAt)))
   }
 
   /// Stores the event the service answered a post with, unless the live connection delivered

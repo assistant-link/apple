@@ -215,6 +215,38 @@ struct OutgoingMessageTests {
     #expect(timeline(model).outgoing.isEmpty)
   }
 
+  @Test func aVoiceMessageIsPostedWithViaVoice() async throws {
+    let stub = Stub()
+    let model = await startedModel(stub)
+
+    #expect(await model.send(text: "Hi", assistantID: "as-1", via: .voice))
+
+    let sent = stub.bodies.withLock { $0 }
+    #expect(sent.map { $0["via"] } == ["voice"])
+    #expect(sent.map { $0["text"] } == ["Hi"])
+  }
+
+  @Test func aTypedMessageIsPostedWithoutVia() async throws {
+    let stub = Stub()
+    let model = await startedModel(stub)
+
+    await model.send(text: "Hi", assistantID: "as-1")
+
+    let sent = stub.bodies.withLock { $0 }
+    #expect(sent.first?.keys.contains("via") == false)
+  }
+
+  @Test func theVoiceOfAFailedMessageSurvivesARetry() async throws {
+    let stub = Stub(failures: [.network])
+    let model = await startedModel(stub)
+    let message = try #require(model.queue(text: "Hi", assistantID: "as-1", via: .voice))
+    await model.post(message)
+
+    await model.retry(message)
+
+    #expect(stub.bodies.withLock { $0.map { $0["via"] } } == ["voice", "voice"])
+  }
+
   @Test func eachMessageGetsItsOwnKey() async throws {
     let model = await startedModel(Stub())
 
