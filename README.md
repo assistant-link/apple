@@ -92,7 +92,7 @@ team ID in a git-ignored `Local.mk`). See [docs/physical-device.md](docs/physica
 ## Voice call end to end
 
 `E2E/voice-e2e.sh` runs the app's real `AppModel` and `VoiceCall` (with fake speech engines, built with SwiftPM on
-Linux or macOS) against a live service, in a throwaway account that it deletes at the end. Piper speaks three
+Linux) against a live service, in a throwaway account that it deletes at the end. Piper speaks three
 sentences, Vosk transcribes them, and an emulated Assistant that only uses `al` is woken by the webhook (through a
 random [ntfy.sh](https://ntfy.sh) topic) and answers by voice. It checks that exactly one wake ping arrives, that
 the messages are stored as voice, that the replies are spoken in order, that `al call` exits after `call_ended`,

@@ -3,6 +3,8 @@ starts assistant.sh on a wake. Usage: wake_receiver.py <ntfy url> <topic> <folde
 Writes <folder>/subscribed, wakes.log, assistant.log and, when the assistant exits, assistant.exit."""
 
 import json
+import os
+import signal
 import subprocess
 import sys
 import threading
@@ -13,10 +15,17 @@ ntfy, topic, folder = sys.argv[1], sys.argv[2], Path(sys.argv[3])
 assistant = None
 
 
+def stop(*_):
+    if assistant and assistant.poll() is None:
+        os.killpg(assistant.pid, signal.SIGTERM)
+    sys.exit()
+
+
 def watch(process):
     folder.joinpath("assistant.exit").write_text(f"{process.wait()}\n")
 
 
+signal.signal(signal.SIGTERM, stop)
 with urllib.request.urlopen(f"{ntfy}/{topic}/json") as stream:
     for line in stream:
         event = json.loads(line)
@@ -31,6 +40,9 @@ with urllib.request.urlopen(f"{ntfy}/{topic}/json") as stream:
         ):
             log = folder.joinpath("assistant.log").open("w")
             assistant = subprocess.Popen(
-                [Path(__file__).with_name("assistant.sh")], stdout=log, stderr=subprocess.STDOUT
+                [Path(__file__).with_name("assistant.sh")],
+                stdout=log,
+                stderr=subprocess.STDOUT,
+                start_new_session=True,
             )
-            threading.Thread(target=watch, args=(assistant,)).start()
+            threading.Thread(target=watch, args=(assistant,), daemon=True).start()
