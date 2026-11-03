@@ -110,6 +110,8 @@ struct ComposerView: View {
       HStack(alignment: .bottom, spacing: 8) {
         TextField("Message", text: $draft, axis: .vertical)
           .lineLimit(1...5)
+          // Without it the field takes any extra height it is offered and draws its text at the top.
+          .fixedSize(horizontal: false, vertical: true)
           .padding(.horizontal, 14)
           .padding(.vertical, 9)
           .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 20))

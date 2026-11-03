@@ -6,7 +6,7 @@ struct ConversationView: View {
   @Environment(AppModel.self) private var model
   @State private var pairingLink: Link?
   @State private var failedMessage: OutgoingMessage?
-  @State private var position = ScrollPosition(edge: .bottom)
+  @State private var position = ScrollPosition()
   @State private var isVoiceExpanded = false
   @Environment(\.scenePhase) private var scenePhase
 
