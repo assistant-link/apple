@@ -25,7 +25,7 @@ struct CallBanner: View {
       .frame(width: 40, height: 40)
       .background {
         if phase == .muted {
-          Circle().fill(Color.primary)
+          Circle().fill(Color(.label))
         } else {
           Circle().fill(Color(.tertiarySystemFill))
         }
