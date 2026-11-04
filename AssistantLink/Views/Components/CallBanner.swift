@@ -1,12 +1,13 @@
 import SwiftUI
 
-/// The voice chat controls below the navigation bar: mute and end.
+/// The voice chat controls below the navigation bar: mute, end, and retry listening.
 struct CallBanner: View {
   let phase: CallBannerPhase
   let avatar: Avatar
   /// How lively the bars are while live, 0 to 1. Read in this view's body so that the fast
   /// changing level redraws only the banner.
   var amplitude: () -> Double = { 0.7 }
+  let onRetry: () -> Void
   let onMute: () -> Void
   let onEnd: () -> Void
 
@@ -46,7 +47,18 @@ struct CallBanner: View {
 
   @ViewBuilder
   private var waveform: some View {
-    if phase == .live {
+    if phase == .notListening {
+      Button(action: onRetry) {
+        Label("Not listening, tap to retry", systemImage: "arrow.clockwise")
+          .font(.subheadline)
+          .lineLimit(1)
+          .minimumScaleFactor(0.7)
+          .foregroundStyle(.secondary)
+          .frame(maxWidth: .infinity, minHeight: 40)
+      }
+      .buttonStyle(.plain)
+      .accessibilityIdentifier("voiceRetry")
+    } else if phase == .live {
       WaveformView(
         amplitude: max(amplitude(), 0.4), height: 28, barWidth: 2, barCount: 32, growing: true
       )

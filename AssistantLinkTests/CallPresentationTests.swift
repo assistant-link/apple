@@ -6,9 +6,12 @@ struct CallPresentationTests {
   private let hermes = "assistant-1"
 
   private func presentation(
-    _ state: VoiceCall.State, muted: Bool = false, callWith: String? = "assistant-1"
+    _ state: VoiceCall.State, muted: Bool = false, failed: Bool = false,
+    callWith: String? = "assistant-1"
   ) -> CallPresentation {
-    CallPresentation(state: state, isMuted: muted, callAssistantID: callWith, assistantID: hermes)
+    CallPresentation(
+      state: state, isMuted: muted, listeningFailed: failed, callAssistantID: callWith,
+      assistantID: hermes)
   }
 
   @Test func noCallWhenIdle() {
@@ -38,5 +41,9 @@ struct CallPresentationTests {
 
   @Test func mutedCallShowsTheMutedBanner() {
     #expect(presentation(.listening, muted: true).bannerPhase == .muted)
+  }
+
+  @Test func callThatGaveUpListeningShowsTheNotListeningBanner() {
+    #expect(presentation(.listening, failed: true).bannerPhase == .notListening)
   }
 }

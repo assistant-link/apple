@@ -4,21 +4,22 @@ struct CallPresentation: Equatable {
   let bannerPhase: CallBannerPhase?
 
   init(
-    state: VoiceCall.State, isMuted: Bool, callAssistantID: Assistant.ID?,
+    state: VoiceCall.State, isMuted: Bool, listeningFailed: Bool, callAssistantID: Assistant.ID?,
     assistantID: Assistant.ID
   ) {
     if state == .idle || callAssistantID != assistantID {
       bannerPhase = nil
     } else {
-      bannerPhase = CallBannerPhase(state: state, isMuted: isMuted)
+      bannerPhase = CallBannerPhase(
+        state: state, isMuted: isMuted, listeningFailed: listeningFailed)
     }
   }
 
   @MainActor
   init(_ call: VoiceCall, assistantID: Assistant.ID) {
     self.init(
-      state: call.state, isMuted: call.isMuted, callAssistantID: call.assistantID,
-      assistantID: assistantID)
+      state: call.state, isMuted: call.isMuted, listeningFailed: call.listeningFailed,
+      callAssistantID: call.assistantID, assistantID: assistantID)
   }
 
   var isInCall: Bool { bannerPhase != nil }
