@@ -94,13 +94,15 @@ private final class Setup {
   let audio = FakeAudio()
   let silence = FakeSilence()
   let retry = FakeSilence()
+  let patience = FakeSilence()
   var sent: [String] = []
   private(set) var ends = 0
   private(set) var call: VoiceCall!
 
   init() {
     call = VoiceCall(
-      listener: listener, speaker: speaker, audio: audio, silence: silence, retry: retry)
+      listener: listener, speaker: speaker, audio: audio, silence: silence, retry: retry,
+      patience: patience)
   }
 
   func start(isOnline: Bool = true) async {
@@ -398,6 +400,60 @@ struct VoiceCallRecognizerErrorTests {
 
     #expect(!setup.call.listeningFailed)
     #expect(setup.listener.isListening)
+  }
+
+  @Test func aCallThatGaveUpListeningTriesAgainAfterAWhile() async {
+    let setup = Setup()
+    await setup.start()
+    for _ in 0..<VoiceCall.maxFailures {
+      setup.listener.hear(.failed)
+      setup.retry.fire()
+    }
+    #expect(setup.call.listeningFailed)
+    #expect(setup.patience.isPending)
+
+    setup.patience.fire()
+
+    #expect(!setup.call.listeningFailed)
+    #expect(setup.listener.isListening)
+    setup.listener.hear(.partial("Hello"))
+    setup.listener.hear(.final("Hello"))
+    #expect(setup.sent == ["Hello"])
+  }
+
+  @Test func aRecognizerThatKeepsFailingGivesUpAgainAfterOneFailure() async {
+    let setup = Setup()
+    await setup.start()
+    for _ in 0..<VoiceCall.maxFailures {
+      setup.listener.hear(.failed)
+      setup.retry.fire()
+    }
+    setup.patience.fire()
+
+    setup.listener.hear(.failed)
+
+    #expect(setup.call.listeningFailed)
+    #expect(setup.patience.isPending)
+  }
+
+  @Test func endingAndMutingCancelTheLateRetry() async {
+    let setup = Setup()
+    await setup.start()
+    for _ in 0..<VoiceCall.maxFailures {
+      setup.listener.hear(.failed)
+      setup.retry.fire()
+    }
+
+    setup.call.setMuted(true)
+    #expect(!setup.patience.isPending)
+
+    setup.call.setMuted(false)
+    for _ in 0..<VoiceCall.maxFailures {
+      setup.listener.hear(.failed)
+      setup.retry.fire()
+    }
+    setup.call.end()
+    #expect(!setup.patience.isPending)
   }
 
   @Test func aResultInBetweenResetsTheFailureCount() async {
