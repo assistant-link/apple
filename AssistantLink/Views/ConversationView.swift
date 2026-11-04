@@ -40,6 +40,7 @@ struct ConversationView: View {
           CallBanner(
             phase: phase, avatar: Avatar(id: assistant.avatar),
             amplitude: { model.voiceCall.amplitude },
+            onRetry: { model.voiceCall.retryListening() },
             onMute: { model.voiceCall.setMuted(!model.voiceCall.isMuted) },
             onEnd: { model.endVoiceCall() }
           )

@@ -185,6 +185,14 @@ final class VoiceCall {
     onEnd?()
   }
 
+  /// Tries listening again right away after it gave up.
+  func retryListening() {
+    guard listeningFailed, !isMuted else { return }
+    listeningFailed = false
+    failures = 0
+    startListening()
+  }
+
   func setMuted(_ muted: Bool) {
     guard state != .idle, muted != isMuted else { return }
     isMuted = muted
