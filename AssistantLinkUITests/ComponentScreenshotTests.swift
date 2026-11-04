@@ -50,7 +50,8 @@ final class ComponentScreenshotTests: XCTestCase {
         XCTAssertTrue(
           app.buttons["voiceEnd"].waitForExistence(timeout: 10), "the call did not start")
       }
-      Thread.sleep(forTimeInterval: 1)
+      // The banner slides in and the timeline scrolls to keep the last message in view.
+      Thread.sleep(forTimeInterval: 3)
       capture(app, "\(index + 40)-\(section)")
       app.terminate()
     }
