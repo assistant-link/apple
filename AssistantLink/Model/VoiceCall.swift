@@ -92,7 +92,7 @@ final class VoiceCall {
   private(set) var assistantID: Assistant.ID?
   /// The microphone input level, 0 to 1, while listening.
   private(set) var level: Float = 0
-  /// Listening gave up after repeated recognizer failures; the call goes on but hears nothing.
+  /// Listening gave up after repeated recognizer failures and hears nothing until it tries again.
   private(set) var listeningFailed = false
 
   static let maxFailures = 3
