@@ -8,14 +8,17 @@ struct FirstPairingView: View {
   @Environment(AppModel.self) private var model
   @State private var isSaving = false
   @State private var error: String?
+  @ScaledMetric private var badgeSize = 24.0
 
   var body: some View {
     ScrollView {
       VStack(spacing: 28) {
         VStack(spacing: 12) {
           AvatarView(avatar: Avatar(id: assistant.avatar), size: 72)
+            .accessibilityHidden(true)
           Text("Connect \(assistant.name) to your agent")
             .font(.title2.bold())
+            .accessibilityAddTraits(.isHeader)
           Text(
             "An Assistant Link connects \(assistant.name) to the agent that runs it, on your computer or in the cloud."
           )
@@ -47,6 +50,7 @@ struct FirstPairingView: View {
         .controlSize(.large)
         .font(.headline)
         .disabled(isSaving)
+        .accessibilityLabel("Get Pairing Text")
         .accessibilityIdentifier("createLink")
       }
       .padding(24)
@@ -58,13 +62,14 @@ struct FirstPairingView: View {
       Text("\(number)")
         .font(.subheadline.bold())
         .foregroundStyle(.white)
-        .frame(width: 24, height: 24)
+        .frame(width: badgeSize, height: badgeSize)
         .background(Circle().fill(.tint))
       VStack(alignment: .leading, spacing: 2) {
         Text(title).font(.headline)
         Text(detail).font(.subheadline).foregroundStyle(.secondary)
       }
     }
+    .accessibilityElement(children: .combine)
   }
 
   private func create() {
