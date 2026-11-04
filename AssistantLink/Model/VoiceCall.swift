@@ -185,6 +185,8 @@ final class VoiceCall {
     if muted {
       stopListening()
     } else {
+      listeningFailed = false
+      failures = 0
       startListening()
     }
   }
@@ -248,7 +250,6 @@ final class VoiceCall {
       restartSilenceTimer()
     case .final(let text):
       heard = text
-      failures = 0
       finishUtterance()
     case .stopped:
       finishUtterance()
