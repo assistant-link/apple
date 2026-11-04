@@ -31,18 +31,18 @@ struct MessageComposer: View {
         // iOS cannot start keyboard dictation from code; the keyboard's own microphone does it.
         Button("Dictate", systemImage: "mic") { isFocused = true }
           .buttonStyle(.circle())
-        .accessibilityIdentifier("dictationButton")
+          .accessibilityIdentifier("dictationButton")
       }
       switch state.trailingButton {
       case .voiceChat:
         Button("Voice chat", systemImage: "waveform", action: onVoiceChat)
           .buttonStyle(.circle(foreground: .white, background: .red))
-        .accessibilityIdentifier("voiceButton")
+          .accessibilityIdentifier("voiceButton")
       case .send:
         Button("Send", systemImage: "arrow.up", action: onSend)
           .buttonStyle(.circle(foreground: .white, background: .accentColor))
-        .disabled(!state.canSend)
-        .accessibilityIdentifier("sendButton")
+          .disabled(!state.canSend)
+          .accessibilityIdentifier("sendButton")
       case nil:
         EmptyView()
       }
