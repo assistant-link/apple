@@ -100,6 +100,13 @@ final class LiveSpeechListener: SpeechListener {
     { buffer, _ in tap.process(buffer) }
   }
 
+  /// The recognizer reports silence, or a cancel, as an error of the assistant domain.
+  private nonisolated static func isBenign(_ error: any Error) -> Bool {
+    let error = error as NSError
+    return error.domain == "kLSRErrorDomain" && error.code == 301
+      || error.domain == "kAFAssistantErrorDomain" && [216, 1110].contains(error.code)
+  }
+
   private nonisolated static func resultHandler(
     _ deliver: @escaping @Sendable (SpeechEvent) -> Void
   ) -> @Sendable (SFSpeechRecognitionResult?, (any Error)?) -> Void {
@@ -107,8 +114,8 @@ final class LiveSpeechListener: SpeechListener {
       if let result {
         let text = result.bestTranscription.formattedString
         deliver(result.isFinal ? .final(text) : .partial(text))
-      } else if error != nil {
-        deliver(.stopped)
+      } else if let error {
+        deliver(Self.isBenign(error) ? .stopped : .failed)
       }
     }
   }
