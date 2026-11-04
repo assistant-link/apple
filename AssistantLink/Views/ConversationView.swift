@@ -120,6 +120,8 @@ struct ConversationView: View {
       .padding(.vertical, 24)
     }
     .defaultScrollAnchor(.bottom)
+    // The composer and the keyboard shrink the viewport after the first layout.
+    .defaultScrollAnchor(.bottom, for: .sizeChanges)
     .scrollPosition($position)
     .onChange(of: content.outgoing.last?.id) { position.scrollTo(edge: .bottom) }
     .onChange(of: content.events.last?.id) { position.scrollTo(edge: .bottom) }
