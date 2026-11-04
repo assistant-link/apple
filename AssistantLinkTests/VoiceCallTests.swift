@@ -93,13 +93,14 @@ private final class Setup {
   let speaker = FakeSpeaker()
   let audio = FakeAudio()
   let silence = FakeSilence()
+  let retry = FakeSilence()
   var sent: [String] = []
   private(set) var ends = 0
   private(set) var call: VoiceCall!
 
   init() {
     call = VoiceCall(
-      listener: listener, speaker: speaker, audio: audio, silence: silence)
+      listener: listener, speaker: speaker, audio: audio, silence: silence, retry: retry)
   }
 
   func start(isOnline: Bool = true) async {
@@ -344,6 +345,131 @@ struct VoiceCallStateTests {
 }
 
 @MainActor
+struct VoiceCallRecognizerErrorTests {
+  @Test func anEndWithNothingHeardRestartsOnlyAfterAPause() async {
+    let setup = Setup()
+    await setup.start()
+
+    setup.listener.hear(.stopped)
+
+    #expect(!setup.listener.isListening)
+    #expect(setup.retry.isPending)
+    setup.retry.fire()
+    #expect(setup.listener.isListening)
+    #expect(setup.listener.starts == 2)
+  }
+
+  @Test func anUtteranceThatWasHeardRestartsAtOnce() async {
+    let setup = Setup()
+    await setup.start()
+
+    setup.listener.hear(.partial("Hello"))
+    setup.listener.hear(.failed)
+
+    #expect(setup.sent == ["Hello"])
+    #expect(setup.listener.starts == 2)
+    #expect(!setup.retry.isPending)
+  }
+
+  @Test func repeatedFailuresStopListeningAndShowIt() async {
+    let setup = Setup()
+    await setup.start()
+
+    for _ in 0..<VoiceCall.maxFailures {
+      #expect(setup.call.listeningFailed == false)
+      setup.listener.hear(.failed)
+      setup.retry.fire()
+    }
+
+    #expect(setup.call.listeningFailed)
+    #expect(!setup.listener.isListening)
+    #expect(!setup.retry.isPending)
+    #expect(setup.call.state == .listening)
+  }
+
+  @Test func endsWithNothingHeardNeverGiveUp() async {
+    let setup = Setup()
+    await setup.start()
+
+    for _ in 0..<(VoiceCall.maxFailures * 3) {
+      setup.listener.hear(.stopped)
+      setup.retry.fire()
+    }
+
+    #expect(!setup.call.listeningFailed)
+    #expect(setup.listener.isListening)
+  }
+
+  @Test func aResultInBetweenResetsTheFailureCount() async {
+    let setup = Setup()
+    await setup.start()
+
+    for _ in 0..<(VoiceCall.maxFailures - 1) {
+      setup.listener.hear(.failed)
+      setup.retry.fire()
+    }
+    setup.listener.hear(.partial("Hi"))
+    setup.listener.hear(.final("Hi"))
+    for _ in 0..<(VoiceCall.maxFailures - 1) {
+      setup.listener.hear(.failed)
+      setup.retry.fire()
+    }
+
+    #expect(!setup.call.listeningFailed)
+    #expect(setup.listener.isListening)
+  }
+
+  @Test func aFailedCallStillSpeaksAndDoesNotListenAgain() async {
+    let setup = Setup()
+    await setup.start()
+    for _ in 0..<VoiceCall.maxFailures {
+      setup.listener.hear(.failed)
+      setup.retry.fire()
+    }
+
+    setup.call.receive(setup.assistantMessage("e1", "Hello"))
+    #expect(setup.speaker.spoken == ["Hello"])
+    setup.speaker.finish()
+
+    #expect(setup.call.listeningFailed)
+    #expect(!setup.listener.isListening)
+  }
+
+  @Test(arguments: ["mute", "reply", "end"])
+  func nothingRestartsAfter(action: String) async {
+    let setup = Setup()
+    await setup.start()
+    setup.listener.hear(.stopped)
+    let starts = setup.listener.starts
+
+    switch action {
+    case "mute": setup.call.setMuted(true)
+    case "reply": setup.call.receive(setup.assistantMessage("e1", "Hi"))
+    default: setup.call.end()
+    }
+    setup.retry.fire()
+
+    #expect(setup.listener.starts == starts)
+    #expect(!setup.listener.isListening)
+  }
+
+  @Test func endingResetsTheFailure() async {
+    let setup = Setup()
+    await setup.start()
+    for _ in 0..<VoiceCall.maxFailures {
+      setup.listener.hear(.failed)
+      setup.retry.fire()
+    }
+
+    setup.call.end()
+    await setup.start()
+
+    #expect(!setup.call.listeningFailed)
+    #expect(setup.listener.isListening)
+  }
+}
+
+@MainActor
 struct VoiceCallUtteranceTests {
   @Test func anUtteranceIsSentAfterTheSilenceAndListeningRestarts() async {
     let setup = Setup()
@@ -399,7 +525,9 @@ struct VoiceCallUtteranceTests {
 
     setup.listener.hear(.partial(text))
     setup.silence.fire()
+    setup.retry.fire()
     setup.listener.hear(.final(text))
+    setup.retry.fire()
 
     #expect(setup.sent.isEmpty)
     #expect(setup.listener.isListening)
