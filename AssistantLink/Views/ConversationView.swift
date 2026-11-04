@@ -7,7 +7,6 @@ struct ConversationView: View {
   @State private var pairingLink: Link?
   @State private var failedMessage: OutgoingMessage?
   @State private var position = ScrollPosition()
-  @Environment(\.scenePhase) private var scenePhase
 
   var body: some View {
     if let assistant = model.assistant(id: assistantID) {
@@ -50,14 +49,6 @@ struct ConversationView: View {
         }
       }
       .animation(.easeInOut(duration: 0.3), value: call.isInCall)
-      .onChange(of: scenePhase) {
-        if scenePhase == .background { model.endVoiceCall() }
-      }
-      .onDisappear {
-        if CallPresentation(model.voiceCall, assistantID: assistant.id).isInCall {
-          model.endVoiceCall()
-        }
-      }
       .sheet(item: $pairingLink) { link in
         PairingView(
           assistantName: assistant.name, linkID: link.id,

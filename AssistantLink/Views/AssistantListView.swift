@@ -7,6 +7,7 @@ enum Route: Hashable {
 
 struct AssistantListView: View {
   @Environment(AppModel.self) private var model
+  @Environment(\.scenePhase) private var scenePhase
   @State private var path: [Route] = []
   @State private var isCreating = false
   @State private var refreshError: String?
@@ -60,6 +61,11 @@ struct AssistantListView: View {
           case .conversation(let id): ConversationView(assistantID: id)
           case .details(let id): AssistantDetailsView(assistantID: id)
           }
+        }
+        .onChange(of: path) { model.navigated(to: path) }
+        // The conversation can sit under Details mid-call, so the root ends it on backgrounding.
+        .onChange(of: scenePhase) {
+          if scenePhase == .background { model.endVoiceCall() }
         }
         .sheet(isPresented: $isCreating) {
           CreateAssistantView { assistant in path.append(.conversation(assistant.id)) }
