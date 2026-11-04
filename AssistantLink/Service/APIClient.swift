@@ -6,6 +6,15 @@ enum APIError: Error, Equatable, LocalizedError {
   case unexpectedResponse(status: Int)
   case unreachable
 
+  /// Whether sending the same request again later may succeed.
+  var isTransient: Bool {
+    switch self {
+    case .unreachable: true
+    case .unexpectedResponse(let status), .service(let status, _, _):
+      status >= 500 || status == 408 || status == 429
+    }
+  }
+
   var errorDescription: String? {
     switch self {
     case .service(_, _, let message):

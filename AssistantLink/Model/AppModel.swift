@@ -19,8 +19,9 @@ final class AppModel {
   private(set) var session = 0
   let voiceCall: VoiceCall
 
+  /// With `Backoff` this keeps trying for a few minutes.
+  static let callEventAttempts = 12
   private static let pageSize = 50
-  private static let callEventAttempts = 3
   private static let logger = Logger(subsystem: "ai.assistantlink.app", category: "live")
 
   private let connect: @Sendable () async throws -> APIClient
@@ -28,17 +29,22 @@ final class AppModel {
   private let makeLiveUpdates: @MainActor (APIClient) -> LiveUpdates?
   private var api: APIClient?
   private var pairingCodes: [Link.ID: PairingCode] = [:]
-  private(set) var callEvents: Task<Void, Never>?
+  private let sleep: @Sendable (Duration) async throws -> Void
+  /// The tail of a call's posts, which run one after another so the Assistant sees them in the
+  /// order they happened.
+  private(set) var callOutbox: Task<Void, Never>?
 
   init(
     connect: @escaping @Sendable () async throws -> APIClient,
     forget: @escaping @Sendable () throws -> Void = {},
     liveUpdates: @escaping @MainActor (APIClient) -> LiveUpdates? = LiveUpdates.live,
+    sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
     voiceCall: VoiceCall = .live()
   ) {
     self.connect = connect
     self.forget = forget
     self.makeLiveUpdates = liveUpdates
+    self.sleep = sleep
     self.voiceCall = voiceCall
   }
 
@@ -182,9 +188,7 @@ final class AppModel {
         assistantID: message.assistantID, text: message.text,
         idempotencyKey: message.idempotencyKey, via: message.via)
       guard self.session == session else { return }
-      if timelines[message.assistantID, default: Timeline()].store(event) {
-        setLatestEvent(event, onlyIfLatest: false)
-      }
+      store(event)
     } catch {
       guard self.session == session else { return }
       setState(.failed, of: message, from: .sending)
@@ -198,14 +202,17 @@ final class AppModel {
       assistantID: assistantID, isOnline: assistant(id: assistantID)?.status == .online,
       send: { text in
         // Speech can come before the Assistant is online, so keep it behind `call_started`.
-        Task {
-          await self.callEvents?.value
-          await self.send(text: text, assistantID: assistantID, via: .voice)
+        guard let message = self.queue(text: text, assistantID: assistantID, via: .voice) else {
+          return
+        }
+        let session = self.session
+        self.enqueue {
+          if self.session == session { await self.post(message) }
         }
       },
-      onEnd: { self.post(call: .callEnded, assistantID: assistantID) })
+      onEnd: { self.enqueueCallEvent(.callEnded, assistantID: assistantID) })
     if started {
-      post(call: .callStarted, assistantID: assistantID)
+      enqueueCallEvent(.callStarted, assistantID: assistantID)
     }
     return started
   }
@@ -221,23 +228,41 @@ final class AppModel {
     endVoiceCall()
   }
 
-  /// Posts in order, so a chat's end never overtakes its start.
-  private func post(call type: Event.Kind, assistantID: Assistant.ID) {
-    let previous = callEvents
-    let key = UUIDv7.make()
-    callEvents = Task {
+  private func enqueue(_ work: @escaping @MainActor () async -> Void) {
+    let previous = callOutbox
+    callOutbox = Task {
       await previous?.value
-      for attempt in 1...Self.callEventAttempts {
-        if attempt > 1 { try? await Task.sleep(for: .seconds(1)) }
-        guard
-          let event = try? await client().sendCallEvent(
+      await work()
+    }
+  }
+
+  /// Keeps trying while the failure may pass, because an Assistant that never sees the end of
+  /// a call keeps its agent awake. A call's later posts wait behind it, so it gives up eventually.
+  private func enqueueCallEvent(_ type: Event.Kind, assistantID: Assistant.ID) {
+    let key = UUIDv7.make()
+    let session = session
+    enqueue {
+      var backoff = Backoff()
+      for attempt in 1...Self.callEventAttempts where self.session == session {
+        do {
+          let event = try await self.client().sendCallEvent(
             assistantID: assistantID, type: type, idempotencyKey: key)
-        else { continue }
-        if timelines[assistantID, default: Timeline()].store(event) {
-          setLatestEvent(event, onlyIfLatest: false)
+          guard self.session == session else { return }
+          self.store(event)
+          return
+        } catch {
+          guard (error as? APIError)?.isTransient ?? true else { return }
         }
-        return
+        if attempt < Self.callEventAttempts {
+          do { try await self.sleep(backoff.next()) } catch { return }
+        }
       }
+    }
+  }
+
+  private func store(_ event: Event) {
+    if timelines[event.assistantID, default: Timeline()].store(event) {
+      setLatestEvent(event, onlyIfLatest: false)
     }
   }
 
