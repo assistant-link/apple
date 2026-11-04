@@ -63,7 +63,7 @@ struct AssistantListView: View {
           }
         }
         .onChange(of: path) { model.navigated(to: path) }
-        // The call outlives its conversation view while Details covers it, so the stack's root ends it.
+        // The conversation can sit under Details mid-call, so the root ends the call on backgrounding.
         .onChange(of: scenePhase) {
           if scenePhase == .background { model.endVoiceCall() }
         }
