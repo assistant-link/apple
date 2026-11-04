@@ -442,6 +442,22 @@ struct VoiceCallRecognizerErrorTests {
     #expect(!setup.call.listeningFailed)
   }
 
+  @Test func retryingListeningDoesNothingWhileMutedOrSpeaking() async {
+    let setup = Setup()
+    await setup.start()
+    for _ in 0..<VoiceCall.maxFailures {
+      setup.listener.hear(.failed)
+      setup.retry.fire()
+    }
+    setup.call.receive(setup.assistantMessage("e-1", "Hello"))
+
+    setup.call.retryListening()
+
+    #expect(setup.call.state == .speaking)
+    #expect(setup.call.listeningFailed)
+    #expect(!setup.listener.isListening)
+  }
+
   @Test func retryingListeningDoesNothingWhileListeningWorks() async {
     let setup = Setup()
     await setup.start()

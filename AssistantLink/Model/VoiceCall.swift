@@ -187,7 +187,7 @@ final class VoiceCall {
 
   /// Tries listening again right away after it gave up.
   func retryListening() {
-    guard listeningFailed, !isMuted else { return }
+    guard listeningFailed, !isMuted, state != .speaking else { return }
     patience.cancel()
     listeningFailed = false
     failures = 0

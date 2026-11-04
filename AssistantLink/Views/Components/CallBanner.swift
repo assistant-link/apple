@@ -1,13 +1,13 @@
 import SwiftUI
 
-/// The voice chat controls below the navigation bar: mute and end.
+/// The voice chat controls below the navigation bar: mute, end, and retry listening after it gave up.
 struct CallBanner: View {
   let phase: CallBannerPhase
   let avatar: Avatar
   /// How lively the bars are while live, 0 to 1. Read in this view's body so that the fast
   /// changing level redraws only the banner.
   var amplitude: () -> Double = { 0.7 }
-  var onRetry: () -> Void = {}
+  let onRetry: () -> Void
   let onMute: () -> Void
   let onEnd: () -> Void
 
@@ -51,6 +51,8 @@ struct CallBanner: View {
       Button(action: onRetry) {
         Label("Not listening, tap to retry", systemImage: "arrow.clockwise")
           .font(.subheadline)
+          .lineLimit(1)
+          .minimumScaleFactor(0.7)
           .foregroundStyle(.secondary)
           .frame(maxWidth: .infinity, minHeight: 40)
       }

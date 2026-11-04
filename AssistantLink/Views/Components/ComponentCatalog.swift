@@ -116,7 +116,7 @@ struct ComponentCatalog: View {
       TitleBubble(name: "Hermes", avatar: Avatar(id: "avatar-3"), state: .inCall)
       ForEach([CallBannerPhase.connecting, .live, .muted, .notListening], id: \.self) { phase in
         CallBanner(
-          phase: phase, avatar: Avatar(id: "avatar-3"), onMute: {}, onEnd: {})
+          phase: phase, avatar: Avatar(id: "avatar-3"), onRetry: {}, onMute: {}, onEnd: {})
       }
     }
   }
