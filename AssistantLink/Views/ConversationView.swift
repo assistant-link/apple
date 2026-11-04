@@ -181,6 +181,7 @@ private struct SystemEventView: View {
       }
     }
     .frame(maxWidth: .infinity)
+    .multilineTextAlignment(.center)
   }
 }
 
