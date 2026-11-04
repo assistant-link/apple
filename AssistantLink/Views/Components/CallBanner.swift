@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The voice chat controls below the navigation bar: mute, end, and retry listening after it gave up.
+/// The voice chat controls below the navigation bar: mute, end, and retry listening.
 struct CallBanner: View {
   let phase: CallBannerPhase
   let avatar: Avatar
