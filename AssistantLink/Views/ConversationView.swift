@@ -11,6 +11,7 @@ struct ConversationView: View {
 
   var body: some View {
     if let assistant = model.assistant(id: assistantID) {
+      let call = CallPresentation(model.voiceCall, assistantID: assistant.id)
       Group {
         if assistant.links.isEmpty {
           SetupGuideView(assistant: assistant) { pairingLink = $0 }
@@ -20,7 +21,7 @@ struct ConversationView: View {
       }
       .navigationBarTitleDisplayMode(.inline)
       .toolbar {
-        titleBubble(assistant)
+        titleBubble(assistant, call)
         ToolbarItem(placement: .topBarTrailing) {
           Menu("More", systemImage: "ellipsis") {
             NavigationLink(value: Route.details(assistant.id)) {
@@ -32,11 +33,11 @@ struct ConversationView: View {
       }
       .overlay(alignment: .top) {
         CallGlow()
-          .opacity(call(for: assistant).isInCall ? 1 : 0)
+          .opacity(call.isInCall ? 1 : 0)
           .ignoresSafeArea()
       }
       .safeAreaInset(edge: .top) {
-        if let phase = call(for: assistant).bannerPhase {
+        if let phase = call.bannerPhase {
           CallBanner(
             phase: phase, avatar: Avatar(id: assistant.avatar),
             amplitude: model.voiceCall.amplitude,
@@ -48,11 +49,15 @@ struct ConversationView: View {
           .transition(.move(edge: .top).combined(with: .opacity))
         }
       }
-      .animation(.easeInOut(duration: 0.3), value: call(for: assistant).isInCall)
+      .animation(.easeInOut(duration: 0.3), value: call.isInCall)
       .onChange(of: scenePhase) {
         if scenePhase == .background { model.endVoiceCall() }
       }
-      .onDisappear { if call(for: assistant).isInCall { model.endVoiceCall() } }
+      .onDisappear {
+        if CallPresentation(model.voiceCall, assistantID: assistant.id).isInCall {
+          model.endVoiceCall()
+        }
+      }
       .sheet(item: $pairingLink) { link in
         PairingView(
           assistantName: assistant.name, linkID: link.id,
@@ -65,27 +70,25 @@ struct ConversationView: View {
 
   /// The title bubble draws its own glass; the bar's would wrap it a second time on iOS 26.
   @ToolbarContentBuilder
-  private func titleBubble(_ assistant: Assistant) -> some ToolbarContent {
+  private func titleBubble(
+    _ assistant: Assistant, _ call: CallPresentation
+  ) -> some ToolbarContent {
     if #available(iOS 26.0, *) {
-      ToolbarItem(placement: .principal) { titleLink(assistant) }
+      ToolbarItem(placement: .principal) { titleLink(assistant, call) }
         .sharedBackgroundVisibility(.hidden)
     } else {
-      ToolbarItem(placement: .principal) { titleLink(assistant) }
+      ToolbarItem(placement: .principal) { titleLink(assistant, call) }
     }
   }
 
-  private func titleLink(_ assistant: Assistant) -> some View {
+  private func titleLink(_ assistant: Assistant, _ call: CallPresentation) -> some View {
     NavigationLink(value: Route.details(assistant.id)) {
       TitleBubble(
         name: assistant.name, avatar: Avatar(id: assistant.avatar),
-        state: call(for: assistant).titleState(isOnline: assistant.status == .online))
+        state: call.titleState(isOnline: assistant.status == .online))
     }
     .buttonStyle(.plain)
     .accessibilityHint("Shows the Assistant's details and Links")
-  }
-
-  private func call(for assistant: Assistant) -> CallPresentation {
-    CallPresentation(model.voiceCall, assistantID: assistant.id)
   }
 
   private func timeline(_ assistant: Assistant) -> some View {
