@@ -64,7 +64,6 @@ struct FirstPairingView: View {
         Text(title).font(.headline)
         Text(detail).font(.subheadline).foregroundStyle(.secondary)
       }
-      Spacer(minLength: 0)
     }
   }
 
