@@ -216,7 +216,9 @@ final class VoiceCall {
     }
   }
 
-  private var canHear: Bool { (state == .listening || state == .connecting) && !isMuted && !listeningFailed }
+  private var canHear: Bool {
+    (state == .listening || state == .connecting) && !isMuted && !listeningFailed
+  }
 
   private func startListening() {
     guard canHear else { return }
