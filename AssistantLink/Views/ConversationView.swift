@@ -88,7 +88,7 @@ struct ConversationView: View {
   private func timeline(_ assistant: Assistant) -> some View {
     let content = model.timelines[assistant.id] ?? Timeline()
     return ScrollView {
-      VStack(spacing: 12) {
+      LazyVStack(spacing: 12) {
         if content.hasMore {
           LoadEarlierButton(assistantID: assistant.id) { first in
             // Scrolling back to the old first event keeps the messages on screen in place.
@@ -120,8 +120,6 @@ struct ConversationView: View {
       .padding(.vertical, 24)
     }
     .defaultScrollAnchor(.bottom)
-    // The composer and the keyboard shrink the viewport after the first layout.
-    .defaultScrollAnchor(.bottom, for: .sizeChanges)
     .scrollPosition($position)
     .onChange(of: content.outgoing.last?.id) { position.scrollTo(edge: .bottom) }
     .onChange(of: content.events.last?.id) { position.scrollTo(edge: .bottom) }
