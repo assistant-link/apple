@@ -883,4 +883,39 @@ struct VoiceCallAppModelTests {
     #expect(model.voiceCall.state == .idle)
     #expect(!listener.isListening)
   }
+
+  @Test func theCallSurvivesOpeningDetails() async {
+    let listener = FakeListener()
+    let model = await startedModel(Stub(), listener: listener)
+    #expect(await model.startVoiceCall(assistantID: "as-1"))
+
+    model.navigated(to: [.conversation("as-1")])
+    model.navigated(to: [.conversation("as-1"), .details("as-1")])
+    model.navigated(to: [.conversation("as-1")])
+
+    #expect(model.voiceCall.state == .connecting)
+    #expect(listener.isListening)
+  }
+
+  @Test func theCallEndsWhenItsConversationIsClosed() async {
+    let stub = Stub()
+    let model = await startedModel(stub, listener: FakeListener())
+    #expect(await model.startVoiceCall(assistantID: "as-1"))
+
+    model.navigated(to: [.conversation("as-1"), .details("as-1")])
+    model.navigated(to: [])
+    await model.callEvents?.value
+
+    #expect(model.voiceCall.state == .idle)
+    #expect(stub.bodies.withLock { $0 }.map { $0["type"] } == ["call_started", "call_ended"])
+  }
+
+  @Test func theCallEndsWhenAnotherConversationReplacesIt() async {
+    let model = await startedModel(Stub(), listener: FakeListener())
+    #expect(await model.startVoiceCall(assistantID: "as-1"))
+
+    model.navigated(to: [.conversation("as-2")])
+
+    #expect(model.voiceCall.state == .idle)
+  }
 }
