@@ -19,8 +19,8 @@ struct ComponentCatalog: View {
   var body: some View {
     if section == .chat {
       // Pushed over an empty root so the screenshot has the back button of a real conversation.
-      NavigationStack {
-        Color.clear.navigationDestination(isPresented: .constant(true)) {
+      NavigationStack(path: .constant([0])) {
+        Color.clear.navigationDestination(for: Int.self) { _ in
           ConversationView(assistantID: Assistant.samples[0].id)
         }
       }
