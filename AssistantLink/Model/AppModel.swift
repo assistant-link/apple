@@ -27,7 +27,7 @@ final class AppModel {
   private let makeLiveUpdates: @MainActor (APIClient) -> LiveUpdates?
   private var api: APIClient?
   private var pairingCodes: [Link.ID: PairingCode] = [:]
-  private let retryDelay: @Sendable (_ failures: Int) -> Duration
+  private let sleep: @Sendable (Duration) async throws -> Void
   /// The tail of a call's posts, which run one after another so the Assistant sees them in the
   /// order they happened.
   private(set) var callOutbox: Task<Void, Never>?
@@ -36,13 +36,13 @@ final class AppModel {
     connect: @escaping @Sendable () async throws -> APIClient,
     forget: @escaping @Sendable () throws -> Void = {},
     liveUpdates: @escaping @MainActor (APIClient) -> LiveUpdates? = LiveUpdates.live,
-    retryDelay: @escaping @Sendable (Int) -> Duration = { .seconds(min(30, 1 << min($0, 5))) },
+    sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
     voiceCall: VoiceCall = .live()
   ) {
     self.connect = connect
     self.forget = forget
     self.makeLiveUpdates = liveUpdates
-    self.retryDelay = retryDelay
+    self.sleep = sleep
     self.voiceCall = voiceCall
   }
 
@@ -186,9 +186,7 @@ final class AppModel {
         assistantID: message.assistantID, text: message.text,
         idempotencyKey: message.idempotencyKey, via: message.via)
       guard self.session == session else { return }
-      if timelines[message.assistantID, default: Timeline()].store(event) {
-        setLatestEvent(event, onlyIfLatest: false)
-      }
+      store(event)
     } catch {
       guard self.session == session else { return }
       setState(.failed, of: message, from: .sending)
@@ -207,9 +205,9 @@ final class AppModel {
         }
         self.enqueue { await self.post(message) }
       },
-      onEnd: { self.enqueue(call: .callEnded, assistantID: assistantID) })
+      onEnd: { self.enqueueCallEvent(.callEnded, assistantID: assistantID) })
     if started {
-      enqueue(call: .callStarted, assistantID: assistantID)
+      enqueueCallEvent(.callStarted, assistantID: assistantID)
     }
     return started
   }
@@ -235,26 +233,29 @@ final class AppModel {
 
   /// Keeps trying while the failure may pass, because an Assistant that never sees the end of
   /// a call keeps its agent awake.
-  private func enqueue(call type: Event.Kind, assistantID: Assistant.ID) {
+  private func enqueueCallEvent(_ type: Event.Kind, assistantID: Assistant.ID) {
     let key = UUIDv7.make()
     let session = session
     enqueue {
-      var failures = 0
+      var backoff = Backoff()
       while self.session == session {
         do {
           let event = try await self.client().sendCallEvent(
             assistantID: assistantID, type: type, idempotencyKey: key)
           guard self.session == session else { return }
-          if self.timelines[assistantID, default: Timeline()].store(event) {
-            self.setLatestEvent(event, onlyIfLatest: false)
-          }
+          self.store(event)
           return
-        } catch let error as APIError {
-          guard error.isTransient else { return }
-        } catch {}
-        failures += 1
-        do { try await Task.sleep(for: self.retryDelay(failures)) } catch { return }
+        } catch {
+          guard (error as? APIError)?.isTransient ?? true else { return }
+        }
+        do { try await self.sleep(backoff.next()) } catch { return }
       }
+    }
+  }
+
+  private func store(_ event: Event) {
+    if timelines[event.assistantID, default: Timeline()].store(event) {
+      setLatestEvent(event, onlyIfLatest: false)
     }
   }
 

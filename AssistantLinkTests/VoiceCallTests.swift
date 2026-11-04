@@ -898,8 +898,9 @@ struct VoiceCallAppModelTests {
         bodies.withLock { $0.append(sent) }
         if sent["type"] == "call_ended",
           endFailures.withLock({ failures in
-            defer { failures -= 1 }
-            return failures > 0
+            guard failures > 0 else { return false }
+            failures -= 1
+            return true
           })
         {
           throw URLError(.notConnectedToInternet)
@@ -929,7 +930,7 @@ struct VoiceCallAppModelTests {
       baseURL: URL(string: "https://service.test")!, credential: "ala_secret",
       session: StubURLProtocol.session { request, body in try stub.answer(request, body) })
     let model = AppModel(
-      connect: { api }, retryDelay: { _ in .zero },
+      connect: { api }, sleep: { _ in },
       voiceCall: VoiceCall(listener: listener, speaker: FakeSpeaker(), audio: FakeAudio()))
     await model.start()
     return model
