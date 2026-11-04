@@ -96,6 +96,7 @@ private final class Setup {
   let retry = FakeSilence()
   let patience = FakeSilence()
   var sent: [String] = []
+  private(set) var sentBeforeEnd: [String] = []
   private(set) var ends = 0
   private(set) var call: VoiceCall!
 
@@ -108,7 +109,10 @@ private final class Setup {
   func start(isOnline: Bool = true) async {
     let started = await call.start(
       assistantID: "as-1", isOnline: isOnline, send: { [unowned self] in sent.append($0) },
-      onEnd: { [unowned self] in ends += 1 })
+      onEnd: { [unowned self] in
+        ends += 1
+        sentBeforeEnd = sent
+      })
     #expect(started)
   }
 
@@ -666,13 +670,37 @@ struct VoiceCallUtteranceTests {
     #expect(setup.sent.isEmpty)
   }
 
-  @Test func aReplyDropsTheUtteranceInProgress() async {
+  @Test func aReplySendsTheUtteranceInProgressBeforeSpeaking() async {
     let setup = Setup()
     await setup.start()
 
     setup.listener.hear(.partial("Hello"))
     setup.call.receive(setup.assistantMessage("e-1", "Hi"))
     setup.silence.fire()
+
+    #expect(setup.sent == ["Hello"])
+    #expect(setup.speaker.spoken == ["Hi"])
+  }
+
+  @Test func endingSendsTheUtteranceInProgressBeforeTheEnd() async {
+    let setup = Setup()
+    await setup.start()
+
+    setup.listener.hear(.partial("Hello"))
+    setup.call.end()
+    setup.silence.fire()
+
+    #expect(setup.sent == ["Hello"])
+    #expect(setup.ends == 1)
+    #expect(setup.sentBeforeEnd == ["Hello"])
+  }
+
+  @Test func endingWithNothingHeardSendsNothing() async {
+    let setup = Setup()
+    await setup.start()
+
+    setup.listener.hear(.partial("  "))
+    setup.call.end()
 
     #expect(setup.sent.isEmpty)
   }
@@ -685,7 +713,6 @@ struct VoiceCallUtteranceTests {
     setup.call.end()
 
     #expect(!setup.silence.isPending)
-    #expect(setup.sent.isEmpty)
   }
 }
 
