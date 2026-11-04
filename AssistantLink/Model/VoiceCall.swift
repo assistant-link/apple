@@ -170,6 +170,7 @@ final class VoiceCall {
 
   func end() {
     guard state != .idle else { return }
+    flushUtterance()
     stopListening()
     speaker.stop()
     audio.deactivate()
@@ -217,6 +218,7 @@ final class VoiceCall {
       startListening()
       return
     }
+    flushUtterance()
     stopListening()
     state = .speaking
     speaker.speak(replies.removeFirst()) { [weak self] in
@@ -272,6 +274,13 @@ final class VoiceCall {
 
   private func restartSilenceTimer() {
     silence.restart { [weak self] in self?.finishUtterance() }
+  }
+
+  /// Sends what was heard so far, which a reply or the end of the call would otherwise drop.
+  private func flushUtterance() {
+    let text = heard.trimmingCharacters(in: .whitespacesAndNewlines)
+    heard = ""
+    if !text.isEmpty { send?(text) }
   }
 
   private func finishUtterance() {
