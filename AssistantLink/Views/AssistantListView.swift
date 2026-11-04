@@ -7,6 +7,7 @@ enum Route: Hashable {
 
 struct AssistantListView: View {
   @Environment(AppModel.self) private var model
+  @Environment(\.scenePhase) private var scenePhase
   @State private var path: [Route] = []
   @State private var isCreating = false
   @State private var refreshError: String?
@@ -62,6 +63,10 @@ struct AssistantListView: View {
           }
         }
         .onChange(of: path) { model.navigated(to: path) }
+        // The call outlives its conversation view while Details covers it, so the stack's root ends it.
+        .onChange(of: scenePhase) {
+          if scenePhase == .background { model.endVoiceCall() }
+        }
         .sheet(isPresented: $isCreating) {
           CreateAssistantView { assistant in path.append(.conversation(assistant.id)) }
         }
