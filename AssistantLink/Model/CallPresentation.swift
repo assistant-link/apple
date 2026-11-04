@@ -24,7 +24,7 @@ struct CallPresentation: Equatable {
 
   var isInCall: Bool { bannerPhase != nil }
 
-  func titleState(isOnline: Bool) -> TitleBubble.State {
+  func titleState(isOnline: Bool) -> TitleBubble.Status {
     if isInCall { return .inCall }
     return isOnline ? .online : .offline
   }

@@ -55,9 +55,11 @@ A glass capsule below the nav bar (x 16, 361 x 64, `.glassEffect(in: .capsule)`)
 | Avatar | `Circle`, 36, left | none | avatar yellow | none |
 | Waveform | `WaveformView`, thin bars growing toward the right, `.red`; Connecting and Muted show a flat dotted line (`.tertiary`) | none | `.red` | none |
 | Mute (`voiceMute`) | `Button`, glass circle 40; muted = filled `.primary` circle | `mic` / `mic.slash` | `.primary` | "Mute" / "Unmute" |
-| End (`voiceEnd`) | `Button`, filled `.red` circle 40, `.white` glyph | `xmark` | `.red` | "End" |
+| End (`voiceEnd`) | `Button`, filled `.red` circle 40, `.white` glyph | `xmark` | `.red` | "End voice chat" |
 
 Variants: Connecting (dotted waveform), Live (bars), Muted (dotted waveform, filled mute button).
+
+Swiping the banner up hides it and leaves a small chevron button that brings it back; VoiceOver gets a "Hide" action. VoiceOver reads the banner as "Voice chat" with the value Connecting, Live, Muted or Not listening.
 
 ### Voice chat marker (`VoiceChatBubble`)
 

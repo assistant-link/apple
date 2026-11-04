@@ -1,9 +1,9 @@
 import SwiftUI
 
 /// The design-system components with sample data. The previews show it, and `-componentCatalog
-/// <section>` opens one section as the app's only screen, which the screenshots job captures.
+/// <page>` opens one page as the app's only screen, which the screenshots job captures.
 struct ComponentCatalog: View {
-  enum Section: String, CaseIterable {
+  enum Page: String, CaseIterable {
     case messages
     case composer
     case call
@@ -13,15 +13,20 @@ struct ComponentCatalog: View {
     case afterCall = "after-call"
     case pairing
 
-    static var launched: Section? {
-      UserDefaults.standard.string(forKey: "componentCatalog").flatMap(Section.init)
+    /// Only in debug builds, so a release build cannot be steered to the sample screens.
+    static var launched: Page? {
+      #if DEBUG
+        UserDefaults.standard.string(forKey: "componentCatalog").flatMap(Page.init)
+      #else
+        nil
+      #endif
     }
   }
 
-  let section: Section
+  let page: Page
 
   var body: some View {
-    if section == .pairing {
+    if page == .pairing {
       NavigationStack { ConversationView(assistantID: Assistant.samples[1].id) }
         .environment(AppModel.preview(Assistant.samples))
         .accessibilityIdentifier("componentCatalog")
@@ -31,35 +36,35 @@ struct ComponentCatalog: View {
         .task { await startCall(on: model) }
         .accessibilityIdentifier("componentCatalog")
     } else {
-      sections
+      pages
     }
   }
 
-  /// The chat screen of the design mocks, in the state of the section.
+  /// The chat screen of the design mocks, in the state of the page.
   private var chatModel: AppModel? {
     var assistants = Assistant.samples
-    switch section {
+    switch page {
     case .chat, .afterCall: break
     case .callConnecting: assistants[0].status = .offline
     case .callLive: break
     default: return nil
     }
-    let timeline = section == .afterCall ? Timeline.designMockAfterCall : .designMock
+    let timeline = page == .afterCall ? Timeline.designMockAfterCall : .designMock
     return AppModel.preview(
       assistants, timelines: [assistants[0].id: timeline], voiceCall: .preview())
   }
 
   private func startCall(on model: AppModel) async {
-    guard section == .callConnecting || section == .callLive else { return }
+    guard page == .callConnecting || page == .callLive else { return }
     _ = await model.startVoiceCall(assistantID: Assistant.samples[0].id)
   }
 
-  private var sections: some View {
+  private var pages: some View {
     VStack(alignment: .leading, spacing: 16) {
-      Text(section.rawValue.capitalized)
+      Text(page.rawValue.capitalized)
         .font(.title2.bold())
         .accessibilityIdentifier("componentCatalog")
-      switch section {
+      switch page {
       case .messages: messages
       case .composer: composer
       case .call: call
@@ -111,9 +116,9 @@ struct ComponentCatalog: View {
 
   private var call: some View {
     VStack(alignment: .leading, spacing: 16) {
-      TitleBubble(name: "Hermes", avatar: Avatar(id: "avatar-3"), state: .online)
-      TitleBubble(name: "Hermes", avatar: Avatar(id: "avatar-3"), state: .offline)
-      TitleBubble(name: "Hermes", avatar: Avatar(id: "avatar-3"), state: .inCall)
+      TitleBubble(name: "Hermes", avatar: Avatar(id: "avatar-3"), status: .online)
+      TitleBubble(name: "Hermes", avatar: Avatar(id: "avatar-3"), status: .offline)
+      TitleBubble(name: "Hermes", avatar: Avatar(id: "avatar-3"), status: .inCall)
       ForEach([CallBannerPhase.connecting, .live, .muted, .notListening], id: \.self) { phase in
         CallBanner(
           phase: phase, avatar: Avatar(id: "avatar-3"), onRetry: {}, onMute: {}, onEnd: {})
@@ -122,25 +127,25 @@ struct ComponentCatalog: View {
   }
 }
 
-#Preview("Messages") { ComponentCatalog(section: .messages) }
+#Preview("Messages") { ComponentCatalog(page: .messages) }
 #Preview("Messages, dark") {
-  ComponentCatalog(section: .messages).preferredColorScheme(.dark)
+  ComponentCatalog(page: .messages).preferredColorScheme(.dark)
 }
-#Preview("Composer") { ComponentCatalog(section: .composer) }
+#Preview("Composer") { ComponentCatalog(page: .composer) }
 #Preview("Composer, dark") {
-  ComponentCatalog(section: .composer).preferredColorScheme(.dark)
+  ComponentCatalog(page: .composer).preferredColorScheme(.dark)
 }
-#Preview("Call") { ComponentCatalog(section: .call) }
+#Preview("Call") { ComponentCatalog(page: .call) }
 #Preview("Call, dark") {
-  ComponentCatalog(section: .call).preferredColorScheme(.dark)
+  ComponentCatalog(page: .call).preferredColorScheme(.dark)
 }
 
-#Preview("Chat in a call, connecting") { ComponentCatalog(section: .callConnecting) }
-#Preview("Chat in a call, live") { ComponentCatalog(section: .callLive) }
-#Preview("Chat after a call") { ComponentCatalog(section: .afterCall) }
+#Preview("Chat in a call, connecting") { ComponentCatalog(page: .callConnecting) }
+#Preview("Chat in a call, live") { ComponentCatalog(page: .callLive) }
+#Preview("Chat after a call") { ComponentCatalog(page: .afterCall) }
 #Preview("Chat in a call, live, dark") {
-  ComponentCatalog(section: .callLive).preferredColorScheme(.dark)
+  ComponentCatalog(page: .callLive).preferredColorScheme(.dark)
 }
 
-#Preview("Chat") { ComponentCatalog(section: .chat) }
-#Preview("Chat, dark") { ComponentCatalog(section: .chat).preferredColorScheme(.dark) }
+#Preview("Chat") { ComponentCatalog(page: .chat) }
+#Preview("Chat, dark") { ComponentCatalog(page: .chat).preferredColorScheme(.dark) }

@@ -8,8 +8,10 @@ struct WaveformView: View {
   var barCount = 5
   var growing = false
 
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
   var body: some View {
-    TimelineView(.animation) { context in
+    TimelineView(.animation(paused: reduceMotion)) { context in
       let time = context.date.timeIntervalSinceReferenceDate
       HStack(spacing: barWidth) {
         ForEach(0..<barCount, id: \.self) { index in

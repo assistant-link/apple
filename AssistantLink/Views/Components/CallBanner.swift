@@ -14,35 +14,29 @@ struct CallBanner: View {
   var body: some View {
     HStack(spacing: 12) {
       AvatarView(avatar: avatar, size: 36)
+        .accessibilityHidden(true)
       waveform
         .frame(maxWidth: .infinity)
       Button(
         phase == .muted ? "Unmute" : "Mute",
         systemImage: phase == .muted ? "mic.slash" : "mic", action: onMute
       )
-      .labelStyle(.iconOnly)
-      .buttonStyle(.plain)
-      .foregroundStyle(phase == .muted ? Color(.systemBackground) : Color.primary)
-      .frame(width: 40, height: 40)
-      .background {
-        if phase == .muted {
-          Circle().fill(Color(.label))
-        } else {
-          Circle().fill(Color(.tertiarySystemFill))
-        }
-      }
+      .buttonStyle(
+        .circle(
+          foreground: phase == .muted ? Color(.systemBackground) : .primary,
+          background: phase == .muted ? Color(.label) : Color(.tertiarySystemFill), diameter: 40)
+      )
       .accessibilityIdentifier("voiceMute")
-      Button("End", systemImage: "xmark", action: onEnd)
-        .labelStyle(.iconOnly)
-        .buttonStyle(.plain)
-        .foregroundStyle(.white)
-        .frame(width: 40, height: 40)
-        .background(.red, in: Circle())
+      Button("End voice chat", systemImage: "xmark", action: onEnd)
+        .buttonStyle(.circle(foreground: .white, background: .red, diameter: 40))
         .accessibilityIdentifier("voiceEnd")
     }
     .padding(.horizontal, 14)
     .frame(height: 64)
     .glassBackground(in: Capsule())
+    .accessibilityElement(children: .contain)
+    .accessibilityLabel("Voice chat")
+    .accessibilityValue(phase.accessibilityValue)
   }
 
   @ViewBuilder
