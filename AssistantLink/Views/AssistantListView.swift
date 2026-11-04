@@ -61,6 +61,7 @@ struct AssistantListView: View {
           case .details(let id): AssistantDetailsView(assistantID: id)
           }
         }
+        .onChange(of: path) { model.navigated(to: path) }
         .sheet(isPresented: $isCreating) {
           CreateAssistantView { assistant in path.append(.conversation(assistant.id)) }
         }

@@ -53,11 +53,6 @@ struct ConversationView: View {
       .onChange(of: scenePhase) {
         if scenePhase == .background { model.endVoiceCall() }
       }
-      .onDisappear {
-        if CallPresentation(model.voiceCall, assistantID: assistant.id).isInCall {
-          model.endVoiceCall()
-        }
-      }
       .sheet(item: $pairingLink) { link in
         PairingView(
           assistantName: assistant.name, linkID: link.id,

@@ -214,6 +214,13 @@ final class AppModel {
     voiceCall.end()
   }
 
+  /// A call outlives the screens pushed on top of its conversation, such as Details, and ends
+  /// once the conversation is no longer in the stack.
+  func navigated(to path: [Route]) {
+    guard let id = voiceCall.assistantID, !path.contains(.conversation(id)) else { return }
+    endVoiceCall()
+  }
+
   /// Posts in order, so a chat's end never overtakes its start.
   private func post(call type: Event.Kind, assistantID: Assistant.ID) {
     let previous = callEvents
