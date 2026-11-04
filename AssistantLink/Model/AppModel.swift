@@ -20,7 +20,6 @@ final class AppModel {
   let voiceCall: VoiceCall
 
   private static let pageSize = 50
-  private static let callEventAttempts = 3
   private static let logger = Logger(subsystem: "ai.assistantlink.app", category: "live")
 
   private let connect: @Sendable () async throws -> APIClient
@@ -28,17 +27,22 @@ final class AppModel {
   private let makeLiveUpdates: @MainActor (APIClient) -> LiveUpdates?
   private var api: APIClient?
   private var pairingCodes: [Link.ID: PairingCode] = [:]
-  private(set) var callEvents: Task<Void, Never>?
+  private let retryDelay: @Sendable (_ failures: Int) -> Duration
+  /// The tail of a call's posts, which run one after another so the Assistant sees them in the
+  /// order they happened.
+  private(set) var callOutbox: Task<Void, Never>?
 
   init(
     connect: @escaping @Sendable () async throws -> APIClient,
     forget: @escaping @Sendable () throws -> Void = {},
     liveUpdates: @escaping @MainActor (APIClient) -> LiveUpdates? = LiveUpdates.live,
+    retryDelay: @escaping @Sendable (Int) -> Duration = { .seconds(min(30, 1 << min($0, 5))) },
     voiceCall: VoiceCall = .live()
   ) {
     self.connect = connect
     self.forget = forget
     self.makeLiveUpdates = liveUpdates
+    self.retryDelay = retryDelay
     self.voiceCall = voiceCall
   }
 
@@ -198,14 +202,14 @@ final class AppModel {
       assistantID: assistantID, isOnline: assistant(id: assistantID)?.status == .online,
       send: { text in
         // Speech can come before the Assistant is online, so keep it behind `call_started`.
-        Task {
-          await self.callEvents?.value
-          await self.send(text: text, assistantID: assistantID, via: .voice)
+        guard let message = self.queue(text: text, assistantID: assistantID, via: .voice) else {
+          return
         }
+        self.enqueue { await self.post(message) }
       },
-      onEnd: { self.post(call: .callEnded, assistantID: assistantID) })
+      onEnd: { self.enqueue(call: .callEnded, assistantID: assistantID) })
     if started {
-      post(call: .callStarted, assistantID: assistantID)
+      enqueue(call: .callStarted, assistantID: assistantID)
     }
     return started
   }
@@ -221,22 +225,35 @@ final class AppModel {
     endVoiceCall()
   }
 
-  /// Posts in order, so a chat's end never overtakes its start.
-  private func post(call type: Event.Kind, assistantID: Assistant.ID) {
-    let previous = callEvents
-    let key = UUIDv7.make()
-    callEvents = Task {
+  private func enqueue(_ work: @escaping @MainActor () async -> Void) {
+    let previous = callOutbox
+    callOutbox = Task {
       await previous?.value
-      for attempt in 1...Self.callEventAttempts {
-        if attempt > 1 { try? await Task.sleep(for: .seconds(1)) }
-        guard
-          let event = try? await client().sendCallEvent(
+      await work()
+    }
+  }
+
+  /// Keeps trying while the failure may pass, because an Assistant that never sees the end of
+  /// a call keeps its agent awake.
+  private func enqueue(call type: Event.Kind, assistantID: Assistant.ID) {
+    let key = UUIDv7.make()
+    let session = session
+    enqueue {
+      var failures = 0
+      while self.session == session {
+        do {
+          let event = try await self.client().sendCallEvent(
             assistantID: assistantID, type: type, idempotencyKey: key)
-        else { continue }
-        if timelines[assistantID, default: Timeline()].store(event) {
-          setLatestEvent(event, onlyIfLatest: false)
-        }
-        return
+          guard self.session == session else { return }
+          if self.timelines[assistantID, default: Timeline()].store(event) {
+            self.setLatestEvent(event, onlyIfLatest: false)
+          }
+          return
+        } catch let error as APIError {
+          guard error.isTransient else { return }
+        } catch {}
+        failures += 1
+        do { try await Task.sleep(for: self.retryDelay(failures)) } catch { return }
       }
     }
   }

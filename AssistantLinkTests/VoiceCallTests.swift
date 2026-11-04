@@ -877,12 +877,33 @@ struct CallEventDecodingTests {
 struct VoiceCallAppModelTests {
   private final class Stub: Sendable {
     let bodies = Mutex<[[String: String]]>([])
+    /// How many `call_ended` posts still fail with a network error before one succeeds.
+    let endFailures = Mutex(0)
 
     func answer(_ request: URLRequest, _ body: Data?) throws -> (Int, Data) {
       switch (request.httpMethod, request.url?.path()) {
+      case ("POST", "/api/v1/assistants/as-1/messages"):
+        let sent = try (body?.jsonObject() ?? [:]).compactMapValues { $0 as? String }
+        bodies.withLock { $0.append(sent.merging(["type": "message"]) { $1 }) }
+        let event = """
+          {"id": "ev-\(sent["idempotency_key"] ?? "")", "assistant_id": "as-1",
+           "type": "text_message", "sender": "user", "link_id": null,
+           "created_at": "2026-10-08T12:30:15Z", "deleted": false, "delivery_status": "sent",
+           "idempotency_key": "\(sent["idempotency_key"] ?? "")",
+           "text_message": {"text": "\(sent["text"] ?? "")"}}
+          """
+        return (201, Data(json: #"{"message": \#(event)}"#))
       case ("POST", "/api/v1/assistants/as-1/call_events"):
         let sent = try (body?.jsonObject() ?? [:]).compactMapValues { $0 as? String }
         bodies.withLock { $0.append(sent) }
+        if sent["type"] == "call_ended",
+          endFailures.withLock({ failures in
+            defer { failures -= 1 }
+            return failures > 0
+          })
+        {
+          throw URLError(.notConnectedToInternet)
+        }
         let event = """
           {"id": "ev-\(sent["idempotency_key"] ?? "")", "assistant_id": "as-1",
            "type": "\(sent["type"] ?? "")", "sender": "user", "link_id": null,
@@ -908,7 +929,7 @@ struct VoiceCallAppModelTests {
       baseURL: URL(string: "https://service.test")!, credential: "ala_secret",
       session: StubURLProtocol.session { request, body in try stub.answer(request, body) })
     let model = AppModel(
-      connect: { api },
+      connect: { api }, retryDelay: { _ in .zero },
       voiceCall: VoiceCall(listener: listener, speaker: FakeSpeaker(), audio: FakeAudio()))
     await model.start()
     return model
@@ -920,7 +941,7 @@ struct VoiceCallAppModelTests {
     let model = await startedModel(stub, listener: listener)
 
     #expect(await model.startVoiceCall(assistantID: "as-1"))
-    await model.callEvents?.value
+    await model.callOutbox?.value
 
     let sent = stub.bodies.withLock { $0 }
     #expect(sent.map { $0["type"] } == ["call_started"])
@@ -945,13 +966,42 @@ struct VoiceCallAppModelTests {
 
     model.endVoiceCall()
     model.endVoiceCall()
-    await model.callEvents?.value
+    await model.callOutbox?.value
 
     let sent = stub.bodies.withLock { $0 }
     #expect(sent.map { $0["type"] } == ["call_started", "call_ended"])
     #expect(Set(sent.compactMap { $0["idempotency_key"] }).count == 2)
     #expect(model.voiceCall.state == .idle)
     #expect(!listener.isListening)
+  }
+
+  @Test func theUtteranceFlushedByEndingIsSentBeforeCallEnded() async {
+    let stub = Stub()
+    let listener = FakeListener()
+    let model = await startedModel(stub, listener: listener)
+    #expect(await model.startVoiceCall(assistantID: "as-1"))
+
+    listener.hear(.partial("Goodbye"))
+    model.endVoiceCall()
+    await model.callOutbox?.value
+
+    let sent = stub.bodies.withLock { $0 }
+    #expect(sent.map { $0["type"] } == ["call_started", "message", "call_ended"])
+    #expect(sent[1]["text"] == "Goodbye")
+  }
+
+  @Test func callEndedIsRetriedUntilItIsDelivered() async {
+    let stub = Stub()
+    stub.endFailures.withLock { $0 = 5 }
+    let model = await startedModel(stub, listener: FakeListener())
+    #expect(await model.startVoiceCall(assistantID: "as-1"))
+
+    model.endVoiceCall()
+    await model.callOutbox?.value
+
+    let sent = stub.bodies.withLock { $0 }
+    #expect(sent.map { $0["type"] } == ["call_started"] + Array(repeating: "call_ended", count: 6))
+    #expect(Set(sent.dropFirst().compactMap { $0["idempotency_key"] }).count == 1)
   }
 
   @Test func theCallSurvivesOpeningDetails() async {
@@ -974,7 +1024,7 @@ struct VoiceCallAppModelTests {
 
     model.navigated(to: [.conversation("as-1"), .details("as-1")])
     model.navigated(to: [])
-    await model.callEvents?.value
+    await model.callOutbox?.value
 
     #expect(model.voiceCall.state == .idle)
     #expect(stub.bodies.withLock { $0 }.map { $0["type"] } == ["call_started", "call_ended"])

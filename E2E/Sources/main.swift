@@ -86,7 +86,7 @@ for (index, text) in heard.enumerated() {
 }
 
 model.endVoiceCall()
-await model.callEvents?.value
+await model.callOutbox?.value
 live.cancel()
 
 let events = try await api.events(assistantID: assistantID, limit: 50).events
