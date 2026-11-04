@@ -40,7 +40,7 @@ struct ConversationView: View {
         if let phase = call.bannerPhase {
           CallBanner(
             phase: phase, avatar: Avatar(id: assistant.avatar),
-            amplitude: model.voiceCall.amplitude,
+            amplitude: { model.voiceCall.amplitude },
             onMute: { model.voiceCall.setMuted(!model.voiceCall.isMuted) },
             onEnd: { model.endVoiceCall() }
           )
