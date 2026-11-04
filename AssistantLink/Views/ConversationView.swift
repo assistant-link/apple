@@ -88,7 +88,7 @@ struct ConversationView: View {
   private func timeline(_ assistant: Assistant) -> some View {
     let content = model.timelines[assistant.id] ?? Timeline()
     return ScrollView {
-      LazyVStack(spacing: 12) {
+      VStack(spacing: 12) {
         if content.hasMore {
           LoadEarlierButton(assistantID: assistant.id) { first in
             // Scrolling back to the old first event keeps the messages on screen in place.
