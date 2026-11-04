@@ -47,8 +47,9 @@ struct CallBanner: View {
   private var waveform: some View {
     if phase == .live {
       WaveformView(
-        amplitude: max(amplitude, 0.4), height: 28, barWidth: 2, barCount: 32, growing: true)
-        .foregroundStyle(.red)
+        amplitude: max(amplitude, 0.4), height: 28, barWidth: 2, barCount: 32, growing: true
+      )
+      .foregroundStyle(.red)
     } else {
       DottedLine()
         .stroke(
