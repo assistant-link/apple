@@ -1005,6 +1005,19 @@ struct VoiceCallAppModelTests {
     #expect(Set(sent.dropFirst().compactMap { $0["idempotency_key"] }).count == 1)
   }
 
+  @Test func callEndedGivesUpAfterTheAttemptLimitSoLaterPostsAreNotBlocked() async {
+    let stub = Stub()
+    stub.endFailures.withLock { $0 = 1000 }
+    let model = await startedModel(stub, listener: FakeListener())
+    #expect(await model.startVoiceCall(assistantID: "as-1"))
+
+    model.endVoiceCall()
+    await model.callOutbox?.value
+
+    let ended = stub.bodies.withLock { $0 }.filter { $0["type"] == "call_ended" }
+    #expect(ended.count == AppModel.callEventAttempts)
+  }
+
   @Test func theCallSurvivesOpeningDetails() async {
     let listener = FakeListener()
     let model = await startedModel(Stub(), listener: listener)

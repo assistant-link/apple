@@ -19,6 +19,8 @@ final class AppModel {
   private(set) var session = 0
   let voiceCall: VoiceCall
 
+  /// With `Backoff` this keeps trying for a few minutes.
+  static let callEventAttempts = 12
   private static let pageSize = 50
   private static let logger = Logger(subsystem: "ai.assistantlink.app", category: "live")
 
@@ -203,7 +205,10 @@ final class AppModel {
         guard let message = self.queue(text: text, assistantID: assistantID, via: .voice) else {
           return
         }
-        self.enqueue { await self.post(message) }
+        let session = self.session
+        self.enqueue {
+          if self.session == session { await self.post(message) }
+        }
       },
       onEnd: { self.enqueueCallEvent(.callEnded, assistantID: assistantID) })
     if started {
@@ -232,13 +237,13 @@ final class AppModel {
   }
 
   /// Keeps trying while the failure may pass, because an Assistant that never sees the end of
-  /// a call keeps its agent awake.
+  /// a call keeps its agent awake. A call's later posts wait behind it, so it gives up eventually.
   private func enqueueCallEvent(_ type: Event.Kind, assistantID: Assistant.ID) {
     let key = UUIDv7.make()
     let session = session
     enqueue {
       var backoff = Backoff()
-      while self.session == session {
+      for attempt in 1...Self.callEventAttempts where self.session == session {
         do {
           let event = try await self.client().sendCallEvent(
             assistantID: assistantID, type: type, idempotencyKey: key)
@@ -248,7 +253,9 @@ final class AppModel {
         } catch {
           guard (error as? APIError)?.isTransient ?? true else { return }
         }
-        do { try await self.sleep(backoff.next()) } catch { return }
+        if attempt < Self.callEventAttempts {
+          do { try await self.sleep(backoff.next()) } catch { return }
+        }
       }
     }
   }
