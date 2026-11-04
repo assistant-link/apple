@@ -10,7 +10,8 @@ struct CallPresentation: Equatable {
     if state == .idle || callAssistantID != assistantID {
       bannerPhase = nil
     } else {
-      bannerPhase = CallBannerPhase(state: state, isMuted: isMuted, listeningFailed: listeningFailed)
+      bannerPhase = CallBannerPhase(
+        state: state, isMuted: isMuted, listeningFailed: listeningFailed)
     }
   }
 

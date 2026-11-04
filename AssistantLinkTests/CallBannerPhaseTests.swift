@@ -4,7 +4,8 @@ import Testing
 
 struct CallBannerPhaseTests {
   @Test func connectingWhileWaitingForTheAssistant() {
-    #expect(CallBannerPhase(state: .connecting, isMuted: false, listeningFailed: false) == .connecting)
+    #expect(
+      CallBannerPhase(state: .connecting, isMuted: false, listeningFailed: false) == .connecting)
   }
 
   @Test func liveWhileListeningOrSpeaking() {
