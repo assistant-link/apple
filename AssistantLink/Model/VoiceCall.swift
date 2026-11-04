@@ -115,7 +115,7 @@ final class VoiceCall {
   init(
     listener: any SpeechListener, speaker: any SpeechSpeaker, audio: any VoiceAudio,
     silence: any SilenceTimer = TaskSilenceTimer(after: .milliseconds(1200)),
-    retry: any SilenceTimer = TaskSilenceTimer(after: .seconds(1))
+    retry: any SilenceTimer = TaskSilenceTimer(after: .milliseconds(500))
   ) {
     self.listener = listener
     self.speaker = speaker
@@ -207,6 +207,8 @@ final class VoiceCall {
   private func speakNext() {
     guard !replies.isEmpty else {
       state = isOnline ? .listening : .connecting
+      listeningFailed = false
+      failures = 0
       startListening()
       return
     }
@@ -246,12 +248,15 @@ final class VoiceCall {
       level = value
     case .partial(let text):
       heard = text
-      failures = 0
+      if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        failures = 0
+      }
       restartSilenceTimer()
     case .final(let text):
       heard = text
       finishUtterance()
     case .stopped:
+      failures = 0
       finishUtterance()
     case .failed:
       failures += 1

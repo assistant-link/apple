@@ -419,7 +419,7 @@ struct VoiceCallRecognizerErrorTests {
     #expect(setup.listener.isListening)
   }
 
-  @Test func aFailedCallStillSpeaksAndDoesNotListenAgain() async {
+  @Test func aFailedCallTriesListeningAgainAfterAReply() async {
     let setup = Setup()
     await setup.start()
     for _ in 0..<VoiceCall.maxFailures {
@@ -431,8 +431,35 @@ struct VoiceCallRecognizerErrorTests {
     #expect(setup.speaker.spoken == ["Hello"])
     setup.speaker.finish()
 
+    #expect(!setup.call.listeningFailed)
+    #expect(setup.listener.isListening)
+  }
+
+  @Test func aBenignEndBetweenFailuresResetsTheCount() async {
+    let setup = Setup()
+    await setup.start()
+
+    for _ in 0..<VoiceCall.maxFailures {
+      setup.listener.hear(.failed)
+      setup.retry.fire()
+      setup.listener.hear(.stopped)
+      setup.retry.fire()
+    }
+
+    #expect(!setup.call.listeningFailed)
+  }
+
+  @Test func emptyPartialResultsDoNotResetTheCount() async {
+    let setup = Setup()
+    await setup.start()
+
+    for _ in 0..<VoiceCall.maxFailures {
+      setup.listener.hear(.partial(""))
+      setup.listener.hear(.failed)
+      setup.retry.fire()
+    }
+
     #expect(setup.call.listeningFailed)
-    #expect(!setup.listener.isListening)
   }
 
   @Test(arguments: ["mute", "reply", "end"])
