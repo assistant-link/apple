@@ -51,9 +51,10 @@ final class AppModel {
   }
 
   static func preview(
-    _ assistants: [Assistant], timelines: [Assistant.ID: Timeline] = [:]
+    _ assistants: [Assistant], timelines: [Assistant.ID: Timeline] = [:],
+    voiceCall: VoiceCall = .live()
   ) -> AppModel {
-    let model = AppModel(connect: { throw APIError.unreachable })
+    let model = AppModel(connect: { throw APIError.unreachable }, voiceCall: voiceCall)
     model.assistants = assistants
     model.timelines = timelines
     model.phase = .ready

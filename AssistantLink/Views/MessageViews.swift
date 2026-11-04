@@ -73,9 +73,14 @@ struct ComposerView: View {
   @State private var isVoiceUnavailable = false
   @Environment(\.openURL) private var openURL
 
+  /// The banner already says the call is waiting for the Assistant.
+  private var isInCall: Bool {
+    CallPresentation(model.voiceCall, assistantID: assistant.id).isInCall
+  }
+
   var body: some View {
     VStack(spacing: 8) {
-      if let notice = assistant.offlineNotice {
+      if !isInCall, let notice = assistant.offlineNotice {
         Text(notice)
           .font(.footnote)
           .foregroundStyle(.secondary)
@@ -84,8 +89,7 @@ struct ComposerView: View {
           .accessibilityIdentifier("offlineNotice")
       }
       MessageComposer(
-        draft: $draft, isInCall: model.voiceCall.state != .idle, onSend: send,
-        onVoiceChat: startCall)
+        draft: $draft, isInCall: isInCall, onSend: send, onVoiceChat: startCall)
     }
     .padding(.horizontal, 16)
     .padding(.vertical, 8)

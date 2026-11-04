@@ -7,11 +7,11 @@ struct ConversationView: View {
   @State private var pairingLink: Link?
   @State private var failedMessage: OutgoingMessage?
   @State private var position = ScrollPosition()
-  @State private var isVoiceExpanded = false
   @Environment(\.scenePhase) private var scenePhase
 
   var body: some View {
     if let assistant = model.assistant(id: assistantID) {
+      let call = CallPresentation(model.voiceCall, assistantID: assistant.id)
       Group {
         if assistant.links.isEmpty {
           SetupGuideView(assistant: assistant) { pairingLink = $0 }
@@ -21,12 +21,7 @@ struct ConversationView: View {
       }
       .navigationBarTitleDisplayMode(.inline)
       .toolbar {
-        titleBubble(assistant)
-        if isCallOn(with: assistant) {
-          ToolbarItem(placement: .topBarTrailing) {
-            VoiceCallPill(call: model.voiceCall) { isVoiceExpanded.toggle() }
-          }
-        }
+        titleBubble(assistant, call)
         ToolbarItem(placement: .topBarTrailing) {
           Menu("More", systemImage: "ellipsis") {
             NavigationLink(value: Route.details(assistant.id)) {
@@ -36,20 +31,33 @@ struct ConversationView: View {
           .accessibilityIdentifier("moreButton")
         }
       }
+      .overlay(alignment: .top) {
+        CallGlow()
+          .opacity(call.isInCall ? 1 : 0)
+          .ignoresSafeArea()
+      }
       .safeAreaInset(edge: .top) {
-        if isCallOn(with: assistant) && isVoiceExpanded {
-          VoiceCallBanner(
-            call: model.voiceCall, assistantName: assistant.name,
-            onCollapse: { isVoiceExpanded = false }, onEnd: { model.endVoiceCall() })
+        if let phase = call.bannerPhase {
+          CallBanner(
+            phase: phase, avatar: Avatar(id: assistant.avatar),
+            amplitude: { model.voiceCall.amplitude },
+            onMute: { model.voiceCall.setMuted(!model.voiceCall.isMuted) },
+            onEnd: { model.endVoiceCall() }
+          )
+          .padding(.horizontal, 16)
+          .padding(.vertical, 4)
+          .transition(.move(edge: .top).combined(with: .opacity))
         }
       }
-      .onChange(of: model.voiceCall.state) {
-        if !isCallOn(with: assistant) { isVoiceExpanded = false }
-      }
+      .animation(.easeInOut(duration: 0.3), value: call.isInCall)
       .onChange(of: scenePhase) {
         if scenePhase == .background { model.endVoiceCall() }
       }
-      .onDisappear { if isCallOn(with: assistant) { model.endVoiceCall() } }
+      .onDisappear {
+        if CallPresentation(model.voiceCall, assistantID: assistant.id).isInCall {
+          model.endVoiceCall()
+        }
+      }
       .sheet(item: $pairingLink) { link in
         PairingView(
           assistantName: assistant.name, linkID: link.id,
@@ -62,27 +70,25 @@ struct ConversationView: View {
 
   /// The title bubble draws its own glass; the bar's would wrap it a second time on iOS 26.
   @ToolbarContentBuilder
-  private func titleBubble(_ assistant: Assistant) -> some ToolbarContent {
+  private func titleBubble(
+    _ assistant: Assistant, _ call: CallPresentation
+  ) -> some ToolbarContent {
     if #available(iOS 26.0, *) {
-      ToolbarItem(placement: .principal) { titleLink(assistant) }
+      ToolbarItem(placement: .principal) { titleLink(assistant, call) }
         .sharedBackgroundVisibility(.hidden)
     } else {
-      ToolbarItem(placement: .principal) { titleLink(assistant) }
+      ToolbarItem(placement: .principal) { titleLink(assistant, call) }
     }
   }
 
-  private func titleLink(_ assistant: Assistant) -> some View {
+  private func titleLink(_ assistant: Assistant, _ call: CallPresentation) -> some View {
     NavigationLink(value: Route.details(assistant.id)) {
       TitleBubble(
         name: assistant.name, avatar: Avatar(id: assistant.avatar),
-        state: assistant.status == .online ? .online : .offline)
+        state: call.titleState(isOnline: assistant.status == .online))
     }
     .buttonStyle(.plain)
     .accessibilityHint("Shows the Assistant's details and Links")
-  }
-
-  private func isCallOn(with assistant: Assistant) -> Bool {
-    model.voiceCall.state != .idle && model.voiceCall.assistantID == assistant.id
   }
 
   private func timeline(_ assistant: Assistant) -> some View {
@@ -97,7 +103,7 @@ struct ConversationView: View {
         }
         ForEach(Array(content.events.enumerated()), id: \.element.id) { index, event in
           VStack(spacing: 12) {
-            if content.showsTimeCaption(beforeEventAt: index), event.type != .linkCreated {
+            if content.showsTimeCaption(beforeEventAt: index), event.type == .textMessage {
               TimeCaptionView(date: event.createdAt)
             }
             eventView(event, in: assistant, timeline: content)
