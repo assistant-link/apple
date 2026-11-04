@@ -103,6 +103,9 @@ final class VoiceCall {
   private let silence: any SilenceTimer
   /// Spaces out restarts of a recognition that heard nothing, so a failing recognizer can't spin.
   private let retry: any SilenceTimer
+  /// Tries listening again after it gave up, because the recognizer often fails at first on a
+  /// fresh install (its on-device model still loading) and recovers a little later.
+  private let patience: any SilenceTimer
   private var send: (@MainActor (String) -> Void)?
   private var onEnd: (@MainActor () -> Void)?
   private var isOnline = false
@@ -115,13 +118,15 @@ final class VoiceCall {
   init(
     listener: any SpeechListener, speaker: any SpeechSpeaker, audio: any VoiceAudio,
     silence: any SilenceTimer = TaskSilenceTimer(after: .milliseconds(1200)),
-    retry: any SilenceTimer = TaskSilenceTimer(after: .milliseconds(500))
+    retry: any SilenceTimer = TaskSilenceTimer(after: .milliseconds(500)),
+    patience: any SilenceTimer = TaskSilenceTimer(after: .seconds(5))
   ) {
     self.listener = listener
     self.speaker = speaker
     self.audio = audio
     self.silence = silence
     self.retry = retry
+    self.patience = patience
   }
 
   /// Starts the call after asking for permission. Returns whether it started; only then
@@ -236,6 +241,7 @@ final class VoiceCall {
   private func stopListening() {
     silence.cancel()
     retry.cancel()
+    patience.cancel()
     heard = ""
     level = 0
     listener.stop()
@@ -277,6 +283,12 @@ final class VoiceCall {
       startListening()
     } else if failures >= Self.maxFailures {
       listeningFailed = true
+      patience.restart { [weak self] in
+        guard let self else { return }
+        listeningFailed = false
+        failures = Self.maxFailures - 1
+        startListening()
+      }
     } else {
       retry.restart { [weak self] in self?.startListening() }
     }
