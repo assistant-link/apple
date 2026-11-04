@@ -277,18 +277,20 @@ final class VoiceCall {
   }
 
   /// Sends what was heard so far, which a reply or the end of the call would otherwise drop.
-  private func flushUtterance() {
+  @discardableResult
+  private func flushUtterance() -> Bool {
     let text = heard.trimmingCharacters(in: .whitespacesAndNewlines)
     heard = ""
-    if !text.isEmpty { send?(text) }
+    guard !text.isEmpty else { return false }
+    send?(text)
+    return true
   }
 
   private func finishUtterance() {
-    let text = heard.trimmingCharacters(in: .whitespacesAndNewlines)
+    let sent = flushUtterance()
     stopListening()
-    if !text.isEmpty {
+    if sent {
       failures = 0
-      send?(text)
       startListening()
     } else if failures >= Self.maxFailures {
       listeningFailed = true
