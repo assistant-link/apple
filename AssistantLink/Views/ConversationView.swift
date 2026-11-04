@@ -123,8 +123,6 @@ struct ConversationView: View {
     // The composer and the keyboard shrink the viewport after the first layout.
     .defaultScrollAnchor(.bottom, for: .sizeChanges)
     .scrollPosition($position)
-    // A conversation that is already loaded when the screen is pushed raises no change below.
-    .onAppear { position.scrollTo(edge: .bottom) }
     .onChange(of: content.outgoing.last?.id) { position.scrollTo(edge: .bottom) }
     .onChange(of: content.events.last?.id) { position.scrollTo(edge: .bottom) }
     .safeAreaInset(edge: .bottom) {
