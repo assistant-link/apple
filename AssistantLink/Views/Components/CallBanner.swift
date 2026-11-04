@@ -38,6 +38,7 @@ struct CallBanner: View {
     .glassBackground(in: Capsule())
     .accessibilityElement(children: .contain)
     .accessibilityLabel("Voice chat")
+    .accessibilityIdentifier("callBanner")
     .accessibilityValue(phase.accessibilityValue)
   }
 

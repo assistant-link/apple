@@ -5,7 +5,6 @@ struct TitleBubble: View {
   enum Status {
     case online
     case offline
-    /// Tinted red, with a waveform next to the name.
     case inCall
 
     var statusText: String? {

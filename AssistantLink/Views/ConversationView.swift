@@ -68,6 +68,10 @@ struct ConversationView: View {
       }
       .animation(.easeInOut(duration: 0.3), value: isBannerHidden)
       .onChange(of: call.isInCall) { isBannerHidden = false }
+      // The retry button lives in the banner, so a stalled call must bring it back.
+      .onChange(of: call.bannerPhase) {
+        if call.bannerPhase == .notListening { isBannerHidden = false }
+      }
       .animation(.easeInOut(duration: 0.3), value: call.isInCall)
       .sheet(item: $pairingLink) { link in
         PairingView(

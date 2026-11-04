@@ -32,7 +32,7 @@ final class CircleButtonTests: XCTestCase {
 
     let end = app.buttons["voiceEnd"]
     XCTAssertTrue(end.waitForExistence(timeout: 30))
-    let banner = app.descendants(matching: .any)["Voice chat"].firstMatch
+    let banner = app.descendants(matching: .any)["callBanner"].firstMatch
     banner.swipeUp()
     XCTAssertTrue(app.buttons["showCallBanner"].waitForExistence(timeout: 5))
     XCTAssertFalse(end.exists)
@@ -41,7 +41,6 @@ final class CircleButtonTests: XCTestCase {
     XCTAssertTrue(end.waitForExistence(timeout: 5))
   }
 
-  /// A point inside the disc, close to its left edge and far from the glyph.
   private func nearEdge(of element: XCUIElement) -> XCUICoordinate {
     element.coordinate(withNormalizedOffset: CGVector(dx: 0.12, dy: 0.5))
   }
