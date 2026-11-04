@@ -28,9 +28,10 @@ final class ScreenshotTests: XCTestCase {
     expect(app.staticTexts["Delivered"], "step 2: Delivered caption exists")
     capture(app, "2-hermes")
 
-    scrollToTop(app) { app.buttons["loadEarlier"].isHittable }
+    scrollToTop(app) { isClearOfBar(app.buttons["loadEarlier"], in: app) }
     XCTAssertTrue(
-      app.buttons["loadEarlier"].isHittable, failure("step 4: Load Earlier button is hittable"))
+      isClearOfBar(app.buttons["loadEarlier"], in: app),
+      failure("step 4: Load Earlier button is below the navigation bar"))
     capture(app, "4-load-earlier")
 
     app.buttons["loadEarlier"].tap()
@@ -39,8 +40,9 @@ final class ScreenshotTests: XCTestCase {
     let created = app.descendants(matching: .any).matching(
       NSPredicate(format: "label CONTAINS %@", "cloud")
     ).firstMatch
-    scrollToTop(app) { created.isHittable }
-    XCTAssertTrue(created.isHittable, failure("step 5: Link created event is hittable"))
+    scrollToTop(app) { isClearOfBar(created, in: app) }
+    XCTAssertTrue(
+      isClearOfBar(created, in: app), failure("step 5: Link created event is below the bar"))
     capture(app, "5-earlier-loaded")
 
     send("Can you check my flight status?", in: app)
@@ -133,6 +135,11 @@ final class ScreenshotTests: XCTestCase {
 
   @MainActor private func backButton(in app: XCUIApplication) -> XCUIElement {
     app.navigationBars.buttons.element(boundBy: 0)
+  }
+
+  /// Content scrolls under the glass bar, where it stays hittable but cannot be tapped.
+  @MainActor private func isClearOfBar(_ element: XCUIElement, in app: XCUIApplication) -> Bool {
+    element.isHittable && element.frame.minY >= app.navigationBars.firstMatch.frame.maxY
   }
 
   @MainActor private func scrollToTop(
