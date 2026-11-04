@@ -198,6 +198,7 @@ final class VoiceCall {
     guard state != .idle, muted != isMuted else { return }
     isMuted = muted
     if muted {
+      flushUtterance()
       stopListening()
     } else {
       listeningFailed = false
@@ -285,7 +286,7 @@ final class VoiceCall {
     silence.restart { [weak self] in self?.finishUtterance() }
   }
 
-  /// Sends what was heard so far, which a reply or the end of the call would otherwise drop.
+  /// Sends what was heard so far, which a reply, muting or the end of the call would otherwise drop.
   @discardableResult
   private func flushUtterance() -> Bool {
     let text = heard.trimmingCharacters(in: .whitespacesAndNewlines)

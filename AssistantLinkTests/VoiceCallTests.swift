@@ -702,13 +702,24 @@ struct VoiceCallUtteranceTests {
     #expect(setup.listener.isListening)
   }
 
-  @Test func muteDropsTheUtteranceInProgress() async {
+  @Test func muteSendsTheUtteranceInProgress() async {
     let setup = Setup()
     await setup.start()
 
     setup.listener.hear(.partial("Hello"))
     setup.call.setMuted(true)
     setup.silence.fire()
+
+    #expect(setup.sent == ["Hello"])
+    #expect(!setup.silence.isPending)
+  }
+
+  @Test func muteWithNothingHeardSendsNothing() async {
+    let setup = Setup()
+    await setup.start()
+
+    setup.listener.hear(.partial("  "))
+    setup.call.setMuted(true)
 
     #expect(setup.sent.isEmpty)
   }
