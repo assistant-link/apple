@@ -19,8 +19,7 @@ struct CallPresentation: Equatable {
   init(_ call: VoiceCall, assistantID: Assistant.ID) {
     self.init(
       state: call.state, isMuted: call.isMuted, listeningFailed: call.listeningFailed,
-      callAssistantID: call.assistantID,
-      assistantID: assistantID)
+      callAssistantID: call.assistantID, assistantID: assistantID)
   }
 
   var isInCall: Bool { bannerPhase != nil }
