@@ -52,6 +52,4 @@ struct MessageComposer: View {
     .glassBackground(in: Capsule())
     .overlay { Capsule().strokeBorder(Color(.separator), lineWidth: 0.5) }
   }
-
-  private var fill: Color { Color(.tertiarySystemFill) }
 }

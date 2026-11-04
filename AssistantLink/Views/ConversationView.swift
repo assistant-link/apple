@@ -38,31 +38,32 @@ struct ConversationView: View {
       }
       .safeAreaInset(edge: .top) {
         if let phase = call.bannerPhase {
-          if isBannerHidden {
-            Button("Show voice chat controls", systemImage: "chevron.down") {
-              isBannerHidden = false
-            }
-            .buttonStyle(.circle(diameter: 28))
-            .accessibilityIdentifier("showCallBanner")
-            .transition(.move(edge: .top).combined(with: .opacity))
-          } else {
-            CallBanner(
-              phase: phase, avatar: Avatar(id: assistant.avatar),
-              amplitude: { model.voiceCall.amplitude },
-              onRetry: { model.voiceCall.retryListening() },
-              onMute: { model.voiceCall.setMuted(!model.voiceCall.isMuted) },
-              onEnd: { model.endVoiceCall() }
-            )
-            .padding(.horizontal, 16)
-            .padding(.vertical, 4)
-            .gesture(
-              DragGesture(minimumDistance: 20).onEnded { drag in
-                if drag.translation.height < -20 { isBannerHidden = true }
+          Group {
+            if isBannerHidden {
+              Button("Show voice chat controls", systemImage: "chevron.down") {
+                isBannerHidden = false
               }
-            )
-            .accessibilityAction(named: "Hide") { isBannerHidden = true }
-            .transition(.move(edge: .top).combined(with: .opacity))
+              .buttonStyle(.circle(diameter: 28))
+              .accessibilityIdentifier("showCallBanner")
+            } else {
+              CallBanner(
+                phase: phase, avatar: Avatar(id: assistant.avatar),
+                amplitude: { model.voiceCall.amplitude },
+                onRetry: { model.voiceCall.retryListening() },
+                onMute: { model.voiceCall.setMuted(!model.voiceCall.isMuted) },
+                onEnd: { model.endVoiceCall() }
+              )
+              .padding(.horizontal, 16)
+              .padding(.vertical, 4)
+              .gesture(
+                DragGesture(minimumDistance: 20).onEnded { drag in
+                  if drag.translation.height < -20 { isBannerHidden = true }
+                }
+              )
+              .accessibilityAction(named: "Hide") { isBannerHidden = true }
+            }
           }
+          .transition(.move(edge: .top).combined(with: .opacity))
         }
       }
       .animation(.easeInOut(duration: 0.3), value: isBannerHidden)
@@ -95,7 +96,7 @@ struct ConversationView: View {
     NavigationLink(value: Route.details(assistant.id)) {
       TitleBubble(
         name: assistant.name, avatar: Avatar(id: assistant.avatar),
-        status: call.titleState(isOnline: assistant.status == .online))
+        status: call.titleStatus(isOnline: assistant.status == .online))
     }
     .buttonStyle(.plain)
     .accessibilityHint("Shows the Assistant's details and Links")

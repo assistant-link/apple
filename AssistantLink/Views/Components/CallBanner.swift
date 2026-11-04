@@ -11,6 +11,8 @@ struct CallBanner: View {
   let onMute: () -> Void
   let onEnd: () -> Void
 
+  private var isMuted: Bool { phase == .muted }
+
   var body: some View {
     HStack(spacing: 12) {
       AvatarView(avatar: avatar, size: 36)
@@ -18,13 +20,13 @@ struct CallBanner: View {
       waveform
         .frame(maxWidth: .infinity)
       Button(
-        phase == .muted ? "Unmute" : "Mute",
-        systemImage: phase == .muted ? "mic.slash" : "mic", action: onMute
+        isMuted ? "Unmute" : "Mute",
+        systemImage: isMuted ? "mic.slash" : "mic", action: onMute
       )
       .buttonStyle(
         .circle(
-          foreground: phase == .muted ? Color(.systemBackground) : .primary,
-          background: phase == .muted ? Color(.label) : Color(.tertiarySystemFill), diameter: 40)
+          foreground: isMuted ? Color(.systemBackground) : .primary,
+          background: isMuted ? Color(.label) : Color(.tertiarySystemFill), diameter: 40)
       )
       .accessibilityIdentifier("voiceMute")
       Button("End voice chat", systemImage: "xmark", action: onEnd)
