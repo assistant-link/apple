@@ -63,7 +63,7 @@ struct AssistantListView: View {
           }
         }
         .onChange(of: path) { model.navigated(to: path) }
-        // The conversation can sit under Details mid-call, so the root ends the call on backgrounding.
+        // The conversation can sit under Details mid-call, so the root ends it on backgrounding.
         .onChange(of: scenePhase) {
           if scenePhase == .background { model.endVoiceCall() }
         }
