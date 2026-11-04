@@ -6,6 +6,8 @@ enum SpeechEvent: Equatable, Sendable {
   case final(String)
   /// The recognizer ended without a final result, for example after a long silence.
   case stopped
+  /// The recognizer ended with an error other than silence or a cancel.
+  case failed
   /// The microphone input level, 0 to 1.
   case level(Float)
 }
@@ -43,7 +45,7 @@ final class TaskSilenceTimer: SilenceTimer {
   private let duration: Duration
   private var task: Task<Void, Never>?
 
-  init(after duration: Duration = .milliseconds(1200)) {
+  init(after duration: Duration) {
     self.duration = duration
   }
 
@@ -90,27 +92,36 @@ final class VoiceCall {
   private(set) var assistantID: Assistant.ID?
   /// The microphone input level, 0 to 1, while listening.
   private(set) var level: Float = 0
+  /// Listening gave up after repeated recognizer failures; the call goes on but hears nothing.
+  private(set) var listeningFailed = false
+
+  static let maxFailures = 3
 
   private let listener: any SpeechListener
   private let speaker: any SpeechSpeaker
   private let audio: any VoiceAudio
   private let silence: any SilenceTimer
+  /// Spaces out restarts of a recognition that heard nothing, so a failing recognizer can't spin.
+  private let retry: any SilenceTimer
   private var send: (@MainActor (String) -> Void)?
   private var onEnd: (@MainActor () -> Void)?
   private var isOnline = false
   private var isStarting = false
   private var heard = ""
+  private var failures = 0
   private var replies: [String] = []
   private var spokenIDs: Set<Event.ID> = []
 
   init(
     listener: any SpeechListener, speaker: any SpeechSpeaker, audio: any VoiceAudio,
-    silence: any SilenceTimer = TaskSilenceTimer()
+    silence: any SilenceTimer = TaskSilenceTimer(after: .milliseconds(1200)),
+    retry: any SilenceTimer = TaskSilenceTimer(after: .milliseconds(500))
   ) {
     self.listener = listener
     self.speaker = speaker
     self.audio = audio
     self.silence = silence
+    self.retry = retry
   }
 
   /// Starts the call after asking for permission. Returns whether it started; only then
@@ -132,6 +143,8 @@ final class VoiceCall {
     self.send = send
     self.isOnline = isOnline
     isMuted = false
+    listeningFailed = false
+    failures = 0
     state = isOnline ? .listening : .connecting
     startListening()
     guard state != .idle else { return false }
@@ -159,6 +172,7 @@ final class VoiceCall {
     spokenIDs = []
     send = nil
     isMuted = false
+    listeningFailed = false
     state = .idle
     let onEnd = onEnd
     self.onEnd = nil
@@ -171,6 +185,8 @@ final class VoiceCall {
     if muted {
       stopListening()
     } else {
+      listeningFailed = false
+      failures = 0
       startListening()
     }
   }
@@ -191,6 +207,8 @@ final class VoiceCall {
   private func speakNext() {
     guard !replies.isEmpty else {
       state = isOnline ? .listening : .connecting
+      listeningFailed = false
+      failures = 0
       startListening()
       return
     }
@@ -202,7 +220,9 @@ final class VoiceCall {
     }
   }
 
-  private var canHear: Bool { (state == .listening || state == .connecting) && !isMuted }
+  private var canHear: Bool {
+    (state == .listening || state == .connecting) && !isMuted && !listeningFailed
+  }
 
   private func startListening() {
     guard canHear else { return }
@@ -215,6 +235,7 @@ final class VoiceCall {
 
   private func stopListening() {
     silence.cancel()
+    retry.cancel()
     heard = ""
     level = 0
     listener.stop()
@@ -227,11 +248,18 @@ final class VoiceCall {
       level = value
     case .partial(let text):
       heard = text
+      if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        failures = 0
+      }
       restartSilenceTimer()
     case .final(let text):
       heard = text
       finishUtterance()
     case .stopped:
+      failures = 0
+      finishUtterance()
+    case .failed:
+      failures += 1
       finishUtterance()
     }
   }
@@ -244,8 +272,13 @@ final class VoiceCall {
     let text = heard.trimmingCharacters(in: .whitespacesAndNewlines)
     stopListening()
     if !text.isEmpty {
+      failures = 0
       send?(text)
+      startListening()
+    } else if failures >= Self.maxFailures {
+      listeningFailed = true
+    } else {
+      retry.restart { [weak self] in self?.startListening() }
     }
-    startListening()
   }
 }
