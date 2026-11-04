@@ -79,6 +79,13 @@ struct MessageCaptionTests {
     #expect(timeline.caption(forMessageID: "k-2") == .notDelivered)
   }
 
+  @Test func aNewerSentMessageTakesTheDeliveredCaptionOfAnOlderOne() {
+    let timeline = Timeline(events: [user("e-1", .delivered), .stub("e-2"), user("e-3", .sent)])
+
+    #expect(timeline.caption(forMessageID: "e-1") == nil)
+    #expect(timeline.caption(forMessageID: "e-3") == .sent)
+  }
+
   @Test func theCaptionTextsAreTheSpecifiedOnes() {
     #expect(
       [MessageCaption.sending, .sent, .delivered, .notDelivered].map(\.text) == [

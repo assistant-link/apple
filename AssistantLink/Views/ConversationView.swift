@@ -21,19 +21,19 @@ struct ConversationView: View {
       }
       .navigationBarTitleDisplayMode(.inline)
       .toolbar {
-        ToolbarItem(placement: .principal) {
-          NavigationLink(value: Route.details(assistant.id)) {
-            TitleBubble(
-              name: assistant.name, avatar: Avatar(id: assistant.avatar),
-              state: assistant.status == .online ? .online : .offline)
-          }
-          .buttonStyle(.plain)
-          .accessibilityHint("Shows the Assistant's details and Links")
-        }
+        titleBubble(assistant)
         if isCallOn(with: assistant) {
           ToolbarItem(placement: .topBarTrailing) {
             VoiceCallPill(call: model.voiceCall) { isVoiceExpanded.toggle() }
           }
+        }
+        ToolbarItem(placement: .topBarTrailing) {
+          Menu("More", systemImage: "ellipsis") {
+            NavigationLink(value: Route.details(assistant.id)) {
+              Label("Details", systemImage: "info.circle")
+            }
+          }
+          .accessibilityIdentifier("moreButton")
         }
       }
       .safeAreaInset(edge: .top) {
@@ -60,6 +60,27 @@ struct ConversationView: View {
     }
   }
 
+  /// The title bubble draws its own glass; the bar's would wrap it a second time on iOS 26.
+  @ToolbarContentBuilder
+  private func titleBubble(_ assistant: Assistant) -> some ToolbarContent {
+    if #available(iOS 26.0, *) {
+      ToolbarItem(placement: .principal) { titleLink(assistant) }
+        .sharedBackgroundVisibility(.hidden)
+    } else {
+      ToolbarItem(placement: .principal) { titleLink(assistant) }
+    }
+  }
+
+  private func titleLink(_ assistant: Assistant) -> some View {
+    NavigationLink(value: Route.details(assistant.id)) {
+      TitleBubble(
+        name: assistant.name, avatar: Avatar(id: assistant.avatar),
+        state: assistant.status == .online ? .online : .offline)
+    }
+    .buttonStyle(.plain)
+    .accessibilityHint("Shows the Assistant's details and Links")
+  }
+
   private func isCallOn(with assistant: Assistant) -> Bool {
     model.voiceCall.state != .idle && model.voiceCall.assistantID == assistant.id
   }
@@ -74,18 +95,28 @@ struct ConversationView: View {
             if let first { position.scrollTo(id: first, anchor: .top) }
           }
         }
-        ForEach(content.events) { event in
-          eventView(event, in: assistant, timeline: content)
+        ForEach(Array(content.events.enumerated()), id: \.element.id) { index, event in
+          VStack(spacing: 12) {
+            if content.showsTimeCaption(beforeEventAt: index), event.type != .linkCreated {
+              TimeCaptionView(date: event.createdAt)
+            }
+            eventView(event, in: assistant, timeline: content)
+          }
         }
-        ForEach(content.outgoing) { message in
-          MessageBubble(
-            text: message.text, isFromUser: true,
-            caption: content.caption(forMessageID: message.id), isVoice: message.via == .voice,
-            onFailureTap: message.state == .failed ? { failedMessage = message } : nil)
+        ForEach(Array(content.outgoing.enumerated()), id: \.element.id) { index, message in
+          VStack(spacing: 12) {
+            if content.showsTimeCaption(beforeOutgoingAt: index) {
+              TimeCaptionView(date: message.createdAt)
+            }
+            MessageBubble(
+              text: message.text, isFromUser: true,
+              caption: content.caption(forMessageID: message.id), isVoice: message.via == .voice,
+              onFailureTap: message.state == .failed ? { failedMessage = message } : nil)
+          }
         }
       }
       .scrollTargetLayout()
-      .padding(.horizontal)
+      .padding(.horizontal, 16)
       .padding(.vertical, 24)
     }
     .defaultScrollAnchor(.bottom)
@@ -141,15 +172,9 @@ private struct SystemEventView: View {
 
   var body: some View {
     VStack(spacing: 6) {
-      Text(event.createdAt.formatted(.dateTime.month(.abbreviated).day().hour().minute()))
-        .font(.footnote)
-        .foregroundStyle(.tertiary)
-      Label("Assistant Link created", systemImage: "link")
-        .font(.subheadline)
-        .foregroundStyle(.secondary)
-      Text(link.status == .notPaired ? "\(linkName) · not paired yet" : linkName)
-        .font(.footnote)
-        .foregroundStyle(.tertiary)
+      SystemEventCaption(
+        date: event.createdAt,
+        linkName: link.status == .notPaired ? "\(linkName) · not paired yet" : linkName)
       if link.status == .notPaired {
         Button("Show pairing text", action: showPairingText)
           .font(.subheadline)

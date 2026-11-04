@@ -7,6 +7,7 @@ struct ComponentCatalog: View {
     case messages
     case composer
     case call
+    case chat
 
     static var launched: Section? {
       UserDefaults.standard.string(forKey: "componentCatalog").flatMap(Section.init)
@@ -16,6 +17,18 @@ struct ComponentCatalog: View {
   let section: Section
 
   var body: some View {
+    if section == .chat {
+      NavigationStack { ConversationView(assistantID: Assistant.samples[0].id) }
+        .environment(
+          AppModel.preview(Assistant.samples, timelines: [Assistant.samples[0].id: .designMock])
+        )
+        .accessibilityIdentifier("componentCatalog")
+    } else {
+      sections
+    }
+  }
+
+  private var sections: some View {
     VStack(alignment: .leading, spacing: 16) {
       Text(section.rawValue.capitalized)
         .font(.title2.bold())
@@ -24,6 +37,7 @@ struct ComponentCatalog: View {
       case .messages: messages
       case .composer: composer
       case .call: call
+      case .chat: EmptyView()
       }
       Spacer(minLength: 0)
     }
@@ -94,3 +108,6 @@ struct ComponentCatalog: View {
 #Preview("Call, dark") {
   ComponentCatalog(section: .call).preferredColorScheme(.dark)
 }
+
+#Preview("Chat") { ComponentCatalog(section: .chat) }
+#Preview("Chat, dark") { ComponentCatalog(section: .chat).preferredColorScheme(.dark) }

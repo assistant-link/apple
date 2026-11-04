@@ -61,3 +61,31 @@ extension Event {
       linkID: "01a11a4e-0a6a-7edf-996d-7e8f06fc11ed", text: "Done."),
   ]
 }
+
+extension Timeline {
+  /// The conversation of the 01-chat design mock, which ends with an answered request.
+  static let designMock: Timeline = {
+    let lines: [(Event.Sender, String, TimeInterval)] = [
+      (.user, "Is my appointment still on for Friday?", -20_000),
+      (.assistant, "Yes, it is confirmed for Friday at 8:30.", -19_900),
+      (.user, "What is on my calendar tomorrow?", -19_800),
+      (.assistant, "Nothing before noon. Enjoy the quiet morning.", -19_700),
+      (
+        .assistant, "Morning! You have three meetings today. The first is at 10:00 with Dana.",
+        -9_000
+      ),
+      (.user, "Can you move my 2 pm meeting to 3?", -8_900),
+      (.assistant, "Done. The meeting with the design team is now at 3 pm.", -8_800),
+      (.user, "And add milk and eggs to the shopping list", -8_700),
+      (.assistant, "Added both. Anything else?", -8_600),
+    ]
+    let events = lines.enumerated().map { index, line in
+      Event(
+        id: "01a11a4e-0a6b-7000-8000-\(String(format: "%012d", index + 100))",
+        assistantID: Assistant.samples[0].id, type: .textMessage, sender: line.0,
+        createdAt: .now.addingTimeInterval(line.2),
+        deliveryStatus: line.0 == .user ? .delivered : nil, text: line.1)
+    }
+    return Timeline(events: events)
+  }()
+}

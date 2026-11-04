@@ -91,6 +91,16 @@ struct Timeline: Equatable, Sendable {
     }
   }
 
+  func showsTimeCaption(beforeEventAt index: Int) -> Bool {
+    TimeCaption.isShown(
+      for: events[index].createdAt, after: index > 0 ? events[index - 1].createdAt : nil)
+  }
+
+  func showsTimeCaption(beforeOutgoingAt index: Int) -> Bool {
+    let previous = index > 0 ? outgoing[index - 1].createdAt : events.last?.createdAt
+    return TimeCaption.isShown(for: outgoing[index].createdAt, after: previous)
+  }
+
   /// The seconds a voice chat lasted, from the latest `call_started` before its `call_ended`.
   func voiceChatSeconds(endedBy event: Event) -> Int? {
     guard

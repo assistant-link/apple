@@ -20,4 +20,27 @@ final class ComponentScreenshotTests: XCTestCase {
       app.terminate()
     }
   }
+
+  /// The chat screen of the design mocks 01-chat and 02-typing, on sample data.
+  @MainActor func testCaptureChat() {
+    let app = XCUIApplication()
+    app.launchArguments = ["-componentCatalog", "chat"]
+    app.launch()
+    let field = app.descendants(matching: .any)["messageField"]
+    XCTAssertTrue(field.waitForExistence(timeout: 30), "the chat did not appear")
+    Thread.sleep(forTimeInterval: 1)
+    capture(app, "30-chat")
+
+    field.tap()
+    field.typeText("Remind me to call David tomorrow at 9")
+    Thread.sleep(forTimeInterval: 1)
+    capture(app, "31-chat-typing")
+  }
+
+  private func capture(_ app: XCUIApplication, _ name: String) {
+    let attachment = XCTAttachment(screenshot: app.screenshot())
+    attachment.name = name
+    attachment.lifetime = .keepAlways
+    add(attachment)
+  }
 }
