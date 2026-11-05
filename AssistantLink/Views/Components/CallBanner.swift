@@ -4,8 +4,8 @@ import SwiftUI
 struct CallBanner: View {
   let phase: CallBannerPhase
   let avatar: Avatar
-  /// How lively the bars are while the mic is live, 0 to 1. Read in this view's body so that the fast
-  /// changing level redraws only the banner.
+  /// How lively the bars are while the mic is live, 0 to 1. Read in this view's body so that the
+  /// fast changing level redraws only the banner.
   var amplitude: () -> Double = { 0.7 }
   let onRetry: () -> Void
   let onMute: () -> Void

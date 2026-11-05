@@ -90,7 +90,7 @@ final class VoiceCall {
   private(set) var state = State.idle
   private(set) var isMuted = false
   private(set) var assistantID: Assistant.ID?
-  /// The microphone input level, 0 to 1, while listening.
+  /// The microphone input level, 0 to 1, while listening or connecting.
   private(set) var level: Float = 0
   /// Listening gave up after repeated recognizer failures and hears nothing until it tries again.
   private(set) var listeningFailed = false

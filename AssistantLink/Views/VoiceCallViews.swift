@@ -28,7 +28,8 @@ struct WaveformView: View {
 }
 
 extension VoiceCall {
-  /// How lively the waveform is: the voice while listening or connecting, a steady motion while speaking.
+  /// How lively the waveform is: the voice while listening or connecting, a steady motion while
+  /// speaking.
   var amplitude: Double {
     switch state {
     case .idle: 0
