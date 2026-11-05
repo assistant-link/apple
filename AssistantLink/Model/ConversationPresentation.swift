@@ -1,9 +1,13 @@
 import Foundation
 
+extension Link {
+  var isPaired: Bool { status != .notPaired }
+}
+
 extension Assistant {
   /// Messages can only be sent to an Assistant with a Link that has been paired.
   var hasPairedLink: Bool {
-    links.contains { $0.status != .notPaired }
+    links.contains(where: \.isPaired)
   }
 
   /// Shown above the composer while messages wait for the Assistant to connect.
