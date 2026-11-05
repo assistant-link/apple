@@ -33,7 +33,7 @@ While a call is active the nav bar gets a soft red glow behind the status bar, t
 | Time caption | `Text` | `.secondary` | `.footnote` | "Today 8:05 AM" |
 | Delivery status | `Text`, trailing, 4 pt inset | `.secondary`; failed `.red` | `.caption` | Sending…, Sent, Delivered, Not Delivered |
 
-### Composer (`messageField`, `dictationButton`, `voiceButton`, `sendButton`)
+### Composer (`messageField`, `dictationButton`, `sendButton`)
 
 | Part | SwiftUI | SF Symbol | Colors | Font / copy |
 |---|---|---|---|---|
@@ -41,10 +41,13 @@ While a call is active the nav bar gets a soft red glow behind the status bar, t
 | Plus button (`attachButton`) | `Button`, circle 36 | `plus` | `.primary` on `Color(.tertiarySystemFill)` | shown disabled for now; see open questions |
 | Field (`messageField`) | `TextField("Message", text:, axis: .vertical)` | none | text `.primary`, placeholder `.tertiary` | `.body` |
 | Dictation (`dictationButton`) | `Button("Dictate")`, plain grey circle 36, keyboard dictation (not the call) | `mic` | `.primary` on `Color(.tertiarySystemFill)` | label "Dictate" |
-| Voice button (`voiceButton`) | `Button("Voice chat")`, filled `.red` circle 36, starts the voice chat | `waveform` | `.white` on `.red` | label "Voice chat" |
-| Send button (`sendButton`) | `Button("Send")`, circle 36, replaces the voice button when the draft has text | `arrow.up` | `.white` on `.tint` | label "Send" |
+| Send button (`sendButton`) | `Button("Send")`, circle 36, shows only when the draft has text | `arrow.up` | `.white` on `.tint` | label "Send" |
 
-States: Empty (plus, field, dictation, voice), Typing (plus, field, dictation, send; the capsule grows with the draft), In call (plus disabled; dictation and voice/send buttons hidden, as in the video; the field stays visible).
+States: Empty (plus, field, dictation), Typing (plus, field, dictation, send; the capsule grows with the draft), In call (plus disabled; dictation and send buttons hidden, as in the video; the field stays visible).
+
+### Start-call control (`voiceButton`)
+
+A `Button("Voice chat")` with the `waveform` symbol in the navigation bar, trailing, before the More menu. It starts the voice chat and is hidden while a call with this Assistant is on, because the banner has End and Mute. Dictation stays in the composer and only focuses the field.
 
 ### Voice call banner (`voiceMute`, `voiceEnd`)
 

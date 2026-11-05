@@ -1,12 +1,12 @@
 import SwiftUI
 
-/// The message field with its buttons. It does not know about the conversation: the owner
+/// The message field with its buttons. Starting a voice chat is not here: it is in the title bar.
+/// It does not know about the conversation: the owner
 /// supplies the draft and the actions.
 struct MessageComposer: View {
   @Binding var draft: String
   var isInCall = false
   let onSend: () -> Void
-  let onVoiceChat: () -> Void
 
   @FocusState private var isFocused: Bool
 
@@ -34,10 +34,6 @@ struct MessageComposer: View {
           .accessibilityIdentifier("dictationButton")
       }
       switch state.trailingButton {
-      case .voiceChat:
-        Button("Voice chat", systemImage: "waveform", action: onVoiceChat)
-          .buttonStyle(.circle(foreground: .white, background: .red))
-          .accessibilityIdentifier("voiceButton")
       case .send:
         Button("Send", systemImage: "arrow.up", action: onSend)
           .buttonStyle(.circle(foreground: .white, background: .accentColor))

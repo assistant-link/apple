@@ -2,7 +2,7 @@ import XCTest
 
 /// A circle button must take taps on its whole disc, not only on its glyph.
 final class CircleButtonTests: XCTestCase {
-  @MainActor func testBannerAndComposerButtonsTakeTapsNearTheirEdge() {
+  @MainActor func testVoiceButtonAndBannerButtonsTakeTapsNearTheirEdge() {
     let app = XCUIApplication()
     app.launchArguments = ["-componentCatalog", "chat"]
     app.launch()
@@ -13,6 +13,7 @@ final class CircleButtonTests: XCTestCase {
 
     let mute = app.buttons["voiceMute"]
     XCTAssertTrue(mute.waitForExistence(timeout: 10), "a tap near the voice button's edge missed")
+    XCTAssertFalse(voice.exists, "the start control stays while the call is on")
     XCTAssertEqual(mute.label, "Mute")
     nearEdge(of: mute).tap()
     XCTAssertTrue(

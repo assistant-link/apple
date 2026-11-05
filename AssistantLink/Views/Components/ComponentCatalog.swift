@@ -105,11 +105,11 @@ struct ComponentCatalog: View {
 
   private var composer: some View {
     VStack(spacing: 16) {
-      MessageComposer(draft: .constant(""), onSend: {}, onVoiceChat: {})
+      MessageComposer(draft: .constant(""), onSend: {})
       MessageComposer(
-        draft: .constant("Also add it to my calendar"), onSend: {}, onVoiceChat: {})
-      MessageComposer(draft: .constant(""), isInCall: true, onSend: {}, onVoiceChat: {})
-      MessageComposer(draft: .constant(""), onSend: {}, onVoiceChat: {})
+        draft: .constant("Also add it to my calendar"), onSend: {})
+      MessageComposer(draft: .constant(""), isInCall: true, onSend: {})
+      MessageComposer(draft: .constant(""), onSend: {})
         .disabled(true)
     }
   }

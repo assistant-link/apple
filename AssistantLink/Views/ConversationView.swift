@@ -8,6 +8,8 @@ struct ConversationView: View {
   @State private var failedMessage: OutgoingMessage?
   @State private var position = ScrollPosition()
   @State private var isBannerHidden = false
+  @State private var startFailure: VoiceCall.StartFailure?
+  @Environment(\.openURL) private var openURL
 
   var body: some View {
     if let assistant = model.assistant(id: assistantID) {
@@ -22,6 +24,12 @@ struct ConversationView: View {
       .navigationBarTitleDisplayMode(.inline)
       .toolbar {
         titleBubble(assistant, call)
+        if call.offersStartCall, assistant.hasPairedLink {
+          ToolbarItem(placement: .topBarTrailing) {
+            Button("Voice chat", systemImage: "waveform") { startCall(assistant) }
+              .accessibilityIdentifier("voiceButton")
+          }
+        }
         ToolbarItem(placement: .topBarTrailing) {
           Menu("More", systemImage: "ellipsis") {
             NavigationLink(value: Route.details(assistant.id)) {
@@ -73,6 +81,25 @@ struct ConversationView: View {
         if call.bannerPhase == .notListening { isBannerHidden = false }
       }
       .animation(.easeInOut(duration: 0.3), value: call.isInCall)
+      .alert(
+        "Can't start the voice chat",
+        isPresented: Binding(get: { startFailure != nil }, set: { _ in startFailure = nil }),
+        presenting: startFailure
+      ) { failure in
+        if failure == .permissionDenied {
+          Button("Open Settings") {
+            if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
+          }
+          Button("Cancel", role: .cancel) {}
+        } else {
+          Button("OK", role: .cancel) {}
+        }
+      } message: { failure in
+        Text(
+          failure == .permissionDenied
+            ? "Allow Microphone and Speech Recognition for Assistant Link in Settings."
+            : "The microphone or speech recognition could not start. Try again.")
+      }
       .sheet(item: $pairingLink) { link in
         PairingView(
           assistantName: assistant.name, linkID: link.id,
@@ -80,6 +107,14 @@ struct ConversationView: View {
       }
     } else {
       ContentUnavailableView("Assistant not found", systemImage: "questionmark.circle")
+    }
+  }
+
+  private func startCall(_ assistant: Assistant) {
+    Task {
+      if await !model.startVoiceCall(assistantID: assistant.id) {
+        startFailure = model.voiceCall.startFailure
+      }
     }
   }
 

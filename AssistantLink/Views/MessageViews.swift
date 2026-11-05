@@ -70,8 +70,6 @@ struct ComposerView: View {
 
   @Environment(AppModel.self) private var model
   @State private var draft = ""
-  @State private var startFailure: VoiceCall.StartFailure?
-  @Environment(\.openURL) private var openURL
 
   /// The banner already says the call is waiting for the Assistant.
   private var isInCall: Bool {
@@ -88,38 +86,10 @@ struct ComposerView: View {
           .frame(maxWidth: .infinity)
           .accessibilityIdentifier("offlineNotice")
       }
-      MessageComposer(
-        draft: $draft, isInCall: isInCall, onSend: send, onVoiceChat: startCall)
+      MessageComposer(draft: $draft, isInCall: isInCall, onSend: send)
     }
     .padding(.horizontal, 16)
     .padding(.vertical, 8)
-    .alert(
-      "Can't start the voice chat",
-      isPresented: Binding(get: { startFailure != nil }, set: { _ in startFailure = nil }),
-      presenting: startFailure
-    ) { failure in
-      if failure == .permissionDenied {
-        Button("Open Settings") {
-          if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
-        }
-        Button("Cancel", role: .cancel) {}
-      } else {
-        Button("OK", role: .cancel) {}
-      }
-    } message: { failure in
-      Text(
-        failure == .permissionDenied
-          ? "Allow Microphone and Speech Recognition for Assistant Link in Settings."
-          : "The microphone or speech recognition could not start. Try again.")
-    }
-  }
-
-  private func startCall() {
-    Task {
-      if await !model.startVoiceCall(assistantID: assistant.id) {
-        startFailure = model.voiceCall.startFailure
-      }
-    }
   }
 
   private func send() {
