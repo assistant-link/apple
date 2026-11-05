@@ -31,6 +31,9 @@ protocol VoiceAudio: AnyObject {
   /// Asks for the microphone and speech recognition permissions; whether both are granted.
   func requestPermission() async -> Bool
   func activate() throws
+  /// Calls `handler` when the audio route changed in a way that affects the microphone, for
+  /// example a Bluetooth headset connecting or disconnecting. Ends with `deactivate()`.
+  func observeRouteChanges(_ handler: @escaping @MainActor () -> Void)
   func deactivate()
 }
 
@@ -166,6 +169,7 @@ final class VoiceCall {
       startFailure = .unavailable
       return false
     }
+    audio.observeRouteChanges { [weak self] in self?.routeChanged() }
     self.assistantID = assistantID
     self.send = send
     self.isOnline = isOnline
@@ -265,6 +269,27 @@ final class VoiceCall {
     speaker.speak(replies.removeFirst()) { [weak self] in
       guard let self, state == .speaking else { return }
       speakNext()
+    }
+  }
+
+  /// The microphone moved to another device, which stops the audio engine under the recognizer.
+  /// Listening starts again on the new route; the call, mute and speech in progress stay as they are.
+  private func routeChanged() {
+    guard canHear else { return }
+    flushUtterance()
+    stopListening()
+    retry.restart { [weak self] in self?.resumeListening() }
+  }
+
+  /// Like `startListening`, but a failure, likely while the route is still settling, is retried
+  /// instead of ending the call.
+  private func resumeListening() {
+    guard canHear else { return }
+    do {
+      try listener.start { [weak self] in self?.handle($0) }
+    } catch {
+      failures += 1
+      scheduleRestart()
     }
   }
 
@@ -392,7 +417,13 @@ final class VoiceCall {
     if sent {
       failures = 0
       startListening()
-    } else if failures >= Self.maxFailures {
+    } else {
+      scheduleRestart()
+    }
+  }
+
+  private func scheduleRestart() {
+    if failures >= Self.maxFailures {
       listeningFailed = true
       patience.restart { [weak self] in
         guard let self else { return }

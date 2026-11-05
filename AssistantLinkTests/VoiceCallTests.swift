@@ -65,7 +65,16 @@ private final class FakeAudio: VoiceAudio {
     isActive = true
   }
 
-  func deactivate() { isActive = false }
+  func deactivate() {
+    isActive = false
+    routeHandler = nil
+  }
+
+  private var routeHandler: (@MainActor () -> Void)?
+
+  func observeRouteChanges(_ handler: @escaping @MainActor () -> Void) { routeHandler = handler }
+
+  func changeRoute() { routeHandler?() }
 }
 
 @MainActor
@@ -208,6 +217,100 @@ struct VoiceCallStateTests {
     setup.call.receive(setup.assistantMessage("e-1", "Hi"))
 
     #expect(setup.speaker.spoken == ["Hi"])
+  }
+
+  @Test func aRouteChangeRestartsListeningOnTheNewRouteAndKeepsTheCall() async {
+    let setup = Setup()
+    await setup.start()
+    setup.listener.hear(.partial("Hello"))
+
+    setup.audio.changeRoute()
+
+    #expect(setup.sent == ["Hello"])
+    #expect(!setup.listener.isListening)
+    #expect(setup.call.state == .listening)
+
+    setup.retry.fire()
+
+    #expect(setup.listener.isListening)
+    #expect(setup.listener.starts == 2)
+    #expect(setup.ends == 0)
+  }
+
+  @Test func aRouteChangeWhileMutedStaysMuted() async {
+    let setup = Setup()
+    await setup.start()
+    setup.call.setMuted(true)
+
+    setup.audio.changeRoute()
+    setup.retry.fire()
+
+    #expect(!setup.listener.isListening)
+    #expect(setup.call.isMuted)
+    #expect(setup.call.state == .listening)
+  }
+
+  @Test func aRouteChangeWhileSpeakingDoesNotInterruptOrListen() async {
+    let setup = Setup()
+    await setup.start()
+    setup.call.receive(setup.assistantMessage("e-1", "Hi"))
+
+    setup.audio.changeRoute()
+    setup.retry.fire()
+
+    #expect(setup.call.state == .speaking)
+    #expect(setup.speaker.isSpeaking)
+    #expect(!setup.listener.isListening)
+
+    setup.speaker.finish()
+    #expect(setup.listener.isListening)
+  }
+
+  @Test func aRouteStillSettlingRetriesInsteadOfEndingTheCall() async {
+    let setup = Setup()
+    await setup.start()
+    setup.listener.startError = SpeechListenerError.recognizerUnavailable
+
+    setup.audio.changeRoute()
+    setup.retry.fire()
+
+    #expect(setup.call.state == .listening)
+    #expect(setup.ends == 0)
+    #expect(setup.retry.isPending)
+
+    setup.listener.startError = nil
+    setup.retry.fire()
+    #expect(setup.listener.isListening)
+  }
+
+  @Test func muteDuringARouteChangeDoesNotResumeListening() async {
+    let setup = Setup()
+    await setup.start()
+    setup.audio.changeRoute()
+
+    setup.call.setMuted(true)
+    setup.retry.fire()
+
+    #expect(!setup.listener.isListening)
+  }
+
+  @Test func routeChangesAfterTheCallEndedAreIgnored() async {
+    let setup = Setup()
+    await setup.start()
+    setup.call.end()
+
+    setup.audio.changeRoute()
+    setup.retry.fire()
+
+    #expect(!setup.listener.isListening)
+    #expect(setup.listener.starts == 1)
+  }
+
+  @Test func onlyDeviceChangesAffectTheMicrophone() {
+    #expect(LiveVoiceAudio.affectsMicrophone(.newDeviceAvailable))
+    #expect(LiveVoiceAudio.affectsMicrophone(.oldDeviceUnavailable))
+    #expect(!LiveVoiceAudio.affectsMicrophone(.categoryChange))
+    #expect(!LiveVoiceAudio.affectsMicrophone(.wakeFromSleep))
   }
 
   @Test func deniedPermissionDoesNotStart() async {

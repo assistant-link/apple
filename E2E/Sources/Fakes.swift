@@ -47,5 +47,6 @@ final class FakeSpeaker: SpeechSpeaker {
 final class FakeAudio: VoiceAudio {
   func requestPermission() async -> Bool { true }
   func activate() throws {}
+  func observeRouteChanges(_ handler: @escaping @MainActor () -> Void) {}
   func deactivate() {}
 }
