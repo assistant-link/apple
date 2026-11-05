@@ -47,6 +47,20 @@ final class CircleButtonTests: XCTestCase {
     XCTAssertTrue(end.waitForExistence(timeout: 5))
   }
 
+  @MainActor func testTheHideButtonCollapsesTheBannerWithoutTouchingMuteOrEnd() {
+    let app = XCUIApplication()
+    app.launchArguments = ["-componentCatalog", "call-live"]
+    app.launch()
+
+    let end = app.buttons["voiceEnd"]
+    XCTAssertTrue(end.waitForExistence(timeout: 30))
+    assertHitTarget(app.buttons["hideCallBanner"])
+    app.buttons["hideCallBanner"].tap()
+    XCTAssertTrue(app.buttons["showCallBanner"].waitForExistence(timeout: 5))
+    XCTAssertFalse(end.exists)
+    XCTAssertFalse(app.buttons["hideCallBanner"].exists)
+  }
+
   // The navigation bar reports its own ~39 pt frame for the voice button, so only the circle controls are measured.
   private func assertHitTarget(_ element: XCUIElement) {
     XCTAssertGreaterThanOrEqual(element.frame.width, 44, element.identifier)

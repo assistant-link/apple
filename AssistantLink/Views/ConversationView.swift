@@ -54,23 +54,31 @@ struct ConversationView: View {
               .buttonStyle(.circle(diameter: 28))
               .accessibilityIdentifier("showCallBanner")
             } else {
-              CallBanner(
-                phase: phase, avatar: Avatar(id: assistant.avatar),
-                amplitude: { model.voiceCall.amplitude },
-                onRetry: { model.voiceCall.retryListening() },
-                onMute: { model.voiceCall.setMuted(!model.voiceCall.isMuted) },
-                onEnd: { model.endVoiceCall() }
-              )
-              .padding(.horizontal, 16)
-              .padding(.vertical, 4)
-              // Without it only the glyphs take the drag, not the gaps between the waveform bars.
-              .contentShape(Rectangle())
-              .gesture(
-                DragGesture(minimumDistance: 20).onEnded { drag in
-                  if drag.translation.height < -20 { isBannerHidden = true }
+              VStack(spacing: 2) {
+                CallBanner(
+                  phase: phase, avatar: Avatar(id: assistant.avatar),
+                  amplitude: { model.voiceCall.amplitude },
+                  onRetry: { model.voiceCall.retryListening() },
+                  onMute: { model.voiceCall.setMuted(!model.voiceCall.isMuted) },
+                  onEnd: { model.endVoiceCall() }
+                )
+                .padding(.horizontal, 16)
+                .padding(.vertical, 4)
+                // Without it only the glyphs take the drag, not the gaps between the waveform bars.
+                .contentShape(Rectangle())
+                .gesture(
+                  DragGesture(minimumDistance: 20).onEnded { drag in
+                    if drag.translation.height < -20 { isBannerHidden = true }
+                  }
+                )
+                .accessibilityAction(named: "Hide") { isBannerHidden = true }
+                // Apart from the banner so that it never takes a Mute or End tap.
+                Button("Hide voice chat controls", systemImage: "chevron.up") {
+                  isBannerHidden = true
                 }
-              )
-              .accessibilityAction(named: "Hide") { isBannerHidden = true }
+                .buttonStyle(.circle(diameter: 28))
+                .accessibilityIdentifier("hideCallBanner")
+              }
             }
           }
           .transition(.move(edge: .top).combined(with: .opacity))
