@@ -1220,12 +1220,12 @@ struct VoiceCallAppModelTests {
     let api = APIClient(
       baseURL: URL(string: "https://service.test")!, credential: "ala_secret",
       session: StubURLProtocol.session { request, body in try stub.answer(request, body) })
-    var model: AppModel?
-    model = AppModel(
-      connect: { api }, sleep: { _ in await model?.start() },
+    let holder = Mutex<AppModel?>(nil)
+    let model = AppModel(
+      connect: { api }, sleep: { _ in await holder.withLock { $0 }?.start() },
       voiceCall: VoiceCall(listener: FakeListener(), speaker: FakeSpeaker(), audio: FakeAudio()))
-    await model?.start()
-    guard let model else { return }
+    holder.withLock { $0 = model }
+    await model.start()
     #expect(await model.startVoiceCall(assistantID: "as-1"))
     let session = model.session
 
