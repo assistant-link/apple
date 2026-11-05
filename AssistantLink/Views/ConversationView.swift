@@ -7,6 +7,7 @@ struct ConversationView: View {
   @State private var pairingLink: Link?
   @State private var failedMessage: OutgoingMessage?
   @State private var position = ScrollPosition()
+  @State private var isBannerHidden = false
 
   var body: some View {
     if let assistant = model.assistant(id: assistantID) {
@@ -37,17 +38,39 @@ struct ConversationView: View {
       }
       .safeAreaInset(edge: .top) {
         if let phase = call.bannerPhase {
-          CallBanner(
-            phase: phase, avatar: Avatar(id: assistant.avatar),
-            amplitude: { model.voiceCall.amplitude },
-            onRetry: { model.voiceCall.retryListening() },
-            onMute: { model.voiceCall.setMuted(!model.voiceCall.isMuted) },
-            onEnd: { model.endVoiceCall() }
-          )
-          .padding(.horizontal, 16)
-          .padding(.vertical, 4)
+          Group {
+            if isBannerHidden {
+              Button("Show voice chat controls", systemImage: "chevron.down") {
+                isBannerHidden = false
+              }
+              .buttonStyle(.circle(diameter: 28))
+              .accessibilityIdentifier("showCallBanner")
+            } else {
+              CallBanner(
+                phase: phase, avatar: Avatar(id: assistant.avatar),
+                amplitude: { model.voiceCall.amplitude },
+                onRetry: { model.voiceCall.retryListening() },
+                onMute: { model.voiceCall.setMuted(!model.voiceCall.isMuted) },
+                onEnd: { model.endVoiceCall() }
+              )
+              .padding(.horizontal, 16)
+              .padding(.vertical, 4)
+              .gesture(
+                DragGesture(minimumDistance: 20).onEnded { drag in
+                  if drag.translation.height < -20 { isBannerHidden = true }
+                }
+              )
+              .accessibilityAction(named: "Hide") { isBannerHidden = true }
+            }
+          }
           .transition(.move(edge: .top).combined(with: .opacity))
         }
+      }
+      .animation(.easeInOut(duration: 0.3), value: isBannerHidden)
+      .onChange(of: call.isInCall) { isBannerHidden = false }
+      // The retry button lives in the banner, so a stalled call must bring it back.
+      .onChange(of: call.bannerPhase) {
+        if call.bannerPhase == .notListening { isBannerHidden = false }
       }
       .animation(.easeInOut(duration: 0.3), value: call.isInCall)
       .sheet(item: $pairingLink) { link in
@@ -77,7 +100,7 @@ struct ConversationView: View {
     NavigationLink(value: Route.details(assistant.id)) {
       TitleBubble(
         name: assistant.name, avatar: Avatar(id: assistant.avatar),
-        state: call.titleState(isOnline: assistant.status == .online))
+        status: call.titleStatus(isOnline: assistant.status == .online))
     }
     .buttonStyle(.plain)
     .accessibilityHint("Shows the Assistant's details and Links")

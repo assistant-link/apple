@@ -29,4 +29,11 @@ struct CallBannerPhaseTests {
     #expect(CallBannerPhase(state: .listening, isMuted: true, listeningFailed: true) == .muted)
     #expect(CallBannerPhase(state: .speaking, isMuted: false, listeningFailed: true) == .live)
   }
+
+  @Test func eachPhaseSpeaksItsState() {
+    #expect(CallBannerPhase.connecting.accessibilityValue == "Connecting")
+    #expect(CallBannerPhase.live.accessibilityValue == "Live")
+    #expect(CallBannerPhase.muted.accessibilityValue == "Muted")
+    #expect(CallBannerPhase.notListening.accessibilityValue == "Not listening")
+  }
 }

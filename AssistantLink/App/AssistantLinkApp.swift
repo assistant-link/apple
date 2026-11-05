@@ -14,8 +14,8 @@ struct AssistantLinkApp: App {
     WindowGroup {
       if Self.isRunningUnitTests {
         Text("Running unit tests")
-      } else if let section = ComponentCatalog.Section.launched {
-        ComponentCatalog(section: section)
+      } else if let page = ComponentCatalog.Page.launched {
+        ComponentCatalog(page: page)
       } else {
         AssistantListView()
           .environment(model)

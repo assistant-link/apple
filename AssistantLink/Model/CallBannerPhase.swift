@@ -15,3 +15,14 @@ enum CallBannerPhase: Equatable {
     }
   }
 }
+
+extension CallBannerPhase {
+  var accessibilityValue: String {
+    switch self {
+    case .connecting: "Connecting"
+    case .live: "Live"
+    case .muted: "Muted"
+    case .notListening: "Not listening"
+    }
+  }
+}
