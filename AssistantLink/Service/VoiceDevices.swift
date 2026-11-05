@@ -82,10 +82,8 @@ final class LiveSpeechListener: SpeechListener {
 
   func stop() {
     generation += 1
-    if engine.isRunning {
-      engine.stop()
-      engine.inputNode.removeTap(onBus: 0)
-    }
+    engine.stop()
+    engine.inputNode.removeTap(onBus: 0)
     request?.endAudio()
     task?.cancel()
     request = nil
@@ -155,6 +153,8 @@ private final class MicrophoneTap: @unchecked Sendable {
 final class LiveSpeechSpeaker: NSObject, SpeechSpeaker, AVSpeechSynthesizerDelegate {
   private let synthesizer = AVSpeechSynthesizer()
   private var onFinish: (@MainActor () -> Void)?
+  /// Tells the end of the utterance spoken now from a late one of an utterance `stop()` cut off.
+  private(set) var current: AVSpeechUtterance?
 
   override init() {
     super.init()
@@ -162,11 +162,14 @@ final class LiveSpeechSpeaker: NSObject, SpeechSpeaker, AVSpeechSynthesizerDeleg
   }
 
   func speak(_ text: String, onFinish: @escaping @MainActor () -> Void) {
+    let utterance = AVSpeechUtterance(string: text)
+    current = utterance
     self.onFinish = onFinish
-    synthesizer.speak(AVSpeechUtterance(string: text))
+    synthesizer.speak(utterance)
   }
 
   func stop() {
+    current = nil
     onFinish = nil
     synthesizer.stopSpeaking(at: .immediate)
   }
@@ -174,9 +177,23 @@ final class LiveSpeechSpeaker: NSObject, SpeechSpeaker, AVSpeechSynthesizerDeleg
   nonisolated func speechSynthesizer(
     _ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance
   ) {
+    ended(utterance)
+  }
+
+  /// The system cancels speech when another app takes the audio, with no `stop()` of ours.
+  nonisolated func speechSynthesizer(
+    _ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance
+  ) {
+    ended(utterance)
+  }
+
+  private nonisolated func ended(_ utterance: AVSpeechUtterance) {
+    let id = ObjectIdentifier(utterance)
     Task { @MainActor in
-      let finish = self.onFinish
-      self.onFinish = nil
+      guard let current, ObjectIdentifier(current) == id else { return }
+      let finish = onFinish
+      self.current = nil
+      onFinish = nil
       finish?()
     }
   }
