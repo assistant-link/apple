@@ -1214,6 +1214,31 @@ struct VoiceCallAppModelTests {
     #expect(Set(sent.dropFirst().compactMap { $0["idempotency_key"] }).count == 1)
   }
 
+  @Test func aPendingCallEndedSurvivesASessionChange() async {
+    let stub = Stub()
+    stub.endFailures.withLock { $0 = 1 }
+    let api = APIClient(
+      baseURL: URL(string: "https://service.test")!, credential: "ala_secret",
+      session: StubURLProtocol.session { request, body in try stub.answer(request, body) })
+    var model: AppModel?
+    model = AppModel(
+      connect: { api }, sleep: { _ in await model?.start() },
+      voiceCall: VoiceCall(listener: FakeListener(), speaker: FakeSpeaker(), audio: FakeAudio()))
+    await model?.start()
+    guard let model else { return }
+    #expect(await model.startVoiceCall(assistantID: "as-1"))
+    let session = model.session
+
+    model.endVoiceCall()
+    await model.callOutbox?.value
+
+    #expect(model.session == session + 1)
+    let sent = stub.bodies.withLock { $0 }
+    #expect(sent.map { $0["type"] } == ["call_started", "call_ended", "call_ended"])
+    #expect(Set(sent.dropFirst().compactMap { $0["idempotency_key"] }).count == 1)
+    #expect(model.timelines["as-1"]?.events.map(\.type) == [.callEnded])
+  }
+
   @Test func callEndedGivesUpAfterTheAttemptLimitSoLaterPostsAreNotBlocked() async {
     let stub = Stub()
     stub.endFailures.withLock { $0 = 1000 }
