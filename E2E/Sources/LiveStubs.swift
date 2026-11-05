@@ -15,3 +15,7 @@ enum AccountSession {
 extension VoiceCall {
   static func live() -> VoiceCall { fatalError() }
 }
+
+enum BackgroundTime {
+  @MainActor static func keepRunning(_ task: Task<Void, Never>) {}
+}

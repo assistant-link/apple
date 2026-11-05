@@ -962,6 +962,9 @@ struct VoiceCallAppModelTests {
         return (201, Data(json: #"{"event": \#(event)}"#))
       case ("GET", "/api/v1/assistants"):
         return (200, Data(json: #"{"assistants": [\#(Self.assistant)]}"#))
+      case ("DELETE", "/api/v1/account"):
+        bodies.withLock { $0.append(["type": "delete_account"]) }
+        return (204, Data())
       default:
         return (404, Data(json: #"{"error": {"code": "not_found", "message": "No."}}"#))
       }
@@ -974,13 +977,17 @@ struct VoiceCallAppModelTests {
       """
   }
 
-  private func startedModel(_ stub: Stub, listener: FakeListener) async -> AppModel {
+  private func startedModel(
+    _ stub: Stub, listener: FakeListener,
+    keepRunning: @escaping @MainActor (Task<Void, Never>) -> Void = { _ in }
+  ) async -> AppModel {
     let api = APIClient(
       baseURL: URL(string: "https://service.test")!, credential: "ala_secret",
       session: StubURLProtocol.session { request, body in try stub.answer(request, body) })
     let model = AppModel(
       connect: { api }, sleep: { _ in },
-      voiceCall: VoiceCall(listener: listener, speaker: FakeSpeaker(), audio: FakeAudio()))
+      voiceCall: VoiceCall(listener: listener, speaker: FakeSpeaker(), audio: FakeAudio()),
+      keepRunning: keepRunning)
     await model.start()
     return model
   }
@@ -1038,6 +1045,47 @@ struct VoiceCallAppModelTests {
     let sent = stub.bodies.withLock { $0 }
     #expect(sent.map { $0["type"] } == ["call_started", "message", "call_ended"])
     #expect(sent[1]["text"] == "Goodbye")
+  }
+
+  @Test func leavingTheForegroundEndsTheCallAfterTheLastUtteranceAndKeepsTheAppRunning() async {
+    let stub = Stub()
+    stub.endFailures.withLock { $0 = 2 }
+    let listener = FakeListener()
+    var held: [Task<Void, Never>] = []
+    let model = await startedModel(stub, listener: listener) { held.append($0) }
+    #expect(await model.startVoiceCall(assistantID: "as-1"))
+
+    listener.hear(.partial("Bye"))
+    model.leftForeground()
+
+    #expect(model.voiceCall.state == .idle)
+    #expect(held.count == 1)
+    await held[0].value
+    let sent = stub.bodies.withLock { $0 }
+    #expect(
+      sent.map { $0["type"] }
+        == ["call_started", "message", "call_ended", "call_ended", "call_ended"])
+  }
+
+  @Test func leavingTheForegroundWithoutACallHoldsNothing() async {
+    var held = 0
+    let model = await startedModel(Stub(), listener: FakeListener()) { _ in held += 1 }
+
+    model.leftForeground()
+
+    #expect(held == 0)
+  }
+
+  @Test func loggingOutEndsTheCallBeforeTheAccountIsDeleted() async throws {
+    let stub = Stub()
+    let model = await startedModel(stub, listener: FakeListener())
+    #expect(await model.startVoiceCall(assistantID: "as-1"))
+
+    try await model.logOut()
+
+    let sent = stub.bodies.withLock { $0 }
+    #expect(sent.map { $0["type"] } == ["call_started", "call_ended", "delete_account"])
+    #expect(model.voiceCall.state == .idle)
   }
 
   @Test func callEndedIsRetriedUntilItIsDelivered() async {
