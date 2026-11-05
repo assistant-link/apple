@@ -34,7 +34,9 @@ final class CircleButtonTests: XCTestCase {
     let end = app.buttons["voiceEnd"]
     XCTAssertTrue(end.waitForExistence(timeout: 30))
     let banner = app.descendants(matching: .any)["callBanner"].firstMatch
-    banner.swipeUp()
+    // swipeUp() on a 64 pt tall element drags too short and fast to pass the gesture's threshold.
+    let start = banner.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+    start.press(forDuration: 0.1, thenDragTo: start.withOffset(CGVector(dx: 0, dy: -120)))
     XCTAssertTrue(app.buttons["showCallBanner"].waitForExistence(timeout: 5))
     XCTAssertFalse(end.exists)
 
