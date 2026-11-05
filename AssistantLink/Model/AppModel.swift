@@ -19,7 +19,7 @@ final class AppModel {
   private(set) var session = 0
   let voiceCall: VoiceCall
 
-  /// With `Backoff` this keeps trying for a few minutes.
+  /// How often a call's posts are tried. With `Backoff` this keeps trying for a few minutes.
   static let callEventAttempts = 12
   private static let pageSize = 50
   private static let logger = Logger(subsystem: "ai.assistantlink.app", category: "live")
@@ -185,13 +185,16 @@ final class AppModel {
     return message
   }
 
-  /// Posts a queued message. Any error leaves it as "Not Delivered".
-  func post(_ message: OutgoingMessage) async {
+  /// Posts a queued message, trying up to `attempts` times while the failure may pass. Failing
+  /// for good leaves it as "Not Delivered".
+  func post(_ message: OutgoingMessage, attempts: Int = 1) async {
     let session = session
     do {
-      let event = try await client().sendMessage(
-        assistantID: message.assistantID, text: message.text,
-        idempotencyKey: message.idempotencyKey, via: message.via)
+      let event = try await retrying(attempts: attempts, in: session) {
+        try await self.client().sendMessage(
+          assistantID: message.assistantID, text: message.text,
+          idempotencyKey: message.idempotencyKey, via: message.via)
+      }
       guard self.session == session else { return }
       store(event)
     } catch {
@@ -212,7 +215,9 @@ final class AppModel {
         }
         let session = self.session
         self.enqueue {
-          if self.session == session { await self.post(message) }
+          if self.session == session {
+            await self.post(message, attempts: Self.callEventAttempts)
+          }
         }
       },
       onEnd: { self.enqueueCallEvent(.callEnded, assistantID: assistantID) })
@@ -255,20 +260,34 @@ final class AppModel {
     let key = UUIDv7.make()
     let session = session
     enqueue {
-      var backoff = Backoff()
-      for attempt in 1...Self.callEventAttempts where self.session == session {
-        do {
-          let event = try await self.client().sendCallEvent(
+      guard self.session == session else { return }
+      do {
+        let event = try await self.retrying(attempts: Self.callEventAttempts, in: session) {
+          try await self.client().sendCallEvent(
             assistantID: assistantID, type: type, idempotencyKey: key)
-          guard self.session == session else { return }
-          self.store(event)
-          return
-        } catch {
-          guard (error as? APIError)?.isTransient ?? true else { return }
         }
-        if attempt < Self.callEventAttempts {
-          do { try await self.sleep(backoff.next()) } catch { return }
-        }
+        guard self.session == session else { return }
+        self.store(event)
+      } catch {}
+    }
+  }
+
+  /// Runs `operation` again after a capped backoff while its failure is transient, and throws
+  /// the last error once `attempts` are used up or the session changed.
+  private func retrying<T>(
+    attempts: Int, in session: Int, _ operation: () async throws -> T
+  ) async throws -> T {
+    var backoff = Backoff()
+    var attempt = 1
+    while true {
+      do {
+        return try await operation()
+      } catch {
+        guard attempt < attempts, self.session == session,
+          (error as? APIError)?.isTransient ?? true
+        else { throw error }
+        try await sleep(backoff.next())
+        attempt += 1
       }
     }
   }

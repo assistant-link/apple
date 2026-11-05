@@ -1031,12 +1031,21 @@ struct VoiceCallAppModelTests {
     let bodies = Mutex<[[String: String]]>([])
     /// How many `call_ended` posts still fail with a network error before one succeeds.
     let endFailures = Mutex(0)
+    /// How many message posts still fail with a network error before one succeeds.
+    let messageFailures = Mutex(0)
 
     func answer(_ request: URLRequest, _ body: Data?) throws -> (Int, Data) {
       switch (request.httpMethod, request.url?.path()) {
       case ("POST", "/api/v1/assistants/as-1/messages"):
         let sent = try (body?.jsonObject() ?? [:]).compactMapValues { $0 as? String }
         bodies.withLock { $0.append(sent.merging(["type": "message"]) { $1 }) }
+        if messageFailures.withLock({ failures in
+          guard failures > 0 else { return false }
+          failures -= 1
+          return true
+        }) {
+          throw URLError(.notConnectedToInternet)
+        }
         let event = """
           {"id": "ev-\(sent["idempotency_key"] ?? "")", "assistant_id": "as-1",
            "type": "text_message", "sender": "user", "link_id": null,
@@ -1216,6 +1225,41 @@ struct VoiceCallAppModelTests {
 
     let ended = stub.bodies.withLock { $0 }.filter { $0["type"] == "call_ended" }
     #expect(ended.count == AppModel.callEventAttempts)
+  }
+
+  @Test func aVoiceMessageIsRetriedAndStaysBeforeCallEnded() async {
+    let stub = Stub()
+    stub.messageFailures.withLock { $0 = 2 }
+    let listener = FakeListener()
+    let model = await startedModel(stub, listener: listener)
+    #expect(await model.startVoiceCall(assistantID: "as-1"))
+
+    listener.hear(.partial("Hello"))
+    model.endVoiceCall()
+    await model.callOutbox?.value
+
+    let sent = stub.bodies.withLock { $0 }
+    #expect(
+      sent.map { $0["type"] } == ["call_started", "message", "message", "message", "call_ended"])
+    #expect(Set(sent.filter { $0["type"] == "message" }.map { $0["idempotency_key"] }).count == 1)
+    #expect(model.timelines["as-1"]?.outgoing.allSatisfy { $0.state != .failed } == true)
+  }
+
+  @Test func aVoiceMessageThatNeverGoesOutShowsNotDeliveredAndCallEndedStillGoesOut() async {
+    let stub = Stub()
+    stub.messageFailures.withLock { $0 = 1000 }
+    let listener = FakeListener()
+    let model = await startedModel(stub, listener: listener)
+    #expect(await model.startVoiceCall(assistantID: "as-1"))
+
+    listener.hear(.partial("Hello"))
+    model.endVoiceCall()
+    await model.callOutbox?.value
+
+    let sent = stub.bodies.withLock { $0 }
+    #expect(sent.filter { $0["type"] == "message" }.count == AppModel.callEventAttempts)
+    #expect(sent.last?["type"] == "call_ended")
+    #expect(model.timelines["as-1"]?.outgoing.map(\.state) == [.failed])
   }
 
   @Test func theCallSurvivesOpeningDetails() async {
