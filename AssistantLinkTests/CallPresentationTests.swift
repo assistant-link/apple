@@ -18,23 +18,27 @@ struct CallPresentationTests {
     let none = presentation(.idle, callWith: nil)
     #expect(!none.isInCall)
     #expect(none.bannerPhase == nil)
+    #expect(none.offersStartCall)
     #expect(none.titleStatus(isOnline: true) == .online)
     #expect(none.titleStatus(isOnline: false) == .offline)
   }
 
   @Test func callWithAnotherAssistantDoesNotShowHere() {
     #expect(!presentation(.listening, callWith: "assistant-2").isInCall)
+    #expect(presentation(.listening, callWith: "assistant-2").offersStartCall)
   }
 
   @Test func connectingCallShowsTheConnectingBannerAndTheCallTitle() {
     let connecting = presentation(.connecting)
     #expect(connecting.isInCall)
     #expect(connecting.bannerPhase == .connecting)
+    #expect(!connecting.offersStartCall)
     #expect(connecting.titleStatus(isOnline: false) == .inCall)
   }
 
   @Test func liveCallShowsTheLiveBanner() {
     #expect(presentation(.listening).bannerPhase == .live)
+    #expect(!presentation(.listening).offersStartCall)
     #expect(presentation(.speaking).bannerPhase == .live)
     #expect(presentation(.listening).titleStatus(isOnline: true) == .inCall)
   }

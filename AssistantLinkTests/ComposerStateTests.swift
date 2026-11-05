@@ -3,14 +3,14 @@ import Testing
 @testable import AssistantLink
 
 struct ComposerStateTests {
-  @Test func emptyDraftOffersVoiceChatAndDictation() {
+  @Test func emptyDraftOffersDictationAndNoTrailingButton() {
     let state = ComposerState(draft: "")
-    #expect(state.trailingButton == .voiceChat)
+    #expect(state.trailingButton == nil)
     #expect(state.showsDictation)
     #expect(state.isFieldEnabled)
   }
 
-  @Test func typingTurnsVoiceChatIntoSend() {
+  @Test func typingOffersSend() {
     let state = ComposerState(draft: "Also add it to my calendar")
     #expect(state.trailingButton == .send)
     #expect(state.showsDictation)
