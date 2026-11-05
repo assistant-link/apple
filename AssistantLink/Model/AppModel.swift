@@ -327,6 +327,13 @@ final class AppModel {
     assistants.first { $0.id == id }
   }
 
+  /// The service sends no event when a Link pairs, so this turns true when its status first
+  /// changes, which happens when the agent connects.
+  func isPaired(linkID: Link.ID) -> Bool {
+    let link = assistants.lazy.flatMap(\.links).first { $0.id == linkID }
+    return link.map { $0.status != .notPaired } ?? false
+  }
+
   func createAssistant(name: String, avatar: String) async throws -> Assistant {
     let assistant = try await client().createAssistant(name: name, avatar: avatar)
     assistants.append(assistant)

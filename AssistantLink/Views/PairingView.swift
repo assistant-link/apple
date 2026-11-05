@@ -38,6 +38,9 @@ struct PairingView: View {
         }
       }
       .task { await load(renew: false) }
+      .onChange(of: model.isPaired(linkID: linkID)) { _, isPaired in
+        if isPaired { dismiss() }
+      }
     }
   }
 

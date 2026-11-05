@@ -136,6 +136,23 @@ struct AppModelTests {
     #expect(offline.links[0].lastActiveAt == disconnectedAt)
   }
 
+  @Test func aLinkIsPairedOnceItsStatusLeavesNotPaired() async throws {
+    let model = model { _, _ in (200, Data(json: #"{"assistants": [\#(twoLinks)]}"#)) }
+    await model.start()
+
+    #expect(model.isPaired(linkID: "l-1"))
+    #expect(!model.isPaired(linkID: "l-2"))
+    model.apply(LinkStatusChange(linkID: "l-2", status: .online, lastActiveAt: .now))
+    #expect(model.isPaired(linkID: "l-2"))
+  }
+
+  @Test func anUnknownLinkIsNotPaired() async throws {
+    let model = model { _, _ in (200, Data(json: #"{"assistants": [\#(twoLinks)]}"#)) }
+    await model.start()
+
+    #expect(!model.isPaired(linkID: "l-9"))
+  }
+
   @Test func linkStatusForAnUnknownLinkChangesNothing() async throws {
     let model = model { _, _ in (200, Data(json: #"{"assistants": [\#(twoLinks)]}"#)) }
     await model.start()
