@@ -28,12 +28,12 @@ struct WaveformView: View {
 }
 
 extension VoiceCall {
-  /// How lively the waveform is: the voice while listening, a steady motion while speaking.
+  /// How lively the waveform is: the voice while listening or connecting, a steady motion while speaking.
   var amplitude: Double {
     switch state {
-    case .idle, .connecting: 0
+    case .idle: 0
     case .speaking: 0.7
-    case .listening: isMuted ? 0 : max(0.1, Double(level))
+    case .listening, .connecting: isMuted ? 0 : max(0.1, Double(level))
     }
   }
 }

@@ -4,7 +4,7 @@ import SwiftUI
 struct CallBanner: View {
   let phase: CallBannerPhase
   let avatar: Avatar
-  /// How lively the bars are while live, 0 to 1. Read in this view's body so that the fast
+  /// How lively the bars are while the mic is live, 0 to 1. Read in this view's body so that the fast
   /// changing level redraws only the banner.
   var amplitude: () -> Double = { 0.7 }
   let onRetry: () -> Void
@@ -55,7 +55,7 @@ struct CallBanner: View {
       }
       .buttonStyle(.plain)
       .accessibilityIdentifier("voiceRetry")
-    } else if phase == .live {
+    } else if phase.showsWaveform {
       WaveformView(
         amplitude: max(amplitude(), 0.4), height: 28, barWidth: 2, barCount: 32, growing: true
       )
