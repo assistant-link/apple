@@ -26,7 +26,13 @@ struct ConversationView: View {
         titleBubble(assistant, call)
         if call.offersStartCall, assistant.hasPairedLink {
           ToolbarItem(placement: .topBarTrailing) {
-            Button("Voice chat", systemImage: "waveform") { startCall(assistant) }
+            Button {
+              startCall(assistant)
+            } label: {
+              Label("Voice chat", systemImage: "waveform")
+                .frame(minWidth: 44, minHeight: 44)
+                .contentShape(Rectangle())
+            }
               .accessibilityIdentifier("voiceButton")
           }
         }
