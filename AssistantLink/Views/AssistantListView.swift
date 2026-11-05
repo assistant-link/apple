@@ -65,7 +65,7 @@ struct AssistantListView: View {
         .onChange(of: path) { model.navigated(to: path) }
         // The conversation can sit under Details mid-call, so the root ends it on backgrounding.
         .onChange(of: scenePhase) {
-          if scenePhase == .background { model.endVoiceCall() }
+          if scenePhase == .background { model.leftForeground() }
         }
         .sheet(isPresented: $isCreating) {
           CreateAssistantView { assistant in path.append(.conversation(assistant.id)) }

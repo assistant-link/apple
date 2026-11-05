@@ -33,14 +33,19 @@ final class AppModel {
   /// The tail of a call's posts, which run one after another so the Assistant sees them in the
   /// order they happened.
   private(set) var callOutbox: Task<Void, Never>?
+  /// Keeps the process running until the task finishes, so posts started when the app leaves the
+  /// foreground are not cut off by suspension.
+  private let keepRunning: @MainActor (Task<Void, Never>) -> Void
 
   init(
     connect: @escaping @Sendable () async throws -> APIClient,
     forget: @escaping @Sendable () throws -> Void = {},
     liveUpdates: @escaping @MainActor (APIClient) -> LiveUpdates? = LiveUpdates.live,
     sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
-    voiceCall: VoiceCall = .live()
+    voiceCall: VoiceCall = .live(),
+    keepRunning: @escaping @MainActor (Task<Void, Never>) -> Void = { _ in }
   ) {
+    self.keepRunning = keepRunning
     self.connect = connect
     self.forget = forget
     self.makeLiveUpdates = liveUpdates
@@ -53,7 +58,7 @@ final class AppModel {
     let store = KeychainCredentialStore(account: baseURL.absoluteString)
     return AppModel(
       connect: { try await AccountSession.connect(baseURL: baseURL, store: store) },
-      forget: { try store.delete() })
+      forget: { try store.delete() }, keepRunning: BackgroundTime.keepRunning)
   }
 
   static func preview(
@@ -221,6 +226,14 @@ final class AppModel {
     voiceCall.end()
   }
 
+  /// The app can be suspended or killed from here on, and the user never taps End, so the call
+  /// ends now and its posts get background time to go out.
+  func leftForeground() {
+    guard voiceCall.state != .idle else { return }
+    endVoiceCall()
+    if let callOutbox { keepRunning(callOutbox) }
+  }
+
   /// A call outlives the screens pushed on top of its conversation, such as Details, and ends
   /// once the conversation is no longer in the stack.
   func navigated(to path: [Route]) {
@@ -310,6 +323,9 @@ final class AppModel {
 
   /// Deletes the account and everything it owns, then registers a new one as on first launch.
   func logOut() async throws {
+    // The account owns the call, so the Assistant hears the end before the account is gone.
+    endVoiceCall()
+    await callOutbox?.value
     do {
       try await client().deleteAccount()
     } catch APIError.service(status: 401, code: _, message: _) {
