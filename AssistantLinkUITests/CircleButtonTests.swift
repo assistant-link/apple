@@ -54,6 +54,7 @@ final class CircleButtonTests: XCTestCase {
 
     let end = app.buttons["voiceEnd"]
     XCTAssertTrue(end.waitForExistence(timeout: 30))
+    assertHitTarget(app.buttons["hideCallBanner"])
     app.buttons["hideCallBanner"].tap()
     XCTAssertTrue(app.buttons["showCallBanner"].waitForExistence(timeout: 5))
     XCTAssertFalse(end.exists)
