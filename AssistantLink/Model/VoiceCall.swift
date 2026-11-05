@@ -1,3 +1,4 @@
+import AVFoundation
 import Foundation
 import Observation
 
@@ -115,6 +116,10 @@ final class VoiceCall {
   /// Tries listening again after it gave up, because the recognizer often fails at first on a
   /// fresh install (its on-device model still loading) and recovers a little later.
   private let patience: any SilenceTimer
+  private let notifications: NotificationCenter
+  private var interruptionObserver: (any NSObjectProtocol)?
+  /// The system holds the audio session, so nothing may listen or speak until it gives it back.
+  private var isInterrupted = false
   private var send: (@MainActor (String) -> Void)?
   private var onEnd: (@MainActor () -> Void)?
   private var isOnline = false
@@ -128,7 +133,8 @@ final class VoiceCall {
     listener: any SpeechListener, speaker: any SpeechSpeaker, audio: any VoiceAudio,
     silence: any SilenceTimer = TaskSilenceTimer(after: .milliseconds(1200)),
     retry: any SilenceTimer = TaskSilenceTimer(after: .milliseconds(500)),
-    patience: any SilenceTimer = TaskSilenceTimer(after: .seconds(5))
+    patience: any SilenceTimer = TaskSilenceTimer(after: .seconds(5)),
+    notifications: NotificationCenter = .default
   ) {
     self.listener = listener
     self.speaker = speaker
@@ -136,6 +142,7 @@ final class VoiceCall {
     self.silence = silence
     self.retry = retry
     self.patience = patience
+    self.notifications = notifications
   }
 
   /// Starts the call after asking for permission. Returns whether it started; only then
@@ -172,6 +179,7 @@ final class VoiceCall {
       return false
     }
     self.onEnd = onEnd
+    observeInterruptions()
     return true
   }
 
@@ -192,6 +200,7 @@ final class VoiceCall {
     stopListening()
     speaker.stop()
     audio.deactivate()
+    stopObservingInterruptions()
     replies = []
     spokenIDs = []
     send = nil
@@ -209,7 +218,11 @@ final class VoiceCall {
     patience.cancel()
     listeningFailed = false
     failures = 0
-    startListening()
+    if replies.isEmpty {
+      startListening()
+    } else {
+      speakNext()
+    }
   }
 
   func setMuted(_ muted: Bool) {
@@ -233,7 +246,7 @@ final class VoiceCall {
       spokenIDs.insert(event.id).inserted
     else { return }
     replies.append(text)
-    if state != .speaking {
+    if state != .speaking, !isInterrupted {
       speakNext()
     }
   }
@@ -257,6 +270,65 @@ final class VoiceCall {
 
   private var canHear: Bool {
     (state == .listening || state == .connecting) && !isMuted && !listeningFailed
+      && !isInterrupted
+  }
+
+  private func observeInterruptions() {
+    isInterrupted = false
+    interruptionObserver = notifications.addObserver(
+      forName: AVAudioSession.interruptionNotification, object: nil, queue: .main
+    ) { [weak self] notification in
+      let type = (notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt)
+        .flatMap(AVAudioSession.InterruptionType.init)
+      let options = AVAudioSession.InterruptionOptions(
+        rawValue: notification.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt ?? 0)
+      MainActor.assumeIsolated {
+        switch type {
+        case .began: self?.interruptionBegan()
+        case .ended: self?.interruptionEnded(shouldResume: options.contains(.shouldResume))
+        default: break
+        }
+      }
+    }
+  }
+
+  private func stopObservingInterruptions() {
+    if let interruptionObserver {
+      notifications.removeObserver(interruptionObserver)
+    }
+    interruptionObserver = nil
+    isInterrupted = false
+  }
+
+  /// Pauses without a restart: the engine and recognizer die with the session, and the system
+  /// cuts speech off, so what remains queued waits for the end of the interruption.
+  private func interruptionBegan() {
+    guard state != .idle, !isInterrupted else { return }
+    isInterrupted = true
+    flushUtterance()
+    stopListening()
+    if state == .speaking {
+      speaker.stop()
+      state = isOnline ? .listening : .connecting
+    }
+  }
+
+  /// Without `shouldResume` the system doesn't say whether the user is done with the other
+  /// audio, so the user decides, through the same banner as a failed recognizer.
+  private func interruptionEnded(shouldResume: Bool) {
+    guard state != .idle, isInterrupted else { return }
+    isInterrupted = false
+    guard shouldResume else {
+      listeningFailed = !isMuted
+      return
+    }
+    do {
+      try audio.activate()
+    } catch {
+      listeningFailed = !isMuted
+      return
+    }
+    speakNext()
   }
 
   private func startListening() {
