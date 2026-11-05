@@ -256,26 +256,24 @@ final class AppModel {
 
   /// Keeps trying while the failure may pass, because an Assistant that never sees the end of
   /// a call keeps its agent awake. A call's later posts wait behind it, so it gives up eventually.
+  /// It outlives a session change, such as reconnecting, because only the account owns the call.
   private func enqueueCallEvent(_ type: Event.Kind, assistantID: Assistant.ID) {
     let key = UUIDv7.make()
-    let session = session
     enqueue {
-      guard self.session == session else { return }
       do {
-        let event = try await self.retrying(attempts: Self.callEventAttempts, in: session) {
+        let event = try await self.retrying(attempts: Self.callEventAttempts, in: nil) {
           try await self.client().sendCallEvent(
             assistantID: assistantID, type: type, idempotencyKey: key)
         }
-        guard self.session == session else { return }
         self.store(event)
       } catch {}
     }
   }
 
   /// Runs `operation` again after a capped backoff while its failure is transient, and throws
-  /// the last error once `attempts` are used up or the session changed.
+  /// the last error once `attempts` are used up or, given a `session`, that session ended.
   private func retrying<T>(
-    attempts: Int, in session: Int, _ operation: () async throws -> T
+    attempts: Int, in session: Int?, _ operation: () async throws -> T
   ) async throws -> T {
     var backoff = Backoff()
     var attempt = 1
@@ -283,7 +281,7 @@ final class AppModel {
       do {
         return try await operation()
       } catch {
-        guard attempt < attempts, self.session == session,
+        guard attempt < attempts, session == nil || self.session == session,
           (error as? APIError)?.isTransient ?? true
         else { throw error }
         try await sleep(backoff.next())
