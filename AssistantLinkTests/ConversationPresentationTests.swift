@@ -52,6 +52,10 @@ struct ConversationPresentationTests {
     #expect(ListPreview(event: theirs, failedMessage: nil).text == "This message was deleted")
   }
 
+  @Test func theLinkCreatedCaptionSaysSoAndNamesTheLink() {
+    #expect(SystemEventCaption.text(linkName: "Link 1") == "Assistant Link created · Link 1")
+  }
+
   @Test func previewOfALinkCreatedEvent() {
     let event = Event(
       id: "e-2", assistantID: "a-1", type: .linkCreated, sender: .system, createdAt: .now,

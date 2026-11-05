@@ -81,15 +81,19 @@ struct TimeCaptionView: View {
   }
 }
 
-/// The date, then the name of the Link that was created.
+/// The date, then that a Link was created and its name.
 struct SystemEventCaption: View {
   let date: Date
   let linkName: String
 
+  static func text(linkName: String) -> String {
+    "Assistant Link created · \(linkName)"
+  }
+
   var body: some View {
     VStack(spacing: 2) {
       TimeCaptionView(date: date)
-      Label(linkName, systemImage: "link")
+      Label(Self.text(linkName: linkName), systemImage: "link")
         .font(.footnote)
         .foregroundStyle(.secondary)
     }

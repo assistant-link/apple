@@ -95,6 +95,16 @@ final class VoiceCall {
   /// Listening gave up after repeated recognizer failures and hears nothing until it tries again.
   private(set) var listeningFailed = false
 
+  /// Why the last `start` returned false; nil when it was not started for any other reason, such
+  /// as a call already running.
+  enum StartFailure: Equatable {
+    case permissionDenied
+    /// The audio session or the recognizer could not start.
+    case unavailable
+  }
+
+  private(set) var startFailure: StartFailure?
+
   static let maxFailures = 3
 
   private let listener: any SpeechListener
@@ -135,13 +145,19 @@ final class VoiceCall {
     assistantID: Assistant.ID, isOnline: Bool, send: @escaping @MainActor (String) -> Void,
     onEnd: @escaping @MainActor () -> Void
   ) async -> Bool {
+    startFailure = nil
     guard state == .idle, !isStarting else { return false }
     isStarting = true
     defer { isStarting = false }
-    guard await audio.requestPermission(), state == .idle else { return false }
+    guard await audio.requestPermission() else {
+      startFailure = .permissionDenied
+      return false
+    }
+    guard state == .idle else { return false }
     do {
       try audio.activate()
     } catch {
+      startFailure = .unavailable
       return false
     }
     self.assistantID = assistantID
@@ -152,7 +168,10 @@ final class VoiceCall {
     failures = 0
     state = isOnline ? .listening : .connecting
     startListening()
-    guard state != .idle else { return false }
+    guard state != .idle else {
+      startFailure = .unavailable
+      return false
+    }
     self.onEnd = onEnd
     return true
   }

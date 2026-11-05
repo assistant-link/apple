@@ -209,6 +209,7 @@ struct VoiceCallStateTests {
     #expect(setup.call.state == .idle)
     #expect(!setup.listener.isListening)
     #expect(!setup.audio.isActive)
+    #expect(setup.call.startFailure == .permissionDenied)
   }
 
   @Test func aFailingAudioSessionDoesNotStart() async {
@@ -220,6 +221,18 @@ struct VoiceCallStateTests {
 
     #expect(!started)
     #expect(setup.call.state == .idle)
+    #expect(setup.call.startFailure == .unavailable)
+  }
+
+  @Test func aStartThatWorksHasNoFailure() async {
+    let setup = Setup()
+    setup.audio.isAllowed = false
+    _ = await setup.call.start(assistantID: "as-1", isOnline: true, send: { _ in }, onEnd: {})
+    setup.audio.isAllowed = true
+
+    await setup.start()
+
+    #expect(setup.call.startFailure == nil)
   }
 
   @Test func aListenerThatCannotStartEndsTheCall() async {
@@ -232,6 +245,7 @@ struct VoiceCallStateTests {
     #expect(!started)
     #expect(setup.call.state == .idle)
     #expect(!setup.audio.isActive)
+    #expect(setup.call.startFailure == .unavailable)
   }
 
   @Test func aReplyStopsListeningAndTheEndOfItResumes() async {
