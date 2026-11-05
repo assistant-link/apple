@@ -53,11 +53,11 @@ A glass capsule below the nav bar (x 16, 361 x 64, `.glassEffect(in: .capsule)`)
 | Part | SwiftUI | SF Symbol | Colors | Copy |
 |---|---|---|---|---|
 | Avatar | `Circle`, 36, left | none | avatar yellow | none |
-| Waveform | `WaveformView`, thin bars growing toward the right, `.red`; Connecting and Muted show a flat dotted line (`.tertiary`) | none | `.red` | none |
+| Waveform | `WaveformView`, thin bars growing toward the right, `.red`; Connecting and Live show the bars, Muted a flat dotted line (`.tertiary`) | none | `.red` | none |
 | Mute (`voiceMute`) | `Button`, glass circle 40; muted = filled `.primary` circle | `mic` / `mic.slash` | `.primary` | "Mute" / "Unmute" |
 | End (`voiceEnd`) | `Button`, filled `.red` circle 40, `.white` glyph | `xmark` | `.red` | "End voice chat" |
 
-Variants: Connecting (dotted waveform), Live (bars), Muted (dotted waveform, filled mute button).
+Variants: Connecting (bars, the mic is already live), Live (bars), Muted (dotted waveform, filled mute button).
 
 Swiping the banner up hides it and leaves a small chevron button that brings it back; VoiceOver gets a "Hide" action. VoiceOver reads the banner as "Voice chat" with the value Connecting, Live, Muted or Not listening.
 
@@ -83,7 +83,7 @@ System keyboard (simplified in the mock); the composer sits directly on top of i
 
 - **01-chat.** Timeline ending with "Added both. Anything else?", Composer Empty. The red waveform button starts a voice chat; typing turns it into Send. Only the 2 pm request shows "Delivered".
 - **02-typing.** Newest message visible, draft "Remind me to call David tomorrow at 9" wraps to two lines and grows the capsule; keyboard below, home indicator hidden. The dictation mic stays; Send posts the message and clears the draft.
-- **03-call-connecting.** Call glow behind the nav bar, title bubble tinted red, banner Connecting (dotted waveform) under the nav bar, Composer In call. The video shows no collapsed state, so the banner is always visible during a call.
+- **03-call-connecting.** Call glow behind the nav bar, title bubble tinted red, banner Connecting (live waveform) under the nav bar, Composer In call. The video shows no collapsed state, so the banner is always visible during a call.
 - **04-call-live.** Same, banner Live (red bars). Mute toggles (Muted variant), End ends the call. v1 has no settings button and no grabber: the banner stays while the call lasts.
 - **05-after-call.** End removes the glow and the banner and posts the "Voice chat · 00:15" caption under the last assistant message. Composer Empty again.
 - **06-first-pairing.** Hermes before any Link is paired: back button, title bubble Offline, empty state with the three steps and "Get Pairing Text". No composer.

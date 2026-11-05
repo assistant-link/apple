@@ -36,4 +36,11 @@ struct CallBannerPhaseTests {
     #expect(CallBannerPhase.muted.accessibilityValue == "Muted")
     #expect(CallBannerPhase.notListening.accessibilityValue == "Not listening")
   }
+
+  @Test func theWaveformShowsWheneverTheMicrophoneIsLive() {
+    #expect(CallBannerPhase.connecting.showsWaveform)
+    #expect(CallBannerPhase.live.showsWaveform)
+    #expect(!CallBannerPhase.muted.showsWaveform)
+    #expect(!CallBannerPhase.notListening.showsWaveform)
+  }
 }

@@ -348,6 +348,18 @@ struct VoiceCallStateTests {
     setup.call.setMuted(true)
     #expect(setup.call.level == 0)
   }
+
+  @Test func theWaveformFollowsTheMicrophoneWhileConnecting() async {
+    let setup = Setup()
+    await setup.start(isOnline: false)
+    #expect(setup.call.state == .connecting)
+
+    setup.listener.hear(.level(0.6))
+    #expect(setup.call.amplitude == Double(Float(0.6)))
+
+    setup.call.setMuted(true)
+    #expect(setup.call.amplitude == 0)
+  }
 }
 
 @MainActor

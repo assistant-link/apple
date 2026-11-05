@@ -17,6 +17,9 @@ enum CallBannerPhase: Equatable {
 }
 
 extension CallBannerPhase {
+  /// The call listens while connecting too, so the speaker sees they are heard.
+  var showsWaveform: Bool { self == .connecting || self == .live }
+
   var accessibilityValue: String {
     switch self {
     case .connecting: "Connecting"
