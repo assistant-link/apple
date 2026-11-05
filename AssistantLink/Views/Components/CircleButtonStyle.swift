@@ -1,10 +1,13 @@
 import SwiftUI
 
-/// An icon button drawn as a disc that takes taps on its whole area and dims while pressed.
+/// An icon button drawn as a disc that dims while pressed. Taps land on a square of at least 44 pt around
+/// the disc, the HIG minimum, so a small disc does not need to grow.
 struct CircleButtonStyle: ButtonStyle {
   var foreground: Color = .primary
   var background: Color = Color(.tertiarySystemFill)
   var diameter: CGFloat = 36
+
+  private static let minimumHitSide: CGFloat = 44
 
   @ScaledMetric private var scale = 1.0
   @Environment(\.isEnabled) private var isEnabled
@@ -19,7 +22,8 @@ struct CircleButtonStyle: ButtonStyle {
       .foregroundStyle(foreground)
       .frame(width: size, height: size)
       .background(background, in: Circle())
-      .contentShape(Circle())
+      .frame(minWidth: Self.minimumHitSide, minHeight: Self.minimumHitSide)
+      .contentShape(Rectangle())
       .opacity(isEnabled ? (configuration.isPressed ? 0.6 : 1) : 0.4)
   }
 }
