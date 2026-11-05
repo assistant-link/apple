@@ -68,12 +68,8 @@ private struct FailedMessageOptions: View {
         Spacer()
         Button(action: onClose) {
           Image(systemName: "xmark")
-            .font(.system(size: 13, weight: .semibold))
-            .foregroundStyle(.secondary)
-            .frame(width: 30, height: 30)
-            .background(Color(.tertiarySystemFill), in: Circle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.circle(foreground: .secondary, diameter: 30))
         .accessibilityLabel("Close")
       }
     }
