@@ -95,8 +95,7 @@ final class VoiceCall {
   /// Listening gave up after repeated recognizer failures and hears nothing until it tries again.
   private(set) var listeningFailed = false
 
-  /// Why the last `start` returned false; nil when it was not started for any other reason, such
-  /// as a call already running.
+  /// Why the last `start` failed; nil when it started, or did not because a call was running.
   enum StartFailure: Equatable {
     case permissionDenied
     /// The audio session or the recognizer could not start.
