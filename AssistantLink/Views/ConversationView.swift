@@ -63,6 +63,8 @@ struct ConversationView: View {
               )
               .padding(.horizontal, 16)
               .padding(.vertical, 4)
+              // Without it only the glyphs take the drag, not the gaps between the waveform bars.
+              .contentShape(Rectangle())
               .gesture(
                 DragGesture(minimumDistance: 20).onEnded { drag in
                   if drag.translation.height < -20 { isBannerHidden = true }
