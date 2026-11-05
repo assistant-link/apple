@@ -9,6 +9,8 @@ extension VoiceCall {
 
 @MainActor
 final class LiveVoiceAudio: VoiceAudio {
+  private var routeObserver: (any NSObjectProtocol)?
+
   func requestPermission() async -> Bool {
     guard await AVAudioApplication.requestRecordPermission() else { return false }
     return await Self.speechAuthorization() == .authorized
@@ -26,11 +28,41 @@ final class LiveVoiceAudio: VoiceAudio {
   func activate() throws {
     let session = AVAudioSession.sharedInstance()
     try session.setCategory(
-      .playAndRecord, mode: .voiceChat, options: [.defaultToSpeaker, .allowBluetoothHFP])
+      .playAndRecord, mode: .voiceChat,
+      options: [.defaultToSpeaker, .allowBluetoothHFP, .allowBluetoothA2DP])
     try session.setActive(true)
   }
 
+  /// Only these reasons change the devices; a category change is our own `activate()`.
+  nonisolated static func affectsMicrophone(_ reason: AVAudioSession.RouteChangeReason) -> Bool {
+    switch reason {
+    case .newDeviceAvailable, .oldDeviceUnavailable, .override, .routeConfigurationChange:
+      true
+    default:
+      false
+    }
+  }
+
+  func observeRouteChanges(_ handler: @escaping @MainActor () -> Void) {
+    stopObserving()
+    routeObserver = NotificationCenter.default.addObserver(
+      forName: AVAudioSession.routeChangeNotification, object: nil, queue: .main
+    ) { notification in
+      let value = notification.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt
+      guard let value, let reason = AVAudioSession.RouteChangeReason(rawValue: value),
+        Self.affectsMicrophone(reason)
+      else { return }
+      MainActor.assumeIsolated { handler() }
+    }
+  }
+
+  private func stopObserving() {
+    if let routeObserver { NotificationCenter.default.removeObserver(routeObserver) }
+    routeObserver = nil
+  }
+
   func deactivate() {
+    stopObserving()
     try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
   }
 }
@@ -66,6 +98,10 @@ final class LiveSpeechListener: SpeechListener {
       }
     }
     let input = engine.inputNode
+    // A route still switching reports no sample rate, which `installTap` can't take.
+    guard input.outputFormat(forBus: 0).sampleRate > 0 else {
+      throw SpeechListenerError.recognizerUnavailable
+    }
     let tap = MicrophoneTap(request: request, deliver: deliver)
     input.installTap(
       onBus: 0, bufferSize: 1024, format: input.outputFormat(forBus: 0), block: Self.block(of: tap))

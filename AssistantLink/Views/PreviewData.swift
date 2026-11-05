@@ -98,6 +98,7 @@ private final class SilentVoice: SpeechListener, SpeechSpeaker, VoiceAudio, Sile
   func speak(_ text: String, onFinish: @escaping @MainActor () -> Void) {}
   func requestPermission() async -> Bool { true }
   func activate() throws {}
+  func observeRouteChanges(_ handler: @escaping @MainActor () -> Void) {}
   func deactivate() {}
   func restart(_ fire: @escaping @MainActor () -> Void) {}
   func cancel() {}
