@@ -1,3 +1,4 @@
+import AVFoundation
 import Foundation
 import Synchronization
 import Testing
@@ -95,6 +96,7 @@ private final class Setup {
   let silence = FakeSilence()
   let retry = FakeSilence()
   let patience = FakeSilence()
+  let center = NotificationCenter()
   var sent: [String] = []
   private(set) var sentBeforeEnd: [String] = []
   private(set) var ends = 0
@@ -103,7 +105,17 @@ private final class Setup {
   init() {
     call = VoiceCall(
       listener: listener, speaker: speaker, audio: audio, silence: silence, retry: retry,
-      patience: patience)
+      patience: patience, notifications: center)
+  }
+
+  func interrupt(_ type: AVAudioSession.InterruptionType, shouldResume: Bool = false) {
+    var userInfo: [AnyHashable: Any] = [AVAudioSessionInterruptionTypeKey: type.rawValue]
+    if type == .ended {
+      let options: AVAudioSession.InterruptionOptions = shouldResume ? .shouldResume : []
+      userInfo[AVAudioSessionInterruptionOptionKey] = options.rawValue
+    }
+    center.post(
+      name: AVAudioSession.interruptionNotification, object: nil, userInfo: userInfo)
   }
 
   func start(isOnline: Bool = true) async {
@@ -1088,5 +1100,137 @@ struct VoiceCallAppModelTests {
     model.navigated(to: [.conversation("as-2")])
 
     #expect(model.voiceCall.state == .idle)
+  }
+}
+
+@MainActor
+struct VoiceCallInterruptionTests {
+  @Test func anInterruptionPausesListeningWithoutRestarting() async {
+    let setup = Setup()
+    await setup.start()
+    setup.listener.hear(.partial("hello there"))
+
+    setup.interrupt(.began)
+
+    #expect(!setup.listener.isListening)
+    #expect(setup.listener.starts == 1)
+    #expect(setup.sent == ["hello there"])
+    #expect(setup.call.state == .listening)
+    #expect(!setup.call.listeningFailed)
+    #expect(!setup.retry.isPending)
+    #expect(!setup.patience.isPending)
+  }
+
+  @Test func recognizerEventsDuringAnInterruptionDoNotRestartListening() async {
+    let setup = Setup()
+    await setup.start()
+    setup.interrupt(.began)
+
+    setup.listener.hear(.failed)
+    setup.retry.fire()
+    setup.patience.fire()
+
+    #expect(setup.listener.starts == 1)
+    #expect(!setup.listener.isListening)
+  }
+
+  @Test func listeningResumesWhenTheInterruptionEndsWithShouldResume() async {
+    let setup = Setup()
+    await setup.start()
+    setup.interrupt(.began)
+
+    setup.interrupt(.ended, shouldResume: true)
+
+    #expect(setup.listener.isListening)
+    #expect(setup.listener.starts == 2)
+    #expect(setup.audio.isActive)
+    #expect(!setup.call.listeningFailed)
+  }
+
+  @Test func theBannerShowsWhenTheInterruptionEndsWithoutShouldResume() async {
+    let setup = Setup()
+    await setup.start()
+    setup.interrupt(.began)
+
+    setup.interrupt(.ended)
+
+    #expect(setup.call.listeningFailed)
+    #expect(!setup.listener.isListening)
+    #expect(!setup.patience.isPending)
+    #expect(setup.call.state == .listening)
+
+    setup.call.retryListening()
+
+    #expect(setup.listener.isListening)
+    #expect(!setup.call.listeningFailed)
+  }
+
+  @Test func theBannerShowsWhenTheAudioSessionCannotBeReactivated() async {
+    let setup = Setup()
+    await setup.start()
+    setup.interrupt(.began)
+    setup.audio.activateError = URLError(.unknown)
+
+    setup.interrupt(.ended, shouldResume: true)
+
+    #expect(setup.call.listeningFailed)
+    #expect(!setup.listener.isListening)
+  }
+
+  @Test func anInterruptionWhileSpeakingKeepsTheRepliesForTheResume() async {
+    let setup = Setup()
+    await setup.start()
+    setup.call.receive(setup.assistantMessage("e1", "first"))
+    setup.call.receive(setup.assistantMessage("e2", "second"))
+    #expect(setup.call.state == .speaking)
+
+    setup.interrupt(.began)
+
+    #expect(!setup.speaker.isSpeaking)
+    #expect(!setup.listener.isListening)
+
+    setup.call.receive(setup.assistantMessage("e3", "third"))
+    #expect(setup.speaker.spoken == ["first"])
+
+    setup.interrupt(.ended, shouldResume: true)
+
+    #expect(setup.call.state == .speaking)
+    #expect(setup.speaker.spoken == ["first", "second"])
+  }
+
+  @Test func anInterruptionKeepsAMutedCallMuted() async {
+    let setup = Setup()
+    await setup.start()
+    setup.call.setMuted(true)
+
+    setup.interrupt(.began)
+    setup.interrupt(.ended, shouldResume: true)
+
+    #expect(!setup.listener.isListening)
+    #expect(!setup.call.listeningFailed)
+  }
+
+  @Test func interruptionsOutsideACallAreIgnored() async {
+    let setup = Setup()
+
+    setup.interrupt(.began)
+    setup.interrupt(.ended, shouldResume: true)
+    await setup.start()
+    setup.call.end()
+    setup.interrupt(.began)
+    setup.interrupt(.ended, shouldResume: true)
+
+    #expect(setup.listener.starts == 1)
+    #expect(setup.call.state == .idle)
+  }
+
+  @Test func anEndWithoutABeginIsIgnored() async {
+    let setup = Setup()
+    await setup.start()
+
+    setup.interrupt(.ended)
+
+    #expect(!setup.call.listeningFailed)
+    #expect(setup.listener.isListening)
   }
 }
