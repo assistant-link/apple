@@ -164,23 +164,20 @@ struct ConversationView: View {
             if let first { position.scrollTo(id: first, anchor: .top) }
           }
         }
-        ForEach(Array(content.events.enumerated()), id: \.element.id) { index, event in
+        ForEach(content.rows) { row in
           VStack(spacing: 12) {
-            if content.showsTimeCaption(beforeEventAt: index), event.type == .textMessage {
-              TimeCaptionView(date: event.createdAt)
+            switch row.content {
+            case .event(let event):
+              if row.showsTimeCaption { TimeCaptionView(date: event.createdAt) }
+              eventView(event, in: assistant, timeline: content)
+            case .outgoing(let message):
+              if row.showsTimeCaption { TimeCaptionView(date: message.createdAt) }
+              MessageBubble(
+                text: message.text, isFromUser: true,
+                caption: content.caption(forMessageID: message.id),
+                isVoice: message.via == .voice,
+                onFailureTap: message.state == .failed ? { failedMessage = message } : nil)
             }
-            eventView(event, in: assistant, timeline: content)
-          }
-        }
-        ForEach(Array(content.outgoing.enumerated()), id: \.element.id) { index, message in
-          VStack(spacing: 12) {
-            if content.showsTimeCaption(beforeOutgoingAt: index) {
-              TimeCaptionView(date: message.createdAt)
-            }
-            MessageBubble(
-              text: message.text, isFromUser: true,
-              caption: content.caption(forMessageID: message.id), isVoice: message.via == .voice,
-              onFailureTap: message.state == .failed ? { failedMessage = message } : nil)
           }
         }
       }
@@ -190,8 +187,10 @@ struct ConversationView: View {
     }
     .defaultScrollAnchor(.bottom)
     .scrollPosition($position)
-    .onChange(of: content.outgoing.last?.id) { position.scrollTo(edge: .bottom) }
-    .onChange(of: content.events.last?.id) { position.scrollTo(edge: .bottom) }
+    .onChange(of: content.lastRowID) { previous, _ in
+      // The first load lands at the bottom without a visible scroll.
+      withAnimation(previous == nil ? nil : .default) { position.scrollTo(edge: .bottom) }
+    }
     .safeAreaInset(edge: .bottom) {
       if assistant.hasPairedLink {
         ComposerView(assistant: assistant)

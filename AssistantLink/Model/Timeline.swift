@@ -62,6 +62,20 @@ enum MessageCaption: Equatable, Sendable {
   }
 }
 
+/// One row of a conversation: a stored event, or a message the service has not stored yet.
+struct TimelineRow: Equatable, Identifiable, Sendable {
+  enum Content: Equatable, Sendable {
+    case event(Event)
+    case outgoing(OutgoingMessage)
+  }
+
+  /// A message sent from this app keeps its idempotency key once stored, so the list moves the
+  /// same row instead of replacing it, which would make the list jump.
+  let id: String
+  let content: Content
+  let showsTimeCaption: Bool
+}
+
 /// The events of one Assistant's conversation loaded so far, oldest first.
 struct Timeline: Equatable, Sendable {
   var events: [Event] = []
@@ -89,6 +103,31 @@ struct Timeline: Equatable, Sendable {
     case .delivered: return .delivered
     case nil: return nil
     }
+  }
+
+  static func rowID(of event: Event) -> String {
+    event.idempotencyKey ?? event.id
+  }
+
+  /// The events, then the outgoing messages a reload has not already stored.
+  var rows: [TimelineRow] {
+    let stored = Set(events.compactMap(\.idempotencyKey))
+    let eventRows = events.indices.map { index in
+      TimelineRow(
+        id: Self.rowID(of: events[index]), content: .event(events[index]),
+        showsTimeCaption: events[index].type == .textMessage
+          && showsTimeCaption(beforeEventAt: index))
+    }
+    let outgoingRows = outgoing.indices.filter { !stored.contains(outgoing[$0].id) }.map { index in
+      TimelineRow(
+        id: outgoing[index].id, content: .outgoing(outgoing[index]),
+        showsTimeCaption: showsTimeCaption(beforeOutgoingAt: index))
+    }
+    return eventRows + outgoingRows
+  }
+
+  var lastRowID: String? {
+    outgoing.last?.id ?? events.last.map(Self.rowID(of:))
   }
 
   func showsTimeCaption(beforeEventAt index: Int) -> Bool {
