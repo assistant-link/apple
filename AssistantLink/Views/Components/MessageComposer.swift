@@ -7,8 +7,7 @@ struct MessageComposer: View {
   @Binding var draft: String
   var isInCall = false
   let onSend: () -> Void
-
-  @FocusState private var isFocused: Bool
+  var onDictate: () -> Void = {}
 
   private var state: ComposerState { ComposerState(draft: draft, isInCall: isInCall) }
 
@@ -21,15 +20,13 @@ struct MessageComposer: View {
         .accessibilityIdentifier("attachButton")
       TextField("Message", text: $draft, axis: .vertical)
         .lineLimit(1...5)
-        .focused($isFocused)
         .disabled(!state.isFieldEnabled)
         // Without it the field takes any extra height it is offered and draws its text at the top.
         .fixedSize(horizontal: false, vertical: true)
         .padding(.vertical, 7)
         .accessibilityIdentifier("messageField")
       if state.showsDictation {
-        // iOS cannot start keyboard dictation from code; the keyboard's own microphone does it.
-        Button("Dictate", systemImage: "mic") { isFocused = true }
+        Button("Dictate", systemImage: "mic", action: onDictate)
           .buttonStyle(.circle())
           .accessibilityIdentifier("dictationButton")
       }

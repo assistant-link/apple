@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// The design of dictation in the message field, after the Grok app: the words fill the field as
-/// the user speaks, and they send them as they are or stop and fix them first. Not wired in yet;
+/// the user speaks, and they send them as they are or stop and fix them first. `ComposerView` drives it with `Dictation`;
 /// the previews and the component catalog show it on sample data.
 struct DictationComposer: View {
   enum Phase: Equatable {
