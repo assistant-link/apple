@@ -49,12 +49,13 @@ final class Dictation {
     provisional = ""
     levels = []
     seconds = 0
-    guard await audio.requestPermission() else {
+    let allowed = await audio.requestPermission()
+    // Stopped or cancelled while asking.
+    guard phase == .preparing else { return }
+    guard allowed else {
       fail(.permissionDenied)
       return
     }
-    // Cancelled while asking.
-    guard phase == .preparing else { return }
     listener.vocabulary = VoiceCall.vocabulary(assistantName: assistantName)
     do {
       try audio.activate()
@@ -74,10 +75,14 @@ final class Dictation {
     }
   }
 
-  /// Stops recording and keeps the words, to fix before sending.
+  /// Stops recording and keeps the words, to fix before sending. While still preparing, it
+  /// drops the pending start and keeps only the text that was in the field.
   func stop() {
-    guard phase == .recording else { return }
-    finishRecording()
+    switch phase {
+    case .recording: finishRecording()
+    case .preparing: break
+    case .idle, .editing: return
+    }
     phase = .editing
   }
 

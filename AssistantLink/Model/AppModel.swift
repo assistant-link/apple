@@ -18,6 +18,8 @@ final class AppModel {
   /// Changes whenever the app starts using an account, so live updates restart with it.
   private(set) var session = 0
   let voiceCall: VoiceCall
+  /// Shared by the composers, which SwiftUI creates again whenever a screen refreshes.
+  let dictation: Dictation
 
   /// How often a call's posts are tried. With `Backoff` this keeps trying for a few minutes.
   static let callEventAttempts = 12
@@ -43,6 +45,7 @@ final class AppModel {
     liveUpdates: @escaping @MainActor (APIClient) -> LiveUpdates? = LiveUpdates.live,
     sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
     voiceCall: VoiceCall = .live(),
+    dictation: Dictation = .live(),
     keepRunning: @escaping @MainActor (Task<Void, Never>) -> Void = { _ in }
   ) {
     self.keepRunning = keepRunning
@@ -51,6 +54,7 @@ final class AppModel {
     self.makeLiveUpdates = liveUpdates
     self.sleep = sleep
     self.voiceCall = voiceCall
+    self.dictation = dictation
   }
 
   static func live() -> AppModel {
