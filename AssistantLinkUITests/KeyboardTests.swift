@@ -91,8 +91,9 @@ final class KeyboardTests: XCTestCase {
 
   /// Hermes reuses reply strings across the long timeline; the latest match is the one on screen.
   @MainActor private func lastBubble(in app: XCUIApplication, text: String) -> XCUIElement {
-    let query = app.staticTexts[text]
-    XCTAssertTrue(query.firstMatch.waitForExistence(timeout: 15), "no bubble with text: \(text)")
+    // staticTexts[text] is a single XCUIElement; matching(...) yields the query of all copies.
+    let query = app.staticTexts.matching(NSPredicate(format: "label == %@", text))
+    XCTAssertTrue(query.element.waitForExistence(timeout: 15), "no bubble with text: \(text)")
     return query.element(boundBy: query.count - 1)
   }
 
