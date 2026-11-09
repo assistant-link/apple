@@ -83,7 +83,7 @@ final class Dictation {
 
   /// Stops recording and returns everything heard, to send at once.
   func send() -> String {
-    finishRecording()
+    if phase == .recording { finishRecording() }
     return take()
   }
 
@@ -96,7 +96,8 @@ final class Dictation {
 
   /// Drops the recording and its words, for example when the screen goes away.
   func cancel() {
-    finishRecording()
+    // Not recording: the audio session may belong to a voice call by now.
+    if phase == .recording { finishRecording() }
     reset()
   }
 

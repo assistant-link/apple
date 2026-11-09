@@ -179,4 +179,12 @@ struct DictationTests {
     #expect(dictation.text.isEmpty)
     #expect(!audio.isActive)
   }
+
+  @Test func cancelWhileIdleLeavesTheAudioSessionAlone() {
+    let (dictation, listener, audio) = makeDictation()
+    try? audio.activate()
+    dictation.cancel()
+    #expect(audio.isActive)
+    #expect(listener.stops == 0)
+  }
 }
