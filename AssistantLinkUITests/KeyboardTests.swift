@@ -5,11 +5,10 @@ final class KeyboardTests: XCTestCase {
     let app = openConversation("Hermes")
 
     let field = app.descendants(matching: .any)["messageField"]
-    let lastMessage = app.staticTexts[
-      "The team agreed on the launch date and split the open tasks between two people."
-    ].firstMatch
     XCTAssertTrue(field.waitForExistence(timeout: 15))
-    XCTAssertTrue(lastMessage.waitForExistence(timeout: 15))
+    let lastMessage = lastBubble(
+      in: app,
+      text: "The team agreed on the launch date and split the open tasks between two people.")
     let fieldHeight = field.frame.height
 
     field.tap()
@@ -28,11 +27,10 @@ final class KeyboardTests: XCTestCase {
   @MainActor func testConversationStaysVisibleWhileTheComposerGrows() {
     let app = openConversation("Hermes")
     let field = app.descendants(matching: .any)["messageField"]
-    let lastMessage = app.staticTexts[
-      "The team agreed on the launch date and split the open tasks between two people."
-    ].firstMatch
     XCTAssertTrue(field.waitForExistence(timeout: 15))
-    XCTAssertTrue(lastMessage.waitForExistence(timeout: 15))
+    let lastMessage = lastBubble(
+      in: app,
+      text: "The team agreed on the launch date and split the open tasks between two people.")
     let oneLineHeight = field.frame.height
 
     field.tap()
@@ -40,8 +38,8 @@ final class KeyboardTests: XCTestCase {
     XCTAssertTrue(
       waitUntil { field.frame.height > oneLineHeight + 10 }, "The field did not grow to two lines")
 
-    // 33-chat-typing-long shows the history stays on screen with a multi-line composer; the
-    // earlier <80pt gap check was over-strict (a large gap is fine as long as the bubble is visible).
+    // Hermes repeats reply text across ~70 events; assert against the latest bubble, which is
+    // the one above the composer. 33-chat-typing-long shows the VStack keeps history on screen.
     XCTAssertTrue(
       isOnScreen(lastMessage, above: field, in: app),
       "The history vanished while the composer grew")
@@ -53,8 +51,7 @@ final class KeyboardTests: XCTestCase {
     let app = openConversation("Atlas")
     let field = app.descendants(matching: .any)["messageField"]
     XCTAssertTrue(field.waitForExistence(timeout: 15))
-    var latest = app.staticTexts["Check it again at noon"].firstMatch
-    XCTAssertTrue(latest.waitForExistence(timeout: 15))
+    var latest = lastBubble(in: app, text: "Check it again at noon")
 
     for round in 1...6 {
       if !app.keyboards.element.exists { field.tap() }
@@ -65,7 +62,7 @@ final class KeyboardTests: XCTestCase {
         "round \(round): the latest message is hidden while typing two lines")
 
       app.buttons["sendButton"].tap()
-      latest = app.staticTexts[draft].firstMatch
+      latest = lastBubble(in: app, text: draft)
       XCTAssertTrue(
         isOnScreen(latest, above: field, in: app),
         "round \(round): the sent message is hidden after sending")
@@ -90,6 +87,13 @@ final class KeyboardTests: XCTestCase {
     XCTAssertTrue(row.waitForExistence(timeout: 30))
     row.tap()
     return app
+  }
+
+  /// Hermes reuses reply strings across the long timeline; the latest match is the one on screen.
+  @MainActor private func lastBubble(in app: XCUIApplication, text: String) -> XCUIElement {
+    let query = app.staticTexts[text]
+    XCTAssertTrue(query.firstMatch.waitForExistence(timeout: 15), "no bubble with text: \(text)")
+    return query.element(boundBy: query.count - 1)
   }
 
   @MainActor private func isOnScreen(
