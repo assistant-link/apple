@@ -15,6 +15,8 @@ enum SpeechEvent: Equatable, Sendable {
 
 @MainActor
 protocol SpeechListener: AnyObject {
+  /// Words the recognizer should expect, such as names it would otherwise mishear.
+  var vocabulary: [String] { get set }
   func start(_ handler: @escaping @MainActor (SpeechEvent) -> Void) throws
   func stop()
 }
@@ -110,6 +112,17 @@ final class VoiceCall {
 
   static let maxFailures = 3
 
+  /// Names the user says often in a call, which the recognizer gets wrong without a hint, for
+  /// example "Grok" as "crockpot".
+  static let knownNames = ["Grok", "Grok Bot", "Assistant Link"]
+
+  static func vocabulary(assistantName: String?) -> [String] {
+    var seen: Set<String> = []
+    return ([assistantName].compactMap { $0 } + knownNames)
+      .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+      .filter { !$0.isEmpty && seen.insert($0.lowercased()).inserted }
+  }
+
   private let listener: any SpeechListener
   private let speaker: any SpeechSpeaker
   private let audio: any VoiceAudio
@@ -151,7 +164,8 @@ final class VoiceCall {
   /// Starts the call after asking for permission. Returns whether it started; only then
   /// `onEnd` runs, once, when the call ends.
   func start(
-    assistantID: Assistant.ID, isOnline: Bool, send: @escaping @MainActor (String) -> Void,
+    assistantID: Assistant.ID, assistantName: String? = nil, isOnline: Bool,
+    send: @escaping @MainActor (String) -> Void,
     onEnd: @escaping @MainActor () -> Void
   ) async -> Bool {
     startFailure = nil
@@ -173,6 +187,7 @@ final class VoiceCall {
     self.assistantID = assistantID
     self.send = send
     self.isOnline = isOnline
+    listener.vocabulary = Self.vocabulary(assistantName: assistantName)
     isMuted = false
     listeningFailed = false
     failures = 0

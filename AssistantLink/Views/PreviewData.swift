@@ -93,6 +93,7 @@ extension Timeline {
 /// A voice chat that needs no microphone, for previews and the screenshot catalog.
 @MainActor
 private final class SilentVoice: SpeechListener, SpeechSpeaker, VoiceAudio, SilenceTimer {
+  var vocabulary: [String] = []
   func start(_ handler: @escaping @MainActor (SpeechEvent) -> Void) throws {}
   func stop() {}
   func speak(_ text: String, onFinish: @escaping @MainActor () -> Void) {}
