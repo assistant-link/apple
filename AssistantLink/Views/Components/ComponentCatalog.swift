@@ -12,6 +12,16 @@ struct ComponentCatalog: View {
     case callLive = "call-live"
     case afterCall = "after-call"
     case pairing
+    case dictationIdle = "dictation-idle"
+    case dictationPreparing = "dictation-preparing"
+    case dictationRecording = "dictation-recording"
+    case dictationRecordingLong = "dictation-recording-long"
+    case dictationEditing = "dictation-editing"
+
+    static let dictation: [Page] = [
+      .dictationIdle, .dictationPreparing, .dictationRecording, .dictationRecordingLong,
+      .dictationEditing,
+    ]
 
     /// Only in debug builds, so a release build cannot be steered to the sample screens.
     static var launched: Page? {
@@ -30,6 +40,8 @@ struct ComponentCatalog: View {
       NavigationStack { ConversationView(assistantID: Assistant.samples[1].id) }
         .environment(AppModel.preview(Assistant.samples))
         .accessibilityIdentifier("componentCatalog")
+    } else if let composer = dictationComposer {
+      dictation(composer)
     } else if let model = chatModel {
       NavigationStack { ConversationView(assistantID: Assistant.samples[0].id) }
         .environment(model)
@@ -68,7 +80,7 @@ struct ComponentCatalog: View {
       case .messages: messages
       case .composer: composer
       case .call: call
-      case .chat, .callConnecting, .callLive, .afterCall, .pairing: EmptyView()
+      default: EmptyView()
       }
       Spacer(minLength: 0)
     }
@@ -114,6 +126,44 @@ struct ComponentCatalog: View {
     }
   }
 
+  /// The dictation design in the state of the page, or nil on other pages.
+  private var dictationComposer: DictationComposer? {
+    typealias Sample = DictationComposer
+    let levels = Sample.sampleLevels
+    switch page {
+    case .dictationIdle: return DictationComposer(phase: .idle)
+    case .dictationPreparing: return DictationComposer(phase: .preparing)
+    case .dictationRecording:
+      return DictationComposer(
+        phase: .recording(seconds: 4), confirmed: Sample.sampleConfirmed,
+        provisional: Sample.sampleProvisional,
+        levels: levels)
+    case .dictationRecordingLong:
+      return DictationComposer(
+        phase: .recording(seconds: 27), confirmed: Sample.sampleLongConfirmed,
+        provisional: Sample.sampleLongProvisional,
+        levels: levels)
+    case .dictationEditing:
+      return DictationComposer(
+        phase: .editing, confirmed: Sample.sampleConfirmed + " at nine and add it to my calendar")
+    default: return nil
+    }
+  }
+
+  /// The composer at the bottom of a short sample chat, the way it would sit in a conversation.
+  private func dictation(_ composer: DictationComposer) -> some View {
+    VStack(spacing: 12) {
+      Spacer(minLength: 0)
+      ChatBubble(text: "What should I remind you about?", style: .incoming)
+        .frame(maxWidth: .infinity, alignment: .leading)
+      composer
+    }
+    .padding(16)
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
+    .background(Color(.systemBackground))
+    .accessibilityIdentifier("componentCatalog")
+  }
+
   private var call: some View {
     VStack(alignment: .leading, spacing: 16) {
       TitleBubble(name: "Hermes", avatar: Avatar(id: "avatar-3"), status: .online)
@@ -149,3 +199,12 @@ struct ComponentCatalog: View {
 
 #Preview("Chat") { ComponentCatalog(page: .chat) }
 #Preview("Chat, dark") { ComponentCatalog(page: .chat).preferredColorScheme(.dark) }
+
+#Preview("Dictation, idle") { ComponentCatalog(page: .dictationIdle) }
+#Preview("Dictation, preparing") { ComponentCatalog(page: .dictationPreparing) }
+#Preview("Dictation, recording") { ComponentCatalog(page: .dictationRecording) }
+#Preview("Dictation, recording six lines") { ComponentCatalog(page: .dictationRecordingLong) }
+#Preview("Dictation, stopped to edit") { ComponentCatalog(page: .dictationEditing) }
+#Preview("Dictation, recording, dark") {
+  ComponentCatalog(page: .dictationRecording).preferredColorScheme(.dark)
+}
