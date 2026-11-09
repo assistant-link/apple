@@ -97,15 +97,15 @@ struct DictationComposer: View {
 
   /// Up to six lines, then it scrolls and keeps the newest words in view.
   private var transcript: some View {
-    let text = Text(Self.transcript(confirmed: confirmed, provisional: provisional))
-      .frame(maxWidth: .infinity, alignment: .leading)
-      .fixedSize(horizontal: false, vertical: true)
-    return ViewThatFits(in: .vertical) {
-      text
-      ScrollView { text }
-        .defaultScrollAnchor(.bottom)
+    ScrollView {
+      Text(Self.transcript(confirmed: confirmed, provisional: provisional))
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
+    .defaultScrollAnchor(.bottom)
+    .scrollBounceBehavior(.basedOnSize)
     .frame(maxHeight: Self.lineHeight * CGFloat(Self.maxLines))
+    // Takes the height of the text, up to the limit, rather than all of it.
+    .fixedSize(horizontal: false, vertical: true)
   }
 
   private static var lineHeight: CGFloat { UIFont.preferredFont(forTextStyle: .body).lineHeight }
