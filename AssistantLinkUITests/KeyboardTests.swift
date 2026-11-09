@@ -56,7 +56,7 @@ final class KeyboardTests: XCTestCase {
     XCTAssertTrue(latest.waitForExistence(timeout: 15))
 
     for round in 1...6 {
-      if !field.hasKeyboardFocus { field.tap() }
+      if !app.keyboards.element.exists { field.tap() }
       let draft = "Message \(round): look what happens when I write a longer message to you"
       field.typeText(draft)
       XCTAssertTrue(

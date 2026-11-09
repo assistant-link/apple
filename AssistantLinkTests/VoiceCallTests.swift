@@ -7,6 +7,7 @@ import Testing
 
 @MainActor
 private final class FakeListener: SpeechListener {
+  var vocabulary: [String] = []
   private(set) var isListening = false
   private(set) var starts = 0
   var startError: (any Error)?
@@ -127,9 +128,10 @@ private final class Setup {
       name: AVAudioSession.interruptionNotification, object: nil, userInfo: userInfo)
   }
 
-  func start(isOnline: Bool = true) async {
+  func start(isOnline: Bool = true, assistantName: String? = nil) async {
     let started = await call.start(
-      assistantID: "as-1", isOnline: isOnline, send: { [unowned self] in sent.append($0) },
+      assistantID: "as-1", assistantName: assistantName, isOnline: isOnline,
+      send: { [unowned self] in sent.append($0) },
       onEnd: { [unowned self] in
         ends += 1
         sentBeforeEnd = sent
@@ -158,6 +160,18 @@ struct VoiceCallStateTests {
     #expect(setup.call.assistantID == "as-1")
     #expect(setup.listener.isListening)
     #expect(setup.audio.isActive)
+  }
+
+  @Test func theRecognizerExpectsTheAssistantsNameAndKnownNames() async {
+    let setup = Setup()
+    await setup.start(assistantName: " Nova ")
+
+    #expect(setup.listener.vocabulary == ["Nova", "Grok", "Grok Bot", "Assistant Link"])
+  }
+
+  @Test func anAssistantNamedLikeAKnownNameIsExpectedOnce() {
+    #expect(VoiceCall.vocabulary(assistantName: "grok") == ["grok", "Grok Bot", "Assistant Link"])
+    #expect(VoiceCall.vocabulary(assistantName: nil) == VoiceCall.knownNames)
   }
 
   @Test func anOfflineAssistantShowsConnectingButTheCallListensAtOnce() async {
