@@ -74,6 +74,7 @@ enum SpeechListenerError: Error {
 /// Recognizes speech from the microphone, on the device when the language supports it.
 @MainActor
 final class LiveSpeechListener: SpeechListener {
+  var vocabulary: [String] = []
   private let engine = AVAudioEngine()
   private var recognizer: SFSpeechRecognizer?
   private var request: SFSpeechAudioBufferRecognitionRequest?
@@ -90,6 +91,7 @@ final class LiveSpeechListener: SpeechListener {
     let request = SFSpeechAudioBufferRecognitionRequest()
     request.shouldReportPartialResults = true
     request.requiresOnDeviceRecognition = recognizer.supportsOnDeviceRecognition
+    request.contextualStrings = vocabulary
     let generation = generation
     let deliver: @Sendable (SpeechEvent) -> Void = { [weak self] event in
       Task { @MainActor in
