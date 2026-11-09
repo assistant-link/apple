@@ -110,6 +110,10 @@ final class VoiceCall {
 
   static let maxFailures = 3
 
+  /// How long after the last new word an utterance ends. Pauses within a sentence often reach a
+  /// second, which 1.2 s still split; much longer and the reply feels slow to start.
+  static let endOfUtterance = Duration.milliseconds(1500)
+
   private let listener: any SpeechListener
   private let speaker: any SpeechSpeaker
   private let audio: any VoiceAudio
@@ -134,7 +138,7 @@ final class VoiceCall {
 
   init(
     listener: any SpeechListener, speaker: any SpeechSpeaker, audio: any VoiceAudio,
-    silence: any SilenceTimer = TaskSilenceTimer(after: .milliseconds(1200)),
+    silence: any SilenceTimer = TaskSilenceTimer(after: VoiceCall.endOfUtterance),
     retry: any SilenceTimer = TaskSilenceTimer(after: .milliseconds(500)),
     patience: any SilenceTimer = TaskSilenceTimer(after: .seconds(5)),
     notifications: NotificationCenter = .default
@@ -380,11 +384,13 @@ final class VoiceCall {
     case .level(let value):
       level = value
     case .partial(let text):
+      let isNew = Self.words(of: text) != Self.words(of: heard)
       heard = text
       if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
         failures = 0
       }
-      restartSilenceTimer()
+      // The recognizer keeps refining what it heard after the user stops, which isn't speech.
+      if isNew { restartSilenceTimer() }
     case .final(let text):
       heard = text
       finishUtterance()
@@ -395,6 +401,11 @@ final class VoiceCall {
       failures += 1
       finishUtterance()
     }
+  }
+
+  /// Ignores the case and punctuation, which the recognizer revises as it refines a result.
+  static func words(of text: String) -> [Substring] {
+    text.lowercased().split { !$0.isLetter && !$0.isNumber }
   }
 
   private func restartSilenceTimer() {
