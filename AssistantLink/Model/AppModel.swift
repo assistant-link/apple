@@ -207,7 +207,8 @@ final class AppModel {
   /// service is told when the chat starts and ends, which wakes and releases the agent.
   func startVoiceCall(assistantID: Assistant.ID) async -> Bool {
     let started = await voiceCall.start(
-      assistantID: assistantID, isOnline: assistant(id: assistantID)?.status == .online,
+      assistantID: assistantID, assistantName: assistant(id: assistantID)?.name,
+      isOnline: assistant(id: assistantID)?.status == .online,
       send: { text in
         // Speech can come before the Assistant is online, so keep it behind `call_started`.
         guard let message = self.queue(text: text, assistantID: assistantID, via: .voice) else {

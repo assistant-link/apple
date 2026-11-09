@@ -2,6 +2,7 @@ import Foundation
 
 @MainActor
 final class FakeListener: SpeechListener {
+  var vocabulary: [String] = []
   private var handler: (@MainActor (SpeechEvent) -> Void)?
   var isListening: Bool { handler != nil }
 
