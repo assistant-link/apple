@@ -35,6 +35,10 @@ final class ComponentScreenshotTests: XCTestCase {
     field.typeText("Remind me to call David tomorrow at 9")
     Thread.sleep(forTimeInterval: 1)
     capture(app, "31-chat-typing")
+
+    field.typeText(" and add it to my calendar so I do not forget about it")
+    Thread.sleep(forTimeInterval: 1)
+    capture(app, "33-chat-typing-long")
   }
 
   /// Design mocks 03-call-connecting, 04-call-live and 05-after-call, on sample data.

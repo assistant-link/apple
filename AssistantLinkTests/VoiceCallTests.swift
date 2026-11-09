@@ -797,6 +797,58 @@ struct VoiceCallUtteranceTests {
     #expect(setup.sent.isEmpty)
   }
 
+  @Test func repeatedPartialResultsDoNotPutOffTheEnd() async {
+    let setup = Setup()
+    await setup.start()
+
+    for _ in 0..<5 {
+      setup.listener.hear(.partial("remind me"))
+    }
+
+    #expect(setup.silence.restarts == 1)
+  }
+
+  @Test func refiningCaseOrPunctuationDoesNotPutOffTheEndButIsSent() async {
+    let setup = Setup()
+    await setup.start()
+
+    setup.listener.hear(.partial("remind me to call david"))
+    setup.listener.hear(.partial("Remind me to call David."))
+    setup.silence.fire()
+
+    #expect(setup.silence.restarts == 1)
+    #expect(setup.sent == ["Remind me to call David."])
+  }
+
+  @Test func aChangedWordPutsOffTheEnd() async {
+    let setup = Setup()
+    await setup.start()
+
+    setup.listener.hear(.partial("talking in the crock"))
+    setup.listener.hear(.partial("talking in the Grok"))
+
+    #expect(setup.silence.restarts == 2)
+  }
+
+  @Test func aFinalResultWinsOverThePendingSilence() async {
+    let setup = Setup()
+    await setup.start()
+
+    setup.listener.hear(.partial("call David"))
+    setup.listener.hear(.final("Call David."))
+
+    #expect(setup.sent == ["Call David."])
+    #expect(!setup.silence.isPending)
+    setup.silence.fire()
+    #expect(setup.sent == ["Call David."])
+  }
+
+  @Test func theWordsIgnoreCaseAndPunctuation() {
+    #expect(VoiceCall.words(of: "Hello, there!") == VoiceCall.words(of: "hello there"))
+    #expect(VoiceCall.words(of: " ... ").isEmpty)
+    #expect(VoiceCall.words(of: "it's 5") == ["it", "s", "5"])
+  }
+
   @Test func aFinalResultEndsTheUtteranceAtOnce() async {
     let setup = Setup()
     await setup.start()
