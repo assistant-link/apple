@@ -238,3 +238,65 @@ struct TimelineTimeCaptionTests {
     #expect(timeline.showsTimeCaption(beforeOutgoingAt: 0))
   }
 }
+
+struct TimelineRowTests {
+  private let key = "k-1"
+
+  private func sent(_ id: String) -> Event {
+    Event(
+      id: id, assistantID: "as-1", type: .textMessage, sender: .user,
+      createdAt: Date(timeIntervalSince1970: 60), idempotencyKey: key, text: "Hi")
+  }
+
+  private func sending() -> Timeline {
+    Timeline(
+      events: [.stub("e-1")],
+      outgoing: [
+        OutgoingMessage(
+          assistantID: "as-1", idempotencyKey: key, text: "Hi",
+          createdAt: Date(timeIntervalSince1970: 60))
+      ])
+  }
+
+  @Test func aSentMessageKeepsItsRowOnceTheServiceStoresIt() {
+    var timeline = sending()
+    let before = timeline.rows.map(\.id)
+
+    _ = timeline.store(sent("e-2"))
+
+    #expect(timeline.rows.map(\.id) == before)
+    #expect(timeline.rows.map(\.id) == ["e-1", key])
+  }
+
+  @Test func theLastRowStaysTheSameOnceTheServiceStoresIt() {
+    var timeline = sending()
+    let before = timeline.lastRowID
+
+    timeline.receive(sent("e-2"))
+
+    #expect(before == key)
+    #expect(timeline.lastRowID == key)
+  }
+
+  @Test func anOutgoingMessageAReloadAlreadyStoredShowsOnce() {
+    var timeline = sending()
+
+    timeline.refetch(with: EventPage(events: [.stub("e-1"), sent("e-2")], hasMore: false))
+
+    #expect(timeline.rows.map(\.id) == ["e-1", key])
+    #expect(timeline.rows.last?.content == .event(sent("e-2")))
+  }
+
+  @Test func aReplyAfterAReloadStoredTheMessageMovesTheLastRow() {
+    var timeline = sending()
+    timeline.refetch(with: EventPage(events: [.stub("e-1"), sent("e-2")], hasMore: false))
+
+    timeline.receive(.stub("e-3"))
+
+    #expect(timeline.lastRowID == "e-3")
+  }
+
+  @Test func eventsFromElsewhereKeepTheirId() {
+    #expect(Timeline(events: [.stub("e-1")]).rows.map(\.id) == ["e-1"])
+  }
+}
