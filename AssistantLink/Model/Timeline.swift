@@ -126,8 +126,9 @@ struct Timeline: Equatable, Sendable {
     return eventRows + outgoingRows
   }
 
+  /// The id of the last row, which a reload that stored every outgoing message leaves to the events.
   var lastRowID: String? {
-    outgoing.last?.id ?? events.last.map(Self.rowID(of:))
+    rows.last?.id
   }
 
   func showsTimeCaption(beforeEventAt index: Int) -> Bool {

@@ -287,6 +287,15 @@ struct TimelineRowTests {
     #expect(timeline.rows.last?.content == .event(sent("e-2")))
   }
 
+  @Test func aReplyAfterAReloadStoredTheMessageMovesTheLastRow() {
+    var timeline = sending()
+    timeline.refetch(with: EventPage(events: [.stub("e-1"), sent("e-2")], hasMore: false))
+
+    timeline.receive(.stub("e-3"))
+
+    #expect(timeline.lastRowID == "e-3")
+  }
+
   @Test func eventsFromElsewhereKeepTheirId() {
     #expect(Timeline(events: [.stub("e-1")]).rows.map(\.id) == ["e-1"])
   }
