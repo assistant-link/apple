@@ -154,7 +154,10 @@ struct ConversationView: View {
   private func timeline(_ assistant: Assistant) -> some View {
     let content = model.timelines[assistant.id] ?? Timeline()
     return ScrollView {
-      LazyVStack(spacing: 12) {
+      // Not lazy: when the composer or keyboard resizes the view, a lazy stack anchored to the
+      // bottom can lose its place and draw nothing until the next scroll. Events load 50 to a
+      // page, so laying out every message is cheap.
+      VStack(spacing: 12) {
         if content.hasMore {
           LoadEarlierButton(assistantID: assistant.id) { first in
             // Scrolling back to the old first event keeps the messages on screen in place.

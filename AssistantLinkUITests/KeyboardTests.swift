@@ -2,7 +2,7 @@ import XCTest
 
 final class KeyboardTests: XCTestCase {
   @MainActor func testConversationStaysAboveComposerWhenKeyboardOpens() {
-    let app = openHermes()
+    let app = openConversation("Hermes")
 
     let field = app.descendants(matching: .any)["messageField"]
     let lastMessage = app.staticTexts[
@@ -26,7 +26,7 @@ final class KeyboardTests: XCTestCase {
   }
 
   @MainActor func testConversationStaysVisibleWhileTheComposerGrows() {
-    let app = openHermes()
+    let app = openConversation("Hermes")
     let field = app.descendants(matching: .any)["messageField"]
     let lastMessage = app.staticTexts[
       "The team agreed on the launch date and split the open tasks between two people."]
@@ -46,46 +46,10 @@ final class KeyboardTests: XCTestCase {
     XCTAssertTrue(isAboveComposer, "The history vanished or left the composer while it grew")
   }
 
-  @MainActor private func openHermes() -> XCUIApplication {
-    let service = "http://127.0.0.1:8765"
-    var reset = URLRequest(url: URL(string: "\(service)/__reset")!)
-    reset.httpMethod = "POST"
-    let done = DispatchSemaphore(value: 0)
-    URLSession.shared.dataTask(with: reset) { _, _, _ in done.signal() }.resume()
-    _ = done.wait(timeout: .now() + 10)
-
-    let app = XCUIApplication()
-    app.launchArguments = ["-serviceURL", service]
-    app.launch()
-
-    let hermes = app.descendants(matching: .any)
-      .matching(NSPredicate(format: "label BEGINSWITH %@", "Hermes"))
-      .firstMatch
-    XCTAssertTrue(hermes.waitForExistence(timeout: 30))
-    hermes.tap()
-    return app
-  }
-
   /// Atlas has a short history, so the composer growing or a new message tips the timeline
   /// between fitting on screen and scrolling.
   @MainActor func testHistoryStaysVisibleWhileTypingAndSending() {
-    let service = "http://127.0.0.1:8765"
-    var reset = URLRequest(url: URL(string: "\(service)/__reset")!)
-    reset.httpMethod = "POST"
-    let done = DispatchSemaphore(value: 0)
-    URLSession.shared.dataTask(with: reset) { _, _, _ in done.signal() }.resume()
-    _ = done.wait(timeout: .now() + 10)
-
-    let app = XCUIApplication()
-    app.launchArguments = ["-serviceURL", service]
-    app.launch()
-
-    let atlas = app.descendants(matching: .any)
-      .matching(NSPredicate(format: "label BEGINSWITH %@", "Atlas"))
-      .firstMatch
-    XCTAssertTrue(atlas.waitForExistence(timeout: 30))
-    atlas.tap()
-
+    let app = openConversation("Atlas")
     let field = app.descendants(matching: .any)["messageField"]
     XCTAssertTrue(field.waitForExistence(timeout: 15))
     var latest = app.staticTexts["Check it again at noon"]
@@ -105,6 +69,26 @@ final class KeyboardTests: XCTestCase {
         isOnScreen(latest, above: field, in: app),
         "round \(round): the sent message is hidden after sending")
     }
+  }
+
+  @MainActor private func openConversation(_ name: String) -> XCUIApplication {
+    let service = "http://127.0.0.1:8765"
+    var reset = URLRequest(url: URL(string: "\(service)/__reset")!)
+    reset.httpMethod = "POST"
+    let done = DispatchSemaphore(value: 0)
+    URLSession.shared.dataTask(with: reset) { _, _, _ in done.signal() }.resume()
+    _ = done.wait(timeout: .now() + 10)
+
+    let app = XCUIApplication()
+    app.launchArguments = ["-serviceURL", service]
+    app.launch()
+
+    let row = app.descendants(matching: .any)
+      .matching(NSPredicate(format: "label BEGINSWITH %@", name))
+      .firstMatch
+    XCTAssertTrue(row.waitForExistence(timeout: 30))
+    row.tap()
+    return app
   }
 
   @MainActor private func isOnScreen(
