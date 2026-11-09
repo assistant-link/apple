@@ -31,16 +31,16 @@ private final class FakeAudio: VoiceAudio {
 
   /// While set, `requestPermission` waits until `answer` is called.
   var holdsPermission = false
-  private var pending: CheckedContinuation<Bool, Never>?
+  private var pending: [CheckedContinuation<Bool, Never>] = []
 
   func requestPermission() async -> Bool {
     guard holdsPermission else { return isAllowed }
-    return await withCheckedContinuation { pending = $0 }
+    return await withCheckedContinuation { pending.append($0) }
   }
 
   func answer(_ allowed: Bool) {
-    pending?.resume(returning: allowed)
-    pending = nil
+    guard !pending.isEmpty else { return }
+    pending.removeFirst().resume(returning: allowed)
   }
 
   func activate() throws { isActive = true }
@@ -227,5 +227,24 @@ struct DictationTests {
     audio.answer(false)
     await starting.value
     #expect(dictation.failure == nil)
+  }
+
+  @Test func anAnswerToAStoppedStartDoesNotTakeOverTheNextStart() async {
+    let (dictation, listener, audio) = makeDictation()
+    audio.holdsPermission = true
+    let first = Task { await dictation.start() }
+    while dictation.phase != .preparing { await Task.yield() }
+    dictation.stop()
+    _ = dictation.take()
+    let second = Task { await dictation.start() }
+    while dictation.phase != .preparing { await Task.yield() }
+    audio.answer(true)
+    await first.value
+    #expect(dictation.phase == .preparing)
+    #expect(listener.starts == 0)
+    audio.answer(true)
+    await second.value
+    #expect(dictation.phase == .recording)
+    #expect(listener.starts == 1)
   }
 }
