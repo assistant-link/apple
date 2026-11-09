@@ -70,6 +70,8 @@ struct ComposerView: View {
 
   @Environment(AppModel.self) private var model
   @State private var draft = ""
+  @State private var dictation = Dictation.live()
+  @State private var dictationFailure: VoiceCall.StartFailure?
 
   /// The banner already says the call is waiting for the Assistant.
   private var isInCall: Bool {
@@ -86,14 +88,48 @@ struct ComposerView: View {
           .frame(maxWidth: .infinity)
           .accessibilityIdentifier("offlineNotice")
       }
-      MessageComposer(draft: $draft, isInCall: isInCall, onSend: send)
+      field
     }
     .padding(.horizontal, 16)
     .padding(.vertical, 8)
+    .startFailureAlert("Can't dictate", failure: $dictationFailure)
+    // A recording stopped by the user, or by the recognizer, leaves its words to fix.
+    .onChange(of: dictation.phase) {
+      if dictation.phase == .editing { draft = dictation.take() }
+    }
+    // The call listens on its own, and a recording must not outlive the screen.
+    .onChange(of: isInCall) { if isInCall { dictation.cancel() } }
+    .onDisappear { dictation.cancel() }
   }
 
-  private func send() {
-    let text = draft
+  @ViewBuilder
+  private var field: some View {
+    switch dictation.phase {
+    case .preparing, .recording:
+      DictationComposer(
+        phase: dictation.phase == .recording ? .recording(seconds: dictation.seconds) : .preparing,
+        assistantName: assistant.name, confirmed: dictation.confirmed,
+        provisional: dictation.provisional, levels: dictation.levels,
+        onSend: { send(dictation.send()) }, onStop: { dictation.stop() })
+    case .idle, .editing:
+      MessageComposer(
+        draft: $draft, isInCall: isInCall, onSend: { send(takeDraft()) }, onDictate: startDictation)
+    }
+  }
+
+  private func startDictation() {
+    Task {
+      await dictation.start(after: draft, assistantName: assistant.name)
+      dictationFailure = dictation.failure
+    }
+  }
+
+  private func takeDraft() -> String {
+    defer { draft = "" }
+    return draft
+  }
+
+  private func send(_ text: String) {
     draft = ""
     Task { await model.send(text: text, assistantID: assistant.id) }
   }

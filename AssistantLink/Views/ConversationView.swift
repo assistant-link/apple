@@ -9,8 +9,6 @@ struct ConversationView: View {
   @State private var position = ScrollPosition()
   @State private var isBannerHidden = false
   @State private var startFailure: VoiceCall.StartFailure?
-  @Environment(\.openURL) private var openURL
-
   var body: some View {
     if let assistant = model.assistant(id: assistantID) {
       let call = CallPresentation(model.voiceCall, assistantID: assistant.id)
@@ -91,25 +89,7 @@ struct ConversationView: View {
         if call.bannerPhase == .notListening { isBannerHidden = false }
       }
       .animation(.easeInOut(duration: 0.3), value: call.isInCall)
-      .alert(
-        "Can't start the voice chat",
-        isPresented: Binding(get: { startFailure != nil }, set: { _ in startFailure = nil }),
-        presenting: startFailure
-      ) { failure in
-        if failure == .permissionDenied {
-          Button("Open Settings") {
-            if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
-          }
-          Button("Cancel", role: .cancel) {}
-        } else {
-          Button("OK", role: .cancel) {}
-        }
-      } message: { failure in
-        Text(
-          failure == .permissionDenied
-            ? "Allow Microphone and Speech Recognition for Assistant Link in Settings."
-            : "The microphone or speech recognition could not start. Try again.")
-      }
+      .startFailureAlert("Can't start the voice chat", failure: $startFailure)
       .sheet(item: $pairingLink) { link in
         PairingView(
           assistantName: assistant.name, linkID: link.id,
@@ -307,4 +287,38 @@ private struct SystemEventView: View {
     ConversationView(assistantID: Assistant.samples[2].id)
   }
   .environment(AppModel.preview(Assistant.samples))
+}
+
+extension View {
+  /// Says why the microphone could not start; for a denied permission it offers the Settings.
+  func startFailureAlert(_ title: String, failure: Binding<VoiceCall.StartFailure?>) -> some View {
+    modifier(StartFailureAlert(title: title, failure: failure))
+  }
+}
+
+private struct StartFailureAlert: ViewModifier {
+  let title: String
+  @Binding var failure: VoiceCall.StartFailure?
+  @Environment(\.openURL) private var openURL
+
+  func body(content: Content) -> some View {
+    content.alert(
+      title, isPresented: Binding(get: { failure != nil }, set: { _ in failure = nil }),
+      presenting: failure
+    ) { failure in
+      if failure == .permissionDenied {
+        Button("Open Settings") {
+          if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
+        }
+        Button("Cancel", role: .cancel) {}
+      } else {
+        Button("OK", role: .cancel) {}
+      }
+    } message: { failure in
+      Text(
+        failure == .permissionDenied
+          ? "Allow Microphone and Speech Recognition for Assistant Link in Settings."
+          : "The microphone or speech recognition could not start. Try again.")
+    }
+  }
 }

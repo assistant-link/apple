@@ -7,6 +7,12 @@ extension VoiceCall {
   }
 }
 
+extension Dictation {
+  static func live() -> Dictation {
+    Dictation(listener: LiveSpeechListener(), audio: LiveVoiceAudio())
+  }
+}
+
 @MainActor
 final class LiveVoiceAudio: VoiceAudio {
   private var routeObserver: (any NSObjectProtocol)?
