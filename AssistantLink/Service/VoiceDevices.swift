@@ -1,4 +1,5 @@
 import AVFoundation
+import OSLog
 import Speech
 
 extension VoiceCall {
@@ -193,10 +194,69 @@ private final class MicrophoneTap: @unchecked Sendable {
   }
 }
 
+/// What the choice of the voice that reads replies needs to know of an installed voice.
+struct ReplyVoice: Equatable {
+  enum Quality: Int {
+    case standard, enhanced, premium
+  }
+
+  let id: String
+  let language: String
+  let quality: Quality
+  let isNovelty: Bool
+
+  /// The best voice that speaks the language of `language`, of any region; a voice of the same
+  /// region only wins a tie in quality. Nil when none does, so the system default stays.
+  static func best(of voices: [ReplyVoice], language: String) -> ReplyVoice? {
+    let code = Self.code(language)
+    func rank(_ voice: ReplyVoice) -> Int {
+      voice.quality.rawValue * 2 + (voice.language == language ? 1 : 0)
+    }
+    return voices
+      .filter { !$0.isNovelty && Self.code($0.language) == code }
+      .max { rank($0) < rank($1) }
+  }
+
+  private static func code(_ language: String) -> Substring {
+    language.split(whereSeparator: { $0 == "-" || $0 == "_" }).first ?? ""
+  }
+}
+
+extension ReplyVoice {
+  init(_ voice: AVSpeechSynthesisVoice) {
+    let quality: Quality =
+      switch voice.quality {
+      case .premium: .premium
+      case .enhanced: .enhanced
+      default: .standard
+      }
+    self.init(
+      id: voice.identifier, language: voice.language, quality: quality,
+      // A personal voice is the user's own, not one to read replies in.
+      isNovelty: voice.voiceTraits.contains(.isNoveltyVoice)
+        || voice.voiceTraits.contains(.isPersonalVoice))
+  }
+
+  /// The best installed voice for the language of the user, else for US English.
+  static func installed() -> AVSpeechSynthesisVoice? {
+    let voices = AVSpeechSynthesisVoice.speechVoices()
+    let descriptors = voices.map(ReplyVoice.init)
+    let languages = [Locale.current.identifier(.bcp47), "en-US"]
+    let chosen = languages.lazy.compactMap { best(of: descriptors, language: $0) }.first
+    return chosen.flatMap { AVSpeechSynthesisVoice(identifier: $0.id) }
+  }
+}
+
 @MainActor
 final class LiveSpeechSpeaker: NSObject, SpeechSpeaker, AVSpeechSynthesizerDelegate {
   private let synthesizer = AVSpeechSynthesizer()
   private var onFinish: (@MainActor () -> Void)?
+  private lazy var voice: AVSpeechSynthesisVoice? = {
+    let voice = ReplyVoice.installed()
+    Logger(subsystem: "ai.assistantlink.app", category: "speech")
+      .info("Reading replies with \(voice?.name ?? "the system voice", privacy: .public)")
+    return voice
+  }()
   /// Tells the end of the utterance spoken now from a late one of an utterance `stop()` cut off.
   private(set) var current: AVSpeechUtterance?
 
@@ -207,6 +267,8 @@ final class LiveSpeechSpeaker: NSObject, SpeechSpeaker, AVSpeechSynthesizerDeleg
 
   func speak(_ text: String, onFinish: @escaping @MainActor () -> Void) {
     let utterance = AVSpeechUtterance(string: text)
+    utterance.voice = voice
+    utterance.rate = AVSpeechUtteranceDefaultSpeechRate
     current = utterance
     self.onFinish = onFinish
     synthesizer.speak(utterance)
