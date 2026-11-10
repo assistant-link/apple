@@ -166,7 +166,9 @@ final class Dictation {
   private func startsNewSegment(_ words: String) -> Bool {
     let old = provisional.split(whereSeparator: \.isWhitespace).map(Self.letters)
     let new = words.split(whereSeparator: \.isWhitespace).map(Self.letters)
-    guard let oldFirst = old.first, let newFirst = new.first, oldFirst != newFirst else { return false }
+    guard let oldFirst = old.first, let newFirst = new.first, oldFirst != newFirst else {
+      return false
+    }
     let oldTail = old.dropFirst()
     let newTail = new.dropFirst()
     if oldTail.isEmpty { return !newTail.isEmpty }
