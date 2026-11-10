@@ -181,7 +181,7 @@ struct OutgoingMessageTests {
     let api = APIClient(
       baseURL: baseURL, credential: "ala_secret",
       session: StubURLProtocol.session { request, body in try stub.answer(request, body) })
-    let model = AppModel(connect: { api })
+    let model = AppModel(connect: { api }, dictation: .fake())
     await model.start()
     return model
   }
