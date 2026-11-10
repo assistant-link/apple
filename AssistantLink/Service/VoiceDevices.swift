@@ -212,9 +212,8 @@ struct ReplyVoice: Equatable {
     func rank(_ voice: ReplyVoice) -> Int {
       voice.quality.rawValue * 2 + (voice.language == language ? 1 : 0)
     }
-    return voices
-      .filter { !$0.isNovelty && Self.code($0.language) == code }
-      .max { rank($0) < rank($1) }
+    let spoken = voices.filter { !$0.isNovelty && Self.code($0.language) == code }
+    return spoken.max { rank($0) < rank($1) }
   }
 
   private static func code(_ language: String) -> Substring {
@@ -230,11 +229,11 @@ extension ReplyVoice {
       case .enhanced: .enhanced
       default: .standard
       }
+    // A personal voice is the user's own, not one to read replies in.
+    let traits = voice.voiceTraits
+    let isNovelty = traits.contains(.isNoveltyVoice) || traits.contains(.isPersonalVoice)
     self.init(
-      id: voice.identifier, language: voice.language, quality: quality,
-      // A personal voice is the user's own, not one to read replies in.
-      isNovelty: voice.voiceTraits.contains(.isNoveltyVoice)
-        || voice.voiceTraits.contains(.isPersonalVoice))
+      id: voice.identifier, language: voice.language, quality: quality, isNovelty: isNovelty)
   }
 
   /// The best installed voice for the language of the user, else for US English.
@@ -268,7 +267,6 @@ final class LiveSpeechSpeaker: NSObject, SpeechSpeaker, AVSpeechSynthesizerDeleg
   func speak(_ text: String, onFinish: @escaping @MainActor () -> Void) {
     let utterance = AVSpeechUtterance(string: text)
     utterance.voice = voice
-    utterance.rate = AVSpeechUtteranceDefaultSpeechRate
     current = utterance
     self.onFinish = onFinish
     synthesizer.speak(utterance)
