@@ -150,6 +150,34 @@ struct DictationTests {
     #expect(dictation.text == "Hello, there friend")
   }
 
+  @Test func aNewSegmentKeepsAOneWordFirstUtterance() async {
+    let (dictation, listener, _) = makeDictation()
+    await dictation.start()
+    listener.hear(.partial("Hello"))
+    listener.hear(.partial("there everyone"))
+    #expect(dictation.confirmed == "Hello")
+    #expect(dictation.send() == "Hello there everyone")
+  }
+
+  @Test func aOneWordRevisionIsNotANewSegment() async {
+    let (dictation, listener, _) = makeDictation()
+    await dictation.start()
+    listener.hear(.partial("two"))
+    listener.hear(.partial("to"))
+    #expect(dictation.confirmed.isEmpty)
+    #expect(dictation.text == "to")
+  }
+
+  @Test func aRewrittenFirstWordIsARevisionNotANewSegment() async {
+    let (dictation, listener, _) = makeDictation()
+    await dictation.start()
+    listener.hear(.final("Call David"))
+    listener.hear(.partial("two friends"))
+    listener.hear(.partial("to friends later"))
+    #expect(dictation.confirmed == "Call David")
+    #expect(dictation.send() == "Call David to friends later")
+  }
+
   @Test func aFinalResultThenNewPartialsAccumulate() async {
     let (dictation, listener, _) = makeDictation()
     await dictation.start()
