@@ -159,14 +159,20 @@ final class Dictation {
     }
   }
 
-  /// A revision keeps the first word of the partial result before it, so a different one, after
-  /// more than one word, means the recognizer started over. Punctuation and case do not count,
-  /// as a revision often adds them.
+  /// A revision of the partial result keeps its first word, or at least the words after it, which
+  /// the recognizer may rewrite ("two friends" to "to friends later"). Otherwise it started over.
+  /// A one-word partial only counts as started over when the next one is longer. Punctuation and
+  /// case do not count, as a revision often adds them.
   private func startsNewSegment(_ words: String) -> Bool {
-    let old = provisional.split(whereSeparator: \.isWhitespace)
-    let new = words.split(whereSeparator: \.isWhitespace)
-    guard old.count > 1, let first = new.first else { return false }
-    return Self.letters(old[0]) != Self.letters(first)
+    let old = provisional.split(whereSeparator: \.isWhitespace).map(Self.letters)
+    let new = words.split(whereSeparator: \.isWhitespace).map(Self.letters)
+    guard let oldFirst = old.first, let newFirst = new.first, oldFirst != newFirst else {
+      return false
+    }
+    let oldTail = old.dropFirst()
+    let newTail = new.dropFirst()
+    if oldTail.isEmpty { return !newTail.isEmpty }
+    return !newTail.starts(with: oldTail)
   }
 
   private static func letters(_ word: Substring) -> String {
