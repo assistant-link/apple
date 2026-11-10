@@ -70,8 +70,9 @@ struct ComposerView: View {
 
   @Environment(AppModel.self) private var model
   @State private var draft = ""
-  @State private var dictation = Dictation.live()
   @State private var dictationFailure: VoiceCall.StartFailure?
+
+  private var dictation: Dictation { model.dictation }
 
   /// The banner already says the call is waiting for the Assistant.
   private var isInCall: Bool {

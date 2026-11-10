@@ -29,7 +29,20 @@ private final class FakeAudio: VoiceAudio {
   var isAllowed = true
   private(set) var isActive = false
 
-  func requestPermission() async -> Bool { isAllowed }
+  /// While set, `requestPermission` waits until `answer` is called.
+  var holdsPermission = false
+  private var pending: [CheckedContinuation<Bool, Never>] = []
+
+  func requestPermission() async -> Bool {
+    guard holdsPermission else { return isAllowed }
+    return await withCheckedContinuation { pending.append($0) }
+  }
+
+  func answer(_ allowed: Bool) {
+    guard !pending.isEmpty else { return }
+    pending.removeFirst().resume(returning: allowed)
+  }
+
   func activate() throws { isActive = true }
   func observeRouteChanges(_ handler: @escaping @MainActor () -> Void) {}
   func deactivate() { isActive = false }
@@ -186,5 +199,52 @@ struct DictationTests {
     dictation.cancel()
     #expect(audio.isActive)
     #expect(listener.stops == 0)
+  }
+
+  @Test func stopWhilePreparingCancelsTheStartAndKeepsTheText() async {
+    let (dictation, listener, audio) = makeDictation()
+    audio.holdsPermission = true
+    let starting = Task { await dictation.start(after: "Call David") }
+    while dictation.phase != .preparing { await Task.yield() }
+    dictation.stop()
+    #expect(dictation.phase == .editing)
+    audio.answer(true)
+    await starting.value
+    #expect(dictation.phase == .editing)
+    #expect(dictation.failure == nil)
+    #expect(listener.starts == 0)
+    #expect(!audio.isActive)
+    #expect(dictation.take() == "Call David")
+    #expect(dictation.phase == .idle)
+  }
+
+  @Test func stopWhilePreparingIgnoresADeniedPermission() async {
+    let (dictation, _, audio) = makeDictation()
+    audio.holdsPermission = true
+    let starting = Task { await dictation.start() }
+    while dictation.phase != .preparing { await Task.yield() }
+    dictation.stop()
+    audio.answer(false)
+    await starting.value
+    #expect(dictation.failure == nil)
+  }
+
+  @Test func anAnswerToAStoppedStartDoesNotTakeOverTheNextStart() async {
+    let (dictation, listener, audio) = makeDictation()
+    audio.holdsPermission = true
+    let first = Task { await dictation.start() }
+    while dictation.phase != .preparing { await Task.yield() }
+    dictation.stop()
+    _ = dictation.take()
+    let second = Task { await dictation.start() }
+    while dictation.phase != .preparing { await Task.yield() }
+    audio.answer(true)
+    await first.value
+    #expect(dictation.phase == .preparing)
+    #expect(listener.starts == 0)
+    audio.answer(true)
+    await second.value
+    #expect(dictation.phase == .recording)
+    #expect(listener.starts == 1)
   }
 }

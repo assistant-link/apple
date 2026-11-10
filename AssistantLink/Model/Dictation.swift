@@ -31,6 +31,8 @@ final class Dictation {
   private let listener: any SpeechListener
   private let audio: any VoiceAudio
   private var clock: Task<Void, Never>?
+  /// Counts the starts, so one that was stopped while asking cannot take over a later one.
+  private var attempt = 0
 
   init(listener: any SpeechListener, audio: any VoiceAudio) {
     self.listener = listener
@@ -45,16 +47,19 @@ final class Dictation {
     guard phase == .idle else { return }
     failure = nil
     phase = .preparing
+    attempt += 1
+    let mine = attempt
     confirmed = existing.trimmingCharacters(in: .whitespacesAndNewlines)
     provisional = ""
     levels = []
     seconds = 0
-    guard await audio.requestPermission() else {
+    let allowed = await audio.requestPermission()
+    // Stopped or cancelled while asking.
+    guard phase == .preparing, attempt == mine else { return }
+    guard allowed else {
       fail(.permissionDenied)
       return
     }
-    // Cancelled while asking.
-    guard phase == .preparing else { return }
     listener.vocabulary = VoiceCall.vocabulary(assistantName: assistantName)
     do {
       try audio.activate()
@@ -74,10 +79,14 @@ final class Dictation {
     }
   }
 
-  /// Stops recording and keeps the words, to fix before sending.
+  /// Stops recording and keeps the words, to fix before sending. While still preparing, it
+  /// drops the pending start and keeps only the text that was in the field.
   func stop() {
-    guard phase == .recording else { return }
-    finishRecording()
+    switch phase {
+    case .recording: finishRecording()
+    case .preparing: break
+    case .idle, .editing: return
+    }
     phase = .editing
   }
 
