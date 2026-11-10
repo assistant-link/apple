@@ -118,6 +118,39 @@ struct DictationTests {
     #expect(dictation.text == "Hello")
   }
 
+  @Test func aNewSegmentWithoutAFinalResultKeepsTheEarlierWords() async {
+    let (dictation, listener, _) = makeDictation()
+    await dictation.start()
+    listener.hear(.partial("So I"))
+    listener.hear(.partial("So I recorded the first word"))
+    listener.hear(.partial("Or"))
+    #expect(dictation.confirmed == "So I recorded the first word")
+    listener.hear(.partial("Or a sentence"))
+    listener.hear(.partial("In the first goes away"))
+    #expect(dictation.confirmed == "So I recorded the first word Or a sentence")
+    #expect(dictation.provisional == "In the first goes away")
+    #expect(dictation.send() == "So I recorded the first word Or a sentence In the first goes away")
+  }
+
+  @Test func aRevisionOfTheSameSegmentIsNotKept() async {
+    let (dictation, listener, _) = makeDictation()
+    await dictation.start()
+    listener.hear(.partial("call David at"))
+    listener.hear(.partial("Call David at nine"))
+    #expect(dictation.confirmed.isEmpty)
+    #expect(dictation.text == "Call David at nine")
+  }
+
+  @Test func aFinalResultThenNewPartialsAccumulate() async {
+    let (dictation, listener, _) = makeDictation()
+    await dictation.start()
+    listener.hear(.partial("Hello there"))
+    listener.hear(.final("Hello there"))
+    listener.hear(.partial("General Kenobi"))
+    #expect(dictation.confirmed == "Hello there")
+    #expect(dictation.text == "Hello there General Kenobi")
+  }
+
   @Test func silenceRestartsTheRecognizerAndKeepsTheWords() async {
     let (dictation, listener, _) = makeDictation()
     await dictation.start()

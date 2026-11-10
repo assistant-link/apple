@@ -138,6 +138,9 @@ final class Dictation {
     case .level(let value):
       levels = Array((levels + [value]).suffix(Self.maxLevels))
     case .partial(let words):
+      // After a pause the recognizer may start a new segment without a final result; its words
+      // no longer include the earlier ones.
+      if startsNewSegment(words) { confirmed = text }
       provisional = words
     case .final(let words):
       confirmed = Self.join(confirmed, words)
@@ -154,6 +157,15 @@ final class Dictation {
     case .failed:
       stop()
     }
+  }
+
+  /// A revision keeps the first word of the partial result before it, so a different one, after
+  /// more than one word, means the recognizer started over.
+  private func startsNewSegment(_ words: String) -> Bool {
+    let old = provisional.split(whereSeparator: \.isWhitespace)
+    let new = words.split(whereSeparator: \.isWhitespace)
+    guard old.count > 1, let first = new.first else { return false }
+    return old[0].caseInsensitiveCompare(first) != .orderedSame
   }
 
   private static func join(_ first: String, _ second: String) -> String {
