@@ -160,12 +160,17 @@ final class Dictation {
   }
 
   /// A revision keeps the first word of the partial result before it, so a different one, after
-  /// more than one word, means the recognizer started over.
+  /// more than one word, means the recognizer started over. Punctuation and case do not count,
+  /// as a revision often adds them.
   private func startsNewSegment(_ words: String) -> Bool {
     let old = provisional.split(whereSeparator: \.isWhitespace)
     let new = words.split(whereSeparator: \.isWhitespace)
     guard old.count > 1, let first = new.first else { return false }
-    return old[0].caseInsensitiveCompare(first) != .orderedSame
+    return Self.letters(old[0]) != Self.letters(first)
+  }
+
+  private static func letters(_ word: Substring) -> String {
+    String(word.filter { $0.isLetter || $0.isNumber }).lowercased()
   }
 
   private static func join(_ first: String, _ second: String) -> String {

@@ -141,6 +141,15 @@ struct DictationTests {
     #expect(dictation.text == "Call David at nine")
   }
 
+  @Test func punctuationAddedToTheFirstWordIsARevision() async {
+    let (dictation, listener, _) = makeDictation()
+    await dictation.start()
+    listener.hear(.partial("hello there"))
+    listener.hear(.partial("Hello, there friend"))
+    #expect(dictation.confirmed.isEmpty)
+    #expect(dictation.text == "Hello, there friend")
+  }
+
   @Test func aFinalResultThenNewPartialsAccumulate() async {
     let (dictation, listener, _) = makeDictation()
     await dictation.start()
