@@ -15,7 +15,7 @@ struct AppModelTests {
   private func model(_ handler: @escaping StubURLProtocol.Handler) -> AppModel {
     let api = APIClient(
       baseURL: baseURL, credential: "ala_secret", session: StubURLProtocol.session(handler))
-    return AppModel(connect: { api })
+    return AppModel(connect: { api }, dictation: .fake())
   }
 
   private nonisolated static func pairingJSON(code: String, expiresIn seconds: TimeInterval) -> Data
@@ -191,7 +191,8 @@ struct AppModelTests {
             }
           },
           sleep: { _ in }, uptime: { .zero }, backoff: Backoff(jitter: { 1 }))
-      })
+      },
+      dictation: .fake())
     await model.start()
 
     await model.runLiveUpdates()
@@ -250,7 +251,8 @@ struct AppModelTests {
             }
           },
           sleep: { _ in }, uptime: { .zero }, backoff: Backoff(jitter: { 1 }))
-      })
+      },
+      dictation: .fake())
   }
 
   private static let accountDeleted =
@@ -262,7 +264,7 @@ struct AppModelTests {
       queries.withLock { $0.append(query) }
       return Self.pageJSON(["e-1", "e-2"], hasMore: true)
     }
-    let model = AppModel(connect: { api })
+    let model = AppModel(connect: { api }, dictation: .fake())
     await model.start()
 
     try await model.openConversation(assistantID: "as-1")
@@ -280,7 +282,7 @@ struct AppModelTests {
       return query["before"] == nil
         ? Self.pageJSON(["e-3", "e-4"], hasMore: true) : Self.pageJSON(["e-2", "e-3"])
     }
-    let model = AppModel(connect: { api })
+    let model = AppModel(connect: { api }, dictation: .fake())
     await model.start()
     try await model.openConversation(assistantID: "as-1")
 
@@ -296,7 +298,7 @@ struct AppModelTests {
       Issue.record("unexpected events request")
       return Self.pageJSON([])
     }
-    let model = AppModel(connect: { api })
+    let model = AppModel(connect: { api }, dictation: .fake())
     await model.start()
 
     try await model.loadEarlier(assistantID: "as-1")
@@ -306,7 +308,7 @@ struct AppModelTests {
 
   @Test func createdEventsAreAppendedAndBecomeTheLatestEvent() async throws {
     let api = eventsAPI { _ in Self.pageJSON(["e-1"]) }
-    let model = AppModel(connect: { api })
+    let model = AppModel(connect: { api }, dictation: .fake())
     await model.start()
 
     model.apply(created: .stub("e-0"))
@@ -321,7 +323,7 @@ struct AppModelTests {
 
   @Test func aCreatedEventArrivingDuringTheFirstFetchSurvivesIt() async throws {
     let api = eventsAPI { _ in Self.pageJSON(["e-1"]) }
-    let model = AppModel(connect: { api })
+    let model = AppModel(connect: { api }, dictation: .fake())
     await model.start()
 
     let opening = Task { try await model.openConversation(assistantID: "as-1") }
@@ -335,7 +337,7 @@ struct AppModelTests {
   @Test func aFailedFirstFetchLeavesTheConversationForTheNextOne() async throws {
     let fail = Mutex(true)
     let api = eventsAPI { _ in fail.withLock { $0 } ? "" : Self.pageJSON(["e-1"]) }
-    let model = AppModel(connect: { api })
+    let model = AppModel(connect: { api }, dictation: .fake())
     await model.start()
 
     try? await model.openConversation(assistantID: "as-1")
@@ -353,7 +355,7 @@ struct AppModelTests {
       if query["before"] == nil { return Self.pageJSON(["e-3", "e-4"], hasMore: true) }
       return Self.pageJSON(["e-2"])
     }
-    let model = AppModel(connect: { api })
+    let model = AppModel(connect: { api }, dictation: .fake())
     await model.start()
     try await model.openConversation(assistantID: "as-1")
 
@@ -396,7 +398,7 @@ struct AppModelTests {
 
   @Test func updatedEventsReplaceTheLoadedOne() async throws {
     let api = eventsAPI { _ in Self.pageJSON(["e-1", "e-2"]) }
-    let model = AppModel(connect: { api })
+    let model = AppModel(connect: { api }, dictation: .fake())
     await model.start()
     try await model.openConversation(assistantID: "as-1")
     var delivered = Event.stub("e-2")
@@ -497,7 +499,7 @@ struct AppModelTests {
       connect: { [baseURL] in
         try await AccountSession.connect(baseURL: baseURL, store: store, session: session)
       },
-      forget: { try store.delete() })
+      forget: { try store.delete() }, dictation: .fake())
   }
 
   @Test func logOutDeletesTheAccountAndStartsAFreshOne() async throws {

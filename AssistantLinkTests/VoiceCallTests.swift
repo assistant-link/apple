@@ -1165,7 +1165,7 @@ struct VoiceCallAppModelTests {
     let model = AppModel(
       connect: { api }, sleep: { _ in },
       voiceCall: VoiceCall(listener: listener, speaker: FakeSpeaker(), audio: FakeAudio()),
-      keepRunning: keepRunning)
+      dictation: .fake(), keepRunning: keepRunning)
     await model.start()
     return model
   }
@@ -1289,7 +1289,8 @@ struct VoiceCallAppModelTests {
     let holder = Mutex<AppModel?>(nil)
     let model = AppModel(
       connect: { api }, sleep: { _ in await holder.withLock { $0 }?.start() },
-      voiceCall: VoiceCall(listener: FakeListener(), speaker: FakeSpeaker(), audio: FakeAudio()))
+      voiceCall: VoiceCall(listener: FakeListener(), speaker: FakeSpeaker(), audio: FakeAudio()),
+      dictation: .fake())
     holder.withLock { $0 = model }
     await model.start()
     #expect(await model.startVoiceCall(assistantID: "as-1"))

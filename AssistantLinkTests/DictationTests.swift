@@ -3,55 +3,9 @@ import Testing
 @testable import AssistantLink
 
 @MainActor
-private final class FakeListener: SpeechListener {
-  var vocabulary: [String] = []
-  var startError: (any Error)?
-  private(set) var starts = 0
-  private(set) var stops = 0
-  private var handler: (@MainActor (SpeechEvent) -> Void)?
-
-  func start(_ handler: @escaping @MainActor (SpeechEvent) -> Void) throws {
-    if let startError { throw startError }
-    starts += 1
-    self.handler = handler
-  }
-
-  func stop() {
-    stops += 1
-    handler = nil
-  }
-
-  func hear(_ event: SpeechEvent) { handler?(event) }
-}
-
-@MainActor
-private final class FakeAudio: VoiceAudio {
-  var isAllowed = true
-  private(set) var isActive = false
-
-  /// While set, `requestPermission` waits until `answer` is called.
-  var holdsPermission = false
-  private var pending: [CheckedContinuation<Bool, Never>] = []
-
-  func requestPermission() async -> Bool {
-    guard holdsPermission else { return isAllowed }
-    return await withCheckedContinuation { pending.append($0) }
-  }
-
-  func answer(_ allowed: Bool) {
-    guard !pending.isEmpty else { return }
-    pending.removeFirst().resume(returning: allowed)
-  }
-
-  func activate() throws { isActive = true }
-  func observeRouteChanges(_ handler: @escaping @MainActor () -> Void) {}
-  func deactivate() { isActive = false }
-}
-
-@MainActor
-private func makeDictation() -> (Dictation, FakeListener, FakeAudio) {
-  let listener = FakeListener()
-  let audio = FakeAudio()
+private func makeDictation() -> (Dictation, FakeDictationListener, FakeDictationAudio) {
+  let listener = FakeDictationListener()
+  let audio = FakeDictationAudio()
   return (Dictation(listener: listener, audio: audio), listener, audio)
 }
 
