@@ -38,21 +38,19 @@ struct DictationComposer: View {
       Button("Attach", systemImage: "plus") {}
         .buttonStyle(.circle())
         .disabled(true)
+        .accessibilityIdentifier("attachButton")
       field
-        .padding(.vertical, 7)
+        .padding(.vertical, 11)
       if phase == .editing {
-        Button("Send", systemImage: "arrow.up", action: onSend)
-          .buttonStyle(.circle(foreground: .white, background: .accentColor))
+        SendButton(action: onSend)
       } else {
         Button("Dictate", systemImage: "mic") {}
           .buttonStyle(.circle())
           .disabled(phase == .preparing)
+          .accessibilityIdentifier("dictationButton")
       }
     }
-    .padding(6)
-    .frame(minHeight: 48)
-    .glassBackground(in: RoundedRectangle(cornerRadius: 24))
-    .overlay { RoundedRectangle(cornerRadius: 24).strokeBorder(Color(.separator), lineWidth: 0.5) }
+    .composerBox()
   }
 
   @ViewBuilder
@@ -73,26 +71,26 @@ struct DictationComposer: View {
     }
   }
 
+  /// The words across the full width, over a row with stop where attach was and send where the
+  /// dictation button was.
   private func recording(seconds: Int) -> some View {
     VStack(spacing: 10) {
       transcript
         .padding(.horizontal, 10)
         .padding(.top, 10)
-      HStack(spacing: 12) {
+      HStack(spacing: 8) {
+        Button("Stop", systemImage: "stop.fill", action: onStop)
+          .buttonStyle(.circle())
+          .accessibilityIdentifier("stopDictationButton")
         Text(Self.elapsed(seconds))
           .font(.subheadline.monospacedDigit())
           .foregroundStyle(.secondary)
         Waveform(levels: levels)
           .frame(maxWidth: .infinity)
-        Button("Stop", systemImage: "stop.fill", action: onStop)
-          .buttonStyle(.circle())
-        Button("Send", systemImage: "arrow.up", action: onSend)
-          .buttonStyle(.circle(foreground: .white, background: .accentColor))
+        SendButton(action: onSend)
       }
     }
-    .padding(6)
-    .glassBackground(in: RoundedRectangle(cornerRadius: 24))
-    .overlay { RoundedRectangle(cornerRadius: 24).strokeBorder(Color(.separator), lineWidth: 0.5) }
+    .composerBox()
   }
 
   /// Up to six lines, then it scrolls and keeps the newest words in view.
