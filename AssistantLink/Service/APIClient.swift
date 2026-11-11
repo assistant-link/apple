@@ -95,6 +95,11 @@ struct APIClient: Sendable {
     return response.event
   }
 
+  /// Asks the service to wake the Assistants that have a webhook, so they show as online.
+  func wake() async throws {
+    _ = try await perform("POST", "wake")
+  }
+
   func deleteAccount() async throws {
     _ = try await perform("DELETE", "account")
   }

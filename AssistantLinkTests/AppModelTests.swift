@@ -42,6 +42,51 @@ struct AppModelTests {
     #expect(model.phase == .failed(APIError.unreachable.localizedDescription))
   }
 
+  @Test func wakePostsOnceWhenSignedIn() async throws {
+    let wakes = Mutex(0)
+    let model = model { request, _ in
+      if request.url?.path() == "/api/v1/wake" {
+        wakes.withLock { $0 += 1 }
+        return (204, Data())
+      }
+      return (200, Data(json: #"{"assistants": []}"#))
+    }
+    await model.start()
+
+    await model.wake()
+
+    #expect(wakes.withLock { $0 } == 1)
+  }
+
+  @Test func wakeDoesNothingWithoutAnAccount() async throws {
+    let wakes = Mutex(0)
+    let api = APIClient(
+      baseURL: baseURL, credential: nil,
+      session: StubURLProtocol.session { request, _ in
+        if request.url?.path() == "/api/v1/wake" { wakes.withLock { $0 += 1 } }
+        return (200, Data(json: #"{"assistants": []}"#))
+      })
+    let model = AppModel(connect: { api }, dictation: .fake())
+
+    await model.wake()
+    await model.start()
+    await model.wake()
+
+    #expect(wakes.withLock { $0 } == 0)
+  }
+
+  @Test func wakeFailuresAreIgnored() async throws {
+    let model = model { request, _ in
+      if request.url?.path() == "/api/v1/wake" { throw URLError(.notConnectedToInternet) }
+      return (200, Data(json: #"{"assistants": []}"#))
+    }
+    await model.start()
+
+    await model.wake()
+
+    #expect(model.phase == .ready)
+  }
+
   @Test func createdAssistantsAreAppended() async throws {
     let model = model { request, _ in
       request.httpMethod == "GET"
