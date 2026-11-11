@@ -32,17 +32,17 @@ While a call is active the nav bar gets a soft red glow behind the status bar, t
 | Time caption | `Text` | `.secondary` | `.footnote` | "Today 8:05 AM" |
 | Delivery status | `Text`, trailing, 4 pt inset | `.secondary`; failed `.red` | `.caption` | Sending…, Sent, Delivered, Not Delivered |
 
-### Composer (`messageField`, `dictationButton`, `sendButton`)
+### Composer (`messageComposer`, `messageField`, `dictationButton`, `sendButton`)
 
 | Part | SwiftUI | SF Symbol | Colors | Font / copy |
 |---|---|---|---|---|
-| Container | `HStack(alignment: .bottom)` in `.safeAreaInset(edge: .bottom)`, margins 16, glass capsule min 48 high | none | `.glassEffect(in: .capsule)`, separator stroke | grows to 5 lines (`lineLimit(1...5)`) |
+| Container (`messageComposer`) | `HStack(alignment: .bottom)` in `.safeAreaInset(edge: .bottom)`, margins 16, padding 6; the buttons sit inside the box on its bottom row | none | glass `RoundedRectangle(cornerRadius: 24)`, the same radius at every height (not a capsule), separator stroke | grows to 6 lines (`lineLimit(1...6)`), then scrolls |
 | Plus button (`attachButton`) | `Button`, circle 36 | `plus` | `.primary` on `Color(.tertiarySystemFill)` | shown disabled for now; see open questions |
 | Field (`messageField`) | `TextField("Message", text:, axis: .vertical)` | none | text `.primary`, placeholder `.tertiary` | `.body` |
-| Dictation (`dictationButton`) | `Button("Dictate")`, plain grey circle 36, keyboard dictation (not the call) | `mic` | `.primary` on `Color(.tertiarySystemFill)` | label "Dictate" |
-| Send button (`sendButton`) | `Button("Send")`, circle 36, shows only when the draft has text | `arrow.up` | `.white` on `.tint` | label "Send" |
+| Dictation (`dictationButton`) | `Button("Dictate")`, plain grey circle 36, trailing, only while the draft is empty | `mic` | `.primary` on `Color(.tertiarySystemFill)` | label "Dictate" |
+| Send button (`sendButton`) | `Button("Send")`, circle 36, in the spot of the dictation button once there is text or while dictating | `arrow.up` | `.white` on `.tint` | label "Send" |
 
-States: Empty (plus, field, dictation), Typing (plus, field, dictation, send; the capsule grows with the draft), In call (plus disabled; dictation and send buttons hidden, as in the video; the field stays visible).
+States: Empty (plus, field, dictation), Typing (plus, field, send; the box grows with the draft), Dictating (the words across the full width, then a row of stop `stopDictationButton` in place of plus, elapsed time, waveform, and send), In call (plus disabled; no trailing button, as in the video; the field stays visible).
 
 ### Start-call control (`voiceButton`)
 
@@ -84,7 +84,7 @@ System keyboard (simplified in the mock); the composer sits directly on top of i
 ## Screens
 
 - **01-chat.** Timeline ending with "Added both. Anything else?", Composer Empty. The red waveform button starts a voice chat; typing turns it into Send. Only the 2 pm request shows "Delivered".
-- **02-typing.** Newest message visible, draft "Remind me to call David tomorrow at 9" wraps to two lines and grows the capsule; keyboard below, home indicator hidden. The dictation mic stays; Send posts the message and clears the draft.
+- **02-typing.** Newest message visible, draft "Remind me to call David tomorrow at 9" wraps to two lines and grows the capsule; keyboard below, home indicator hidden. Send takes the spot of the dictation mic, posts the message and clears the draft.
 - **03-call-connecting.** Call glow behind the nav bar, title bubble tinted red, banner Connecting (live waveform) under the nav bar, Composer In call. The video shows no collapsed state, so the banner is always visible during a call.
 - **04-call-live.** Same, banner Live (red bars). Mute toggles (Muted variant), End ends the call. v1 has no settings button and no grabber: the banner stays while the call lasts.
 - **05-after-call.** End removes the glow and the banner and posts the "Voice chat · 00:15" caption under the last assistant message. Composer Empty again.

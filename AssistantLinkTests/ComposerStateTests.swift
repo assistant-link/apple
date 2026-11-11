@@ -3,17 +3,15 @@ import Testing
 @testable import AssistantLink
 
 struct ComposerStateTests {
-  @Test func emptyDraftOffersDictationAndNoTrailingButton() {
+  @Test func emptyDraftOffersDictation() {
     let state = ComposerState(draft: "")
-    #expect(state.trailingButton == nil)
-    #expect(state.showsDictation)
+    #expect(state.trailingButton == .dictate)
     #expect(state.isFieldEnabled)
   }
 
-  @Test func typingOffersSend() {
+  @Test func typingTurnsDictationIntoSend() {
     let state = ComposerState(draft: "Also add it to my calendar")
     #expect(state.trailingButton == .send)
-    #expect(state.showsDictation)
     #expect(state.canSend)
   }
 
@@ -23,11 +21,10 @@ struct ComposerStateTests {
     #expect(!state.canSend)
   }
 
-  @Test func callHidesDictationAndTheTrailingButtonAndLocksTheField() {
+  @Test func callHidesTheTrailingButtonAndLocksTheField() {
     for draft in ["", "Hello"] {
       let state = ComposerState(draft: draft, isInCall: true)
       #expect(state.trailingButton == nil)
-      #expect(!state.showsDictation)
       #expect(!state.isFieldEnabled)
     }
   }

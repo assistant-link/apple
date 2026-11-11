@@ -21,6 +21,48 @@ final class ComponentScreenshotTests: XCTestCase {
     }
   }
 
+  /// The composer empty, with 1, 3 and 8 lines (the maximum is 6, so the last scrolls), and
+  /// dictating. The controls sit inside the box on its bottom row, the text fills the width
+  /// between them, and one button in the same spot dictates or sends.
+  @MainActor func testCaptureComposerLines() {
+    let pages = [
+      "composer-empty", "composer-1-line", "composer-3-lines", "composer-8-lines",
+      "composer-dictating",
+    ]
+    for (index, page) in pages.enumerated() {
+      let app = XCUIApplication()
+      app.launchArguments = ["-componentCatalog", page]
+      app.launch()
+      let box = app.descendants(matching: .any)["messageComposer"]
+      XCTAssertTrue(box.waitForExistence(timeout: 30), "the \(page) page did not appear")
+      Thread.sleep(forTimeInterval: 1)
+      let isEmpty = page == "composer-empty"
+      let isDictating = page == "composer-dictating"
+      let leading = app.buttons[isDictating ? "stopDictationButton" : "attachButton"]
+      let trailing = app.buttons[isEmpty ? "dictationButton" : "sendButton"]
+      XCTAssertFalse(
+        app.buttons[isEmpty ? "sendButton" : "dictationButton"].exists,
+        "\(page): dictation and send are one button")
+      for button in [leading, trailing] {
+        XCTAssertTrue(box.frame.contains(button.frame), "\(page): a button is outside the box")
+        XCTAssertEqual(
+          button.frame.maxY, box.frame.maxY, accuracy: 12, "\(page): a button left the bottom row")
+      }
+      XCTAssertGreaterThan(trailing.frame.minX, box.frame.midX, "\(page): send is not trailing")
+      let field = app.descendants(matching: .any)["messageField"]
+      if field.exists {
+        XCTAssertGreaterThanOrEqual(field.frame.minX, leading.frame.maxX, "\(page)")
+        XCTAssertLessThanOrEqual(field.frame.maxX, trailing.frame.minX, "\(page)")
+        XCTAssertGreaterThan(
+          field.frame.width, trailing.frame.minX - leading.frame.maxX - 24,
+          "\(page): the text does not use the width between the buttons")
+        XCTAssertLessThanOrEqual(field.frame.maxY, box.frame.maxY, "\(page): the field overflows")
+      }
+      capture(app, "\(34 + index)-\(page)")
+      app.terminate()
+    }
+  }
+
   /// The chat screen of the design mocks 01-chat and 02-typing, on sample data.
   @MainActor func testCaptureChat() {
     let app = XCUIApplication()
