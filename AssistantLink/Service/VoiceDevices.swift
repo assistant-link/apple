@@ -5,7 +5,7 @@ import Speech
 extension VoiceCall {
   static func live() -> VoiceCall {
     VoiceCall(
-      listener: LiveSpeechListener(), speaker: LiveSpeechSpeaker.live(), audio: LiveVoiceAudio())
+      listener: LiveSpeechListener(), speaker: LiveSpeechSpeaker(), audio: LiveVoiceAudio())
   }
 }
 
@@ -250,7 +250,8 @@ extension ReplyVoice {
 @MainActor
 final class LiveSpeechSpeaker: NSObject, SpeechSpeaker, AVSpeechSynthesizerDelegate {
   private let synthesizer = AVSpeechSynthesizer()
-  private let engine: (any ReplySpeechEngine)?
+  private var engine: (any ReplySpeechEngine)?
+  private let chooseEngine: (@MainActor () -> (any ReplySpeechEngine)?)?
   private var onFinish: (@MainActor () -> Void)?
   private lazy var voice: AVSpeechSynthesisVoice? = {
     let voice = ReplyVoice.installed()
@@ -263,10 +264,38 @@ final class LiveSpeechSpeaker: NSObject, SpeechSpeaker, AVSpeechSynthesizerDeleg
 
   /// With an `engine`, replies are read in its voice once it is ready, and in the best system
   /// voice until then or when it fails.
-  init(engine: (any ReplySpeechEngine)? = nil) {
+  init(engine: (any ReplySpeechEngine)?) {
     self.engine = engine
+    chooseEngine = nil
     super.init()
     synthesizer.delegate = self
+    engine?.prepare()
+  }
+
+  /// Takes the reply voice from the `defaults` at the start of each call, so a change in
+  /// Settings applies to the next call. `kokoro` is made on first use and kept, as it holds the
+  /// loaded model. Kokoro speaks English only here, so other languages stay with the system voice.
+  init(
+    defaults: UserDefaults = .standard,
+    isEnglish: Bool = Locale.current.language.languageCode == .english,
+    kokoro: @escaping @MainActor () -> any ReplySpeechEngine = { NeuralReplyEngine.kokoro() }
+  ) {
+    var made: (any ReplySpeechEngine)?
+    chooseEngine = {
+      guard isEnglish, ReplyVoiceChoice.current(defaults: defaults) == .kokoro else { return nil }
+      if made == nil { made = kokoro() }
+      return made
+    }
+    super.init()
+    synthesizer.delegate = self
+  }
+
+  func prepareForCall() {
+    if let chooseEngine {
+      let chosen = chooseEngine()
+      if chosen !== engine { engine?.stop() }
+      engine = chosen
+    }
     engine?.prepare()
   }
 

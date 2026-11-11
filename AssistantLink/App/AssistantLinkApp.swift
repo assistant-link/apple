@@ -10,6 +10,10 @@ struct AssistantLinkApp: App {
   @State private var model = AppModel.live()
   @Environment(\.scenePhase) private var scenePhase
 
+  init() {
+    ReplyVoiceChoice.registerDefaults()
+  }
+
   var body: some Scene {
     WindowGroup {
       if Self.isRunningUnitTests {

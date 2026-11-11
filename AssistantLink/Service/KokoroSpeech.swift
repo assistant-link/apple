@@ -1,14 +1,20 @@
 import AVFoundation
 import FluidAudio
 
-extension LiveSpeechSpeaker {
-  /// Kokoro speaks English only here, so other languages stay with the system voice.
-  static func live(
-    system: OperatingSystemVersion = ProcessInfo.processInfo.operatingSystemVersion
-  ) -> LiveSpeechSpeaker {
-    let isEnglish = Locale.current.language.languageCode == .english
-    let usesKokoro = isEnglish && KokoroSynthesizer.runsSafely(on: system)
-    return LiveSpeechSpeaker(engine: usesKokoro ? NeuralReplyEngine.kokoro() : nil)
+/// The reply voice the user picks in Settings > Assistant Link. The raw values are those of
+/// `Settings.bundle`.
+enum ReplyVoiceChoice: String {
+  case apple
+  case kokoro
+
+  static let key = "replyVoice"
+
+  static func registerDefaults(in defaults: UserDefaults = .standard) {
+    defaults.register(defaults: [key: apple.rawValue])
+  }
+
+  static func current(defaults: UserDefaults = .standard) -> ReplyVoiceChoice {
+    defaults.string(forKey: key).flatMap(ReplyVoiceChoice.init(rawValue:)) ?? .apple
   }
 }
 
@@ -26,8 +32,8 @@ struct KokoroSynthesizer: SentenceSynthesizing {
   private let manager = KokoroAneManager(defaultVoice: Self.voice)
 
   /// Core ML segfaults in Apple's libBNNS from iOS 26.4 on (FluidAudio#844, #889). No `catch`
-  /// survives it, it ends the call, and no compute-unit choice avoids it (FluidAudio#587, #817),
-  /// so those versions keep the system voice until a release is shown to be safe on a device.
+  /// survives it, it ends the call, and no compute-unit choice avoids it (FluidAudio#587, #817).
+  /// Nothing gates on this: choosing Kokoro in Settings is an explicit opt-in to that risk.
   static func runsSafely(on system: OperatingSystemVersion) -> Bool {
     system.majorVersion < 26 || (system.majorVersion == 26 && system.minorVersion < 4)
   }
