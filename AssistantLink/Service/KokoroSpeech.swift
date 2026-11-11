@@ -1,14 +1,15 @@
 import AVFoundation
-import FluidAudio
+import SherpaOnnx
 
 extension LiveSpeechSpeaker {
+  static func live() -> LiveSpeechSpeaker {
+    let language = Locale.current.language.languageCode
+    return LiveSpeechSpeaker(engine: usesKokoro(language: language) ? .kokoro() : nil)
+  }
+
   /// Kokoro speaks English only here, so other languages stay with the system voice.
-  static func live(
-    system: OperatingSystemVersion = ProcessInfo.processInfo.operatingSystemVersion
-  ) -> LiveSpeechSpeaker {
-    let isEnglish = Locale.current.language.languageCode == .english
-    let usesKokoro = isEnglish && KokoroSynthesizer.runsSafely(on: system)
-    return LiveSpeechSpeaker(engine: usesKokoro ? NeuralReplyEngine.kokoro() : nil)
+  static func usesKokoro(language: Locale.LanguageCode?) -> Bool {
+    language == .english
   }
 }
 
@@ -18,27 +19,141 @@ extension NeuralReplyEngine {
   }
 }
 
-/// Kokoro-82M on Core ML. The first `prepare()` downloads the model, at most about 280 MB, and
-/// compiles it for the device; later ones only load it.
-struct KokoroSynthesizer: SentenceSynthesizing {
-  static let voice = "af_heart"
+/// Downloads the Kokoro model on first use, about 150 MB, and keeps it in Application Support.
+struct KokoroModelStore: Sendable {
+  struct File: Sendable {
+    let name: String
+    let size: Int
+  }
 
-  private let manager = KokoroAneManager(defaultVoice: Self.voice)
+  /// The int8 build of Kokoro-82M v1.0 in sherpa-onnx's format, pinned to a commit.
+  static let revision = "57adb37fc0e8d4bd430cfc1b8f8c2294945b9af2"
+  static let files = [
+    File(name: "model.int8.onnx", size: 114_202_993),
+    File(name: "voices.bin", size: 28_200_960),
+    File(name: "tokens.txt", size: 687),
+    File(name: "lexicon-us-en.txt", size: 5_956_885),
+  ]
 
-  /// Core ML segfaults in Apple's libBNNS from iOS 26.4 on (FluidAudio#844, #889). No `catch`
-  /// survives it, it ends the call, and no compute-unit choice avoids it (FluidAudio#587, #817),
-  /// so those versions keep the system voice until a release is shown to be safe on a device.
-  static func runsSafely(on system: OperatingSystemVersion) -> Bool {
-    system.majorVersion < 26 || (system.majorVersion == 26 && system.minorVersion < 4)
+  struct SizeMismatch: Error {}
+
+  let root: URL
+  let session: URLSession
+  let files: [File]
+
+  init(
+    root: URL = URL.applicationSupportDirectory.appending(path: "Kokoro"),
+    session: URLSession = .shared, files: [File] = Self.files
+  ) {
+    self.root = root
+    self.session = session
+    self.files = files
+  }
+
+  /// Returns the folder with the model files, downloading them if they are not there yet.
+  func prepare() async throws -> URL {
+    let manager = FileManager.default
+    let folder = root.appending(path: Self.revision)
+    if manager.fileExists(atPath: folder.path) { return folder }
+
+    let partial = root.appending(path: "\(Self.revision).partial")
+    try? manager.removeItem(at: partial)
+    try manager.createDirectory(at: partial, withIntermediateDirectories: true)
+    do {
+      for file in files {
+        try await download(file, to: partial.appending(path: file.name))
+      }
+      try manager.moveItem(at: partial, to: folder)
+    } catch {
+      try? manager.removeItem(at: partial)
+      throw error
+    }
+    var values = URLResourceValues()
+    values.isExcludedFromBackup = true
+    var excluded = root
+    try? excluded.setResourceValues(values)
+    return folder
+  }
+
+  private func download(_ file: File, to destination: URL) async throws {
+    let url = URL(
+      string: "https://huggingface.co/csukuangfj/kokoro-int8-multi-lang-v1_0/resolve/"
+        + "\(Self.revision)/\(file.name)")!
+    let (temporary, response) = try await session.download(from: url)
+    guard (response as? HTTPURLResponse)?.statusCode == 200 else {
+      throw URLError(.badServerResponse)
+    }
+    let size = try temporary.resourceValues(forKeys: [.fileSizeKey]).fileSize
+    guard size == file.size else { throw SizeMismatch() }
+    try FileManager.default.moveItem(at: temporary, to: destination)
+  }
+}
+
+/// Kokoro-82M on ONNX Runtime through sherpa-onnx. The session is created on first use and
+/// released after a while without speech, because it holds about 150 MB.
+actor KokoroSynthesizer: SentenceSynthesizing {
+  /// Never `coreml`: Core ML segfaults in Apple's libBNNS from iOS 26.4 on (FluidAudio#844,
+  /// #889), and no `catch` survives it.
+  static let provider = "cpu"
+  /// `af_heart` in the multi-lang v1.0 voice table.
+  static let speakerID = 3
+  private static let idleTimeout = Duration.seconds(120)
+
+  private let store: KokoroModelStore
+  private var tts: SherpaOnnxOfflineTtsWrapper?
+  private var unloading: Task<Void, Never>?
+
+  init(store: KokoroModelStore = KokoroModelStore()) {
+    self.store = store
   }
 
   func prepare() async throws {
-    try await manager.initialize()
+    _ = try await loaded()
+    scheduleUnload()
   }
 
   func synthesize(_ sentence: String) async throws -> SpeechClip {
-    let result = try await manager.synthesizeDetailed(text: sentence, voice: Self.voice)
-    return SpeechClip(samples: result.samples, sampleRate: Double(result.sampleRate))
+    let tts = try await loaded()
+    unloading?.cancel()
+    let audio = tts.generate(text: sentence, sid: Self.speakerID, speed: 1.0)
+    scheduleUnload()
+    let samples = audio.samples
+    guard !samples.isEmpty else { throw SynthesisError.noAudio }
+    return SpeechClip(samples: samples, sampleRate: Double(audio.sampleRate))
+  }
+
+  private enum SynthesisError: Error {
+    case cannotLoad
+    case noAudio
+  }
+
+  private func loaded() async throws -> SherpaOnnxOfflineTtsWrapper {
+    unloading?.cancel()
+    if let tts { return tts }
+    let folder = try await store.prepare()
+    // Another call may have loaded it while the files were being downloaded.
+    if let tts { return tts }
+    let kokoro = sherpaOnnxOfflineTtsKokoroModelConfig(
+      model: folder.appending(path: "model.int8.onnx").path,
+      voices: folder.appending(path: "voices.bin").path,
+      tokens: folder.appending(path: "tokens.txt").path,
+      lexicon: folder.appending(path: "lexicon-us-en.txt").path)
+    let model = sherpaOnnxOfflineTtsModelConfig(
+      kokoro: kokoro, numThreads: 2, provider: Self.provider)
+    var config = sherpaOnnxOfflineTtsConfig(model: model)
+    let created = SherpaOnnxOfflineTtsWrapper(config: &config)
+    guard created.tts != nil else { throw SynthesisError.cannotLoad }
+    tts = created
+    return created
+  }
+
+  private func scheduleUnload() {
+    unloading?.cancel()
+    unloading = Task {
+      try? await Task.sleep(for: Self.idleTimeout)
+      guard !Task.isCancelled else { return }
+      tts = nil
+    }
   }
 }
 

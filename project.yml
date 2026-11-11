@@ -17,9 +17,9 @@ settings:
     GENERATE_INFOPLIST_FILE: YES
 
 packages:
-  FluidAudio:
-    url: https://github.com/FluidInference/FluidAudio.git
-    from: 0.18.3
+  sherpa-onnx:
+    url: https://github.com/k2-fsa/sherpa-onnx.git
+    from: 2.0.1
 
 targets:
   AssistantLink:
@@ -28,7 +28,8 @@ targets:
     sources:
       - AssistantLink
     dependencies:
-      - package: FluidAudio
+      - package: sherpa-onnx
+        product: sherpa-onnx
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: ai.assistantlink.app

@@ -174,16 +174,6 @@ struct NeuralReplyEngineTests {
 
     #expect(results == [.finished])
   }
-
-  @Test func theNeuralVoiceIsNotUsedWhereTheModelCrashes() {
-    func version(_ major: Int, _ minor: Int) -> OperatingSystemVersion {
-      OperatingSystemVersion(majorVersion: major, minorVersion: minor, patchVersion: 0)
-    }
-    #expect(KokoroSynthesizer.runsSafely(on: version(18, 6)))
-    #expect(KokoroSynthesizer.runsSafely(on: version(26, 3)))
-    #expect(!KokoroSynthesizer.runsSafely(on: version(26, 4)))
-    #expect(!KokoroSynthesizer.runsSafely(on: version(27, 0)))
-  }
 }
 
 struct SentenceSplitterTests {
