@@ -3,9 +3,12 @@ import FluidAudio
 
 extension LiveSpeechSpeaker {
   /// Kokoro speaks English only here, so other languages stay with the system voice.
-  static func live() -> LiveSpeechSpeaker {
+  static func live(
+    system: OperatingSystemVersion = ProcessInfo.processInfo.operatingSystemVersion
+  ) -> LiveSpeechSpeaker {
     let isEnglish = Locale.current.language.languageCode == .english
-    return LiveSpeechSpeaker(engine: isEnglish ? NeuralReplyEngine.kokoro() : nil)
+    let usesKokoro = isEnglish && KokoroSynthesizer.runsSafely(on: system)
+    return LiveSpeechSpeaker(engine: usesKokoro ? NeuralReplyEngine.kokoro() : nil)
   }
 }
 
@@ -21,6 +24,12 @@ struct KokoroSynthesizer: SentenceSynthesizing {
   static let voice = "af_heart"
 
   private let manager = KokoroAneManager(defaultVoice: Self.voice)
+
+  /// FluidAudio reports a crash in Apple's BNNS from iOS 26.4 on, which no `catch` can survive
+  /// and would end the call, so those versions keep the system voice.
+  static func runsSafely(on system: OperatingSystemVersion) -> Bool {
+    system.majorVersion < 26 || (system.majorVersion == 26 && system.minorVersion < 4)
+  }
 
   func prepare() async throws {
     try await manager.initialize()

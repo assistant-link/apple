@@ -83,6 +83,10 @@ final class NeuralReplyEngine: ReplySpeechEngine {
   func speak(_ text: String, onEnd: @escaping @MainActor (ReplySpeechResult) -> Void) {
     stop()
     let sentences = SentenceSplitter.sentences(in: text)
+    guard !sentences.isEmpty else {
+      onEnd(.finished)
+      return
+    }
     speaking = Task {
       var played = 0
       for sentence in sentences {
