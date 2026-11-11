@@ -90,6 +90,16 @@ final class AppModel {
     }
   }
 
+  /// Best effort: the Assistants wake in the background, so a failure is only logged.
+  func wake() async {
+    guard let api, api.credential != nil else { return }
+    do {
+      try await api.wake()
+    } catch {
+      Self.logger.notice("Wake failed: \(error.localizedDescription, privacy: .public)")
+    }
+  }
+
   func refresh() async throws {
     assistants = try await client().listAssistants()
     syncVoiceCall()

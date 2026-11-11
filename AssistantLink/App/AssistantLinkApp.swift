@@ -20,6 +20,11 @@ struct AssistantLinkApp: App {
         AssistantListView()
           .environment(model)
           .task { await model.start() }
+          .task(id: WakeTrigger(isActive: scenePhase == .active, session: model.session)) {
+            if scenePhase == .active {
+              await model.wake()
+            }
+          }
           .task(
             id: LiveUpdatesTrigger(isForeground: scenePhase != .background, session: model.session)
           ) {
@@ -35,5 +40,11 @@ struct AssistantLinkApp: App {
 /// The live connection stays open while the app is in the foreground, for the current account.
 private struct LiveUpdatesTrigger: Equatable {
   let isForeground: Bool
+  let session: Int
+}
+
+/// Links wake each time the app becomes active, and once an account is ready at launch.
+private struct WakeTrigger: Equatable {
+  let isActive: Bool
   let session: Int
 }
