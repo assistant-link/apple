@@ -16,7 +16,6 @@ Sample assistant: "Hermes" (yellow avatar). Chat blue is the system tint; the ca
 |---|---|---|---|---|
 | Back button | `ToolbarItem(placement: .topBarLeading)` + `Button`, glass circle 44 | `chevron.left` | `.primary` on `.glassEffect(in: .circle)` | system back |
 | Title bubble | `ToolbarItem(placement: .principal)`, `.glassEffect(in: .capsule)`, avatar 28 | none | name `.headline`, status `.caption` `.secondary`; online dot `.green` | States: Online, Offline, In call (name only, glass tinted light red, `.glassEffect(.regular.tint(.red.opacity(0.4)))`) |
-| More button | `ToolbarItem(placement: .topBarTrailing)` + `Menu`, glass circle 44 | `ellipsis` | `.primary` | stays during a call |
 | Call glow | background view behind the toolbar, only while in a call | none | translucent `.red` | see below |
 
 ### Call glow (nav bar background state)
@@ -47,7 +46,7 @@ States: Empty (plus, field, dictation), Typing (plus, field, send; the box grows
 
 ### Start-call control (`voiceButton`)
 
-A `Button("Voice chat")` with the `waveform` symbol in the navigation bar, trailing, before the More menu. It starts the voice chat and is hidden while a call with this Assistant is on, because the banner has End and Mute. Dictation stays in the composer and only focuses the field.
+A `Button("Call")` with the `phone` symbol in the navigation bar, trailing. Tapping the title bubble opens Details, so there is no More menu. It starts the voice chat and is hidden while a call with this Assistant is on, because the banner has End and Mute. Dictation stays in the composer and only focuses the field.
 
 ### Voice call banner (`voiceMute`, `voiceEnd`)
 
