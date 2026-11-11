@@ -4,7 +4,8 @@ import Speech
 
 extension VoiceCall {
   static func live() -> VoiceCall {
-    VoiceCall(listener: LiveSpeechListener(), speaker: LiveSpeechSpeaker(), audio: LiveVoiceAudio())
+    VoiceCall(
+      listener: LiveSpeechListener(), speaker: LiveSpeechSpeaker.live(), audio: LiveVoiceAudio())
   }
 }
 
@@ -249,6 +250,7 @@ extension ReplyVoice {
 @MainActor
 final class LiveSpeechSpeaker: NSObject, SpeechSpeaker, AVSpeechSynthesizerDelegate {
   private let synthesizer = AVSpeechSynthesizer()
+  private let engine: (any ReplySpeechEngine)?
   private var onFinish: (@MainActor () -> Void)?
   private lazy var voice: AVSpeechSynthesisVoice? = {
     let voice = ReplyVoice.installed()
@@ -259,23 +261,50 @@ final class LiveSpeechSpeaker: NSObject, SpeechSpeaker, AVSpeechSynthesizerDeleg
   /// Tells the end of the utterance spoken now from a late one of an utterance `stop()` cut off.
   private(set) var current: AVSpeechUtterance?
 
-  override init() {
+  /// With an `engine`, replies are read in its voice once it is ready, and in the best system
+  /// voice until then or when it fails.
+  init(engine: (any ReplySpeechEngine)? = nil) {
+    self.engine = engine
     super.init()
     synthesizer.delegate = self
+    engine?.prepare()
   }
 
   func speak(_ text: String, onFinish: @escaping @MainActor () -> Void) {
-    let utterance = AVSpeechUtterance(string: text)
-    utterance.voice = voice
-    current = utterance
     self.onFinish = onFinish
-    synthesizer.speak(utterance)
+    guard let engine, engine.isReady else {
+      engine?.prepare()
+      speakWithSystemVoice(text)
+      return
+    }
+    engine.speak(text) { [weak self] result in
+      guard let self, self.onFinish != nil else { return }
+      switch result {
+      case .finished: self.finish()
+      case .failed: self.speakWithSystemVoice(text)
+      }
+    }
   }
 
   func stop() {
     current = nil
     onFinish = nil
+    engine?.stop()
     synthesizer.stopSpeaking(at: .immediate)
+  }
+
+  private func speakWithSystemVoice(_ text: String) {
+    let utterance = AVSpeechUtterance(string: text)
+    utterance.voice = voice
+    current = utterance
+    synthesizer.speak(utterance)
+  }
+
+  private func finish() {
+    let finish = onFinish
+    current = nil
+    onFinish = nil
+    finish?()
   }
 
   nonisolated func speechSynthesizer(
@@ -295,10 +324,7 @@ final class LiveSpeechSpeaker: NSObject, SpeechSpeaker, AVSpeechSynthesizerDeleg
     let id = ObjectIdentifier(utterance)
     Task { @MainActor in
       guard let current, ObjectIdentifier(current) == id else { return }
-      let finish = onFinish
-      self.current = nil
-      onFinish = nil
-      finish?()
+      finish()
     }
   }
 }

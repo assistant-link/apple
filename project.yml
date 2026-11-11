@@ -16,12 +16,19 @@ settings:
     CURRENT_PROJECT_VERSION: "1"
     GENERATE_INFOPLIST_FILE: YES
 
+packages:
+  FluidAudio:
+    url: https://github.com/FluidInference/FluidAudio.git
+    from: 0.18.3
+
 targets:
   AssistantLink:
     type: application
     platform: iOS
     sources:
       - AssistantLink
+    dependencies:
+      - package: FluidAudio
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: ai.assistantlink.app
