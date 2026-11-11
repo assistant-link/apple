@@ -73,7 +73,8 @@ final class NeuralReplyEngine: ReplySpeechEngine {
         isReady = true
         logger.info("The neural voice is ready")
       } catch {
-        logger.error("The neural voice is not available: \(error.localizedDescription, privacy: .public)")
+        let reason = error.localizedDescription
+        logger.error("The neural voice is not available: \(reason, privacy: .public)")
       }
       preparing = nil
     }
@@ -92,7 +93,8 @@ final class NeuralReplyEngine: ReplySpeechEngine {
           played += 1
         } catch {
           if Task.isCancelled { return }
-          logger.error("Could not speak a sentence: \(error.localizedDescription, privacy: .public)")
+          let reason = error.localizedDescription
+          logger.error("Could not speak a sentence: \(reason, privacy: .public)")
           if played == 0 {
             isReady = false
             onEnd(.failed)
