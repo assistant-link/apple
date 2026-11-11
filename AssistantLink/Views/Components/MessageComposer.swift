@@ -19,30 +19,48 @@ struct MessageComposer: View {
         .disabled(true)
         .accessibilityIdentifier("attachButton")
       TextField("Message", text: $draft, axis: .vertical)
-        .lineLimit(1...5)
+        .lineLimit(1...DictationComposer.maxLines)
         .disabled(!state.isFieldEnabled)
-        // Without it the field takes any extra height it is offered and draws its text at the top.
-        .fixedSize(horizontal: false, vertical: true)
-        .padding(.vertical, 7)
+        // Centres a single line on the 44 pt buttons, and the last line once it wraps.
+        .padding(.vertical, 11)
         .accessibilityIdentifier("messageField")
-      if state.showsDictation {
+      switch state.trailingButton {
+      case .dictate:
         Button("Dictate", systemImage: "mic", action: onDictate)
           .buttonStyle(.circle())
           .accessibilityIdentifier("dictationButton")
-      }
-      switch state.trailingButton {
       case .send:
-        Button("Send", systemImage: "arrow.up", action: onSend)
-          .buttonStyle(.circle(foreground: .white, background: .accentColor))
+        SendButton(action: onSend)
           .disabled(!state.canSend)
-          .accessibilityIdentifier("sendButton")
       case nil:
         EmptyView()
       }
     }
-    .padding(6)
-    .frame(minHeight: 48)
-    .glassBackground(in: Capsule())
-    .overlay { Capsule().strokeBorder(Color(.separator), lineWidth: 0.5) }
+    .composerBox()
+  }
+}
+
+/// The trailing button once there are words to send, in the spot of the dictation button.
+struct SendButton: View {
+  let action: () -> Void
+
+  var body: some View {
+    Button("Send", systemImage: "arrow.up", action: action)
+      .buttonStyle(.circle(foreground: .white, background: .accentColor))
+      .accessibilityIdentifier("sendButton")
+  }
+}
+
+extension View {
+  /// The box around the field and its buttons. Its corner radius stays the same at every height,
+  /// where a capsule would grow into a blob, and the padding keeps the discs inside the corners.
+  func composerBox() -> some View {
+    padding(6)
+      .glassBackground(in: RoundedRectangle(cornerRadius: 24))
+      .overlay {
+        RoundedRectangle(cornerRadius: 24).strokeBorder(Color(.separator), lineWidth: 0.5)
+      }
+      .accessibilityElement(children: .contain)
+      .accessibilityIdentifier("messageComposer")
   }
 }
