@@ -6,9 +6,11 @@ struct ComponentCatalog: View {
   enum Page: String, CaseIterable {
     case messages
     case composer
+    case composerEmpty = "composer-empty"
     case composerOneLine = "composer-1-line"
     case composerThreeLines = "composer-3-lines"
     case composerEightLines = "composer-8-lines"
+    case composerDictating = "composer-dictating"
     case call
     case chat
     case callConnecting = "call-connecting"
@@ -44,9 +46,9 @@ struct ComponentCatalog: View {
         .environment(AppModel.preview(Assistant.samples))
         .accessibilityIdentifier("componentCatalog")
     } else if let lines = composerLines {
-      composerInChat(lines: lines)
+      inChat(MessageComposer(draft: .constant(Self.sampleLines(lines)), onSend: {}))
     } else if let composer = dictationComposer {
-      dictation(composer)
+      inChat(composer)
     } else if let model = chatModel {
       NavigationStack { ConversationView(assistantID: Assistant.samples[0].id) }
         .environment(model)
@@ -134,6 +136,7 @@ struct ComponentCatalog: View {
   /// The number of sample lines in the message field of the page, or nil on other pages.
   private var composerLines: Int? {
     switch page {
+    case .composerEmpty: return 0
     case .composerOneLine: return 1
     case .composerThreeLines: return 3
     case .composerEightLines: return 8
@@ -141,25 +144,11 @@ struct ComponentCatalog: View {
     }
   }
 
-  /// The composer holding that many lines, at the bottom of a short sample chat. Eight lines
-  /// show the maximum height, with the field scrolling.
-  private func composerInChat(lines: Int) -> some View {
-    VStack(spacing: 12) {
-      Spacer(minLength: 0)
-      ChatBubble(text: "What should I remind you about?", style: .incoming)
-        .frame(maxWidth: .infinity, alignment: .leading)
-      MessageComposer(
-        draft: .constant(Self.sampleLines(lines)), onSend: {}, onDictate: {})
-    }
-    .padding(16)
-    .frame(maxWidth: .infinity, maxHeight: .infinity)
-    .background(Color(.systemBackground))
-    .accessibilityIdentifier("componentCatalog")
-  }
-
-  /// Numbered lines, so a clipped last line is visible at a glance.
+  /// Numbered lines, so a clipped last line is visible at a glance. Eight lines show the
+  /// maximum height, with the field scrolling.
   static func sampleLines(_ count: Int) -> String {
-    (1...count).map { "Line \($0) of the message, with words to fill it" }.joined(separator: "\n")
+    (0..<count).map { "Line \($0 + 1) of the message, with words to fill it" }
+      .joined(separator: "\n")
   }
 
   /// The dictation design in the state of the page, or nil on other pages.
@@ -182,12 +171,16 @@ struct ComponentCatalog: View {
     case .dictationEditing:
       return DictationComposer(
         phase: .editing, confirmed: Sample.sampleConfirmed + " at nine and add it to my calendar")
+    case .composerDictating:
+      return DictationComposer(
+        phase: .recording(seconds: 12), confirmed: Self.sampleLines(3), provisional: "and then",
+        levels: levels)
     default: return nil
     }
   }
 
   /// The composer at the bottom of a short sample chat, the way it would sit in a conversation.
-  private func dictation(_ composer: DictationComposer) -> some View {
+  private func inChat(_ composer: some View) -> some View {
     VStack(spacing: 12) {
       Spacer(minLength: 0)
       ChatBubble(text: "What should I remind you about?", style: .incoming)
@@ -221,12 +214,14 @@ struct ComponentCatalog: View {
 #Preview("Composer, dark") {
   ComponentCatalog(page: .composer).preferredColorScheme(.dark)
 }
+#Preview("Composer, empty") { ComponentCatalog(page: .composerEmpty) }
 #Preview("Composer, 1 line") { ComponentCatalog(page: .composerOneLine) }
 #Preview("Composer, 3 lines") { ComponentCatalog(page: .composerThreeLines) }
 #Preview("Composer, 8 lines, scrolling") { ComponentCatalog(page: .composerEightLines) }
 #Preview("Composer, 8 lines, dark") {
   ComponentCatalog(page: .composerEightLines).preferredColorScheme(.dark)
 }
+#Preview("Composer, dictating") { ComponentCatalog(page: .composerDictating) }
 #Preview("Call") { ComponentCatalog(page: .call) }
 #Preview("Call, dark") {
   ComponentCatalog(page: .call).preferredColorScheme(.dark)
