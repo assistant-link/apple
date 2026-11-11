@@ -10,13 +10,13 @@ struct ReplyVoiceChoiceTests {
   }
 
   /// Hands out the engines in order, as the speaker asks for Kokoro.
-  private final class Factory {
+  @MainActor private final class Factory {
     let engines: [FakeReplyEngine]
     private(set) var made = 0
 
     init(_ engines: FakeReplyEngine...) { self.engines = engines }
 
-    @MainActor func make() -> any ReplySpeechEngine {
+    func make() -> any ReplySpeechEngine {
       defer { made += 1 }
       return engines[min(made, engines.count - 1)]
     }
