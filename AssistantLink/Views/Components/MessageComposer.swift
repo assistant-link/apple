@@ -19,10 +19,8 @@ struct MessageComposer: View {
         .disabled(true)
         .accessibilityIdentifier("attachButton")
       TextField("Message", text: $draft, axis: .vertical)
-        .lineLimit(1...5)
+        .lineLimit(1...DictationComposer.maxLines)
         .disabled(!state.isFieldEnabled)
-        // Without it the field takes any extra height it is offered and draws its text at the top.
-        .fixedSize(horizontal: false, vertical: true)
         .padding(.vertical, 7)
         .accessibilityIdentifier("messageField")
       if state.showsDictation {
@@ -41,8 +39,9 @@ struct MessageComposer: View {
       }
     }
     .padding(6)
-    .frame(minHeight: 48)
-    .glassBackground(in: Capsule())
-    .overlay { Capsule().strokeBorder(Color(.separator), lineWidth: 0.5) }
+    // A capsule gets a radius of half its height, which squeezes and clips the text once the
+    // field is several lines tall.
+    .glassBackground(in: RoundedRectangle(cornerRadius: 24))
+    .overlay { RoundedRectangle(cornerRadius: 24).strokeBorder(Color(.separator), lineWidth: 0.5) }
   }
 }

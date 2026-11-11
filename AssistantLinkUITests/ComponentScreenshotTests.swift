@@ -21,6 +21,22 @@ final class ComponentScreenshotTests: XCTestCase {
     }
   }
 
+  /// The composer with 1, 3 and 8 lines (the maximum is 6, so the last scrolls).
+  @MainActor func testCaptureComposerLines() {
+    for (index, page) in ["composer-1-line", "composer-3-lines", "composer-8-lines"].enumerated() {
+      let app = XCUIApplication()
+      app.launchArguments = ["-componentCatalog", page]
+      app.launch()
+      let field = app.descendants(matching: .any)["messageField"]
+      XCTAssertTrue(field.waitForExistence(timeout: 30), "the \(page) page did not appear")
+      Thread.sleep(forTimeInterval: 1)
+      XCTAssertLessThanOrEqual(
+        field.frame.maxY, app.buttons["sendButton"].frame.maxY, "the field overflows the buttons")
+      capture(app, "\(34 + index)-\(page)")
+      app.terminate()
+    }
+  }
+
   /// The chat screen of the design mocks 01-chat and 02-typing, on sample data.
   @MainActor func testCaptureChat() {
     let app = XCUIApplication()

@@ -6,6 +6,9 @@ struct ComponentCatalog: View {
   enum Page: String, CaseIterable {
     case messages
     case composer
+    case composerOneLine = "composer-1-line"
+    case composerThreeLines = "composer-3-lines"
+    case composerEightLines = "composer-8-lines"
     case call
     case chat
     case callConnecting = "call-connecting"
@@ -40,6 +43,8 @@ struct ComponentCatalog: View {
       NavigationStack { ConversationView(assistantID: Assistant.samples[1].id) }
         .environment(AppModel.preview(Assistant.samples))
         .accessibilityIdentifier("componentCatalog")
+    } else if let lines = composerLines {
+      composerInChat(lines: lines)
     } else if let composer = dictationComposer {
       dictation(composer)
     } else if let model = chatModel {
@@ -126,6 +131,37 @@ struct ComponentCatalog: View {
     }
   }
 
+  /// The number of sample lines in the message field of the page, or nil on other pages.
+  private var composerLines: Int? {
+    switch page {
+    case .composerOneLine: return 1
+    case .composerThreeLines: return 3
+    case .composerEightLines: return 8
+    default: return nil
+    }
+  }
+
+  /// The composer holding that many lines, at the bottom of a short sample chat. Eight lines
+  /// show the maximum height, with the field scrolling.
+  private func composerInChat(lines: Int) -> some View {
+    VStack(spacing: 12) {
+      Spacer(minLength: 0)
+      ChatBubble(text: "What should I remind you about?", style: .incoming)
+        .frame(maxWidth: .infinity, alignment: .leading)
+      MessageComposer(
+        draft: .constant(Self.sampleLines(lines)), onSend: {}, onDictate: {})
+    }
+    .padding(16)
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
+    .background(Color(.systemBackground))
+    .accessibilityIdentifier("componentCatalog")
+  }
+
+  /// Numbered lines, so a clipped last line is visible at a glance.
+  static func sampleLines(_ count: Int) -> String {
+    (1...count).map { "Line \($0) of the message, with words to fill it" }.joined(separator: "\n")
+  }
+
   /// The dictation design in the state of the page, or nil on other pages.
   private var dictationComposer: DictationComposer? {
     typealias Sample = DictationComposer
@@ -184,6 +220,12 @@ struct ComponentCatalog: View {
 #Preview("Composer") { ComponentCatalog(page: .composer) }
 #Preview("Composer, dark") {
   ComponentCatalog(page: .composer).preferredColorScheme(.dark)
+}
+#Preview("Composer, 1 line") { ComponentCatalog(page: .composerOneLine) }
+#Preview("Composer, 3 lines") { ComponentCatalog(page: .composerThreeLines) }
+#Preview("Composer, 8 lines, scrolling") { ComponentCatalog(page: .composerEightLines) }
+#Preview("Composer, 8 lines, dark") {
+  ComponentCatalog(page: .composerEightLines).preferredColorScheme(.dark)
 }
 #Preview("Call") { ComponentCatalog(page: .call) }
 #Preview("Call, dark") {
