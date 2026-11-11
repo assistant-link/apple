@@ -140,6 +140,30 @@ struct APIClientTests {
     try await api.deleteAccount()
   }
 
+  @Test func wakeSendsAnEmptyPostWithTheCredential() async throws {
+    let api = client { request, body in
+      #expect(request.httpMethod == "POST")
+      #expect(request.url?.path() == "/api/v1/wake")
+      #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer ala_secret")
+      #expect(body == nil || body?.isEmpty == true)
+      return (204, Data())
+    }
+
+    try await api.wake()
+  }
+
+  @Test func wakeReportsUnauthenticatedRequests() async throws {
+    let api = client { _, _ in
+      (401, Data(json: #"{"error": {"code": "unauthorized", "message": "Invalid credential"}}"#))
+    }
+
+    await #expect(
+      throws: APIError.service(status: 401, code: "unauthorized", message: "Invalid credential")
+    ) {
+      try await api.wake()
+    }
+  }
+
   @Test func liveConnectionRequestUsesWebSocketSchemesAndTheCredential() throws {
     let secure = APIClient(baseURL: baseURL, credential: "ala_secret")
     let local = APIClient(baseURL: URL(string: "http://localhost:4000")!, credential: "ala_secret")
