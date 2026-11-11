@@ -26,6 +26,12 @@ protocol SpeechSpeaker: AnyObject {
   /// Speaks `text`, then calls `onFinish`, unless `stop()` ends it first.
   func speak(_ text: String, onFinish: @escaping @MainActor () -> Void)
   func stop()
+  /// Called as a call starts, so the speaker can pick up a changed setting and get ready.
+  func prepareForCall()
+}
+
+extension SpeechSpeaker {
+  func prepareForCall() {}
 }
 
 @MainActor
@@ -188,6 +194,7 @@ final class VoiceCall {
       return false
     }
     audio.observeRouteChanges { [weak self] in self?.routeChanged() }
+    speaker.prepareForCall()
     self.assistantID = assistantID
     self.send = send
     self.isOnline = isOnline

@@ -8,6 +8,10 @@ struct AssistantLinkApp: App {
     ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
 
   @State private var model = AppModel.live()
+
+  init() {
+    ReplyVoiceChoice.registerDefaults()
+  }
   @Environment(\.scenePhase) private var scenePhase
 
   var body: some Scene {
