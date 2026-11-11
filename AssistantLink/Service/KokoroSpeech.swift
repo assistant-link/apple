@@ -25,8 +25,9 @@ struct KokoroSynthesizer: SentenceSynthesizing {
 
   private let manager = KokoroAneManager(defaultVoice: Self.voice)
 
-  /// FluidAudio reports a crash in Apple's BNNS from iOS 26.4 on, which no `catch` can survive
-  /// and would end the call, so those versions keep the system voice.
+  /// Core ML segfaults in Apple's libBNNS from iOS 26.4 on (FluidAudio#844, #889). No `catch`
+  /// survives it, it ends the call, and no compute-unit choice avoids it (FluidAudio#587, #817),
+  /// so those versions keep the system voice until a release is shown to be safe on a device.
   static func runsSafely(on system: OperatingSystemVersion) -> Bool {
     system.majorVersion < 26 || (system.majorVersion == 26 && system.minorVersion < 4)
   }
