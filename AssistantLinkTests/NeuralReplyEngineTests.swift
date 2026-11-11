@@ -175,7 +175,7 @@ struct NeuralReplyEngineTests {
     #expect(results == [.finished])
   }
 
-  @Test func theNeuralVoiceIsNotUsedWhereTheModelCrashes() {
+  @Test func theCrashingVersionsAreStillRecorded() {
     func version(_ major: Int, _ minor: Int) -> OperatingSystemVersion {
       OperatingSystemVersion(majorVersion: major, minorVersion: minor, patchVersion: 0)
     }

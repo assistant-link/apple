@@ -27,6 +27,8 @@ targets:
     platform: iOS
     sources:
       - AssistantLink
+      - path: Settings.bundle
+        buildPhase: resources
     dependencies:
       - package: FluidAudio
     settings:

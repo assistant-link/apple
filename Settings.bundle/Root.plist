@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>StringsTable</key>
+	<string>Root</string>
+	<key>PreferenceSpecifiers</key>
+	<array>
+		<dict>
+			<key>Type</key>
+			<string>PSGroupSpecifier</string>
+			<key>Title</key>
+			<string></string>
+			<key>FooterText</key>
+			<string>Kokoro reads English replies on the Neural Engine and downloads about 280 MB the first time. On iOS 26.4 and later it can crash the app. Until it is ready, and if it fails, Apple voice reads.</string>
+		</dict>
+		<dict>
+			<key>Type</key>
+			<string>PSMultiValueSpecifier</string>
+			<key>Title</key>
+			<string>Reply voice</string>
+			<key>Key</key>
+			<string>replyVoice</string>
+			<key>DefaultValue</key>
+			<string>apple</string>
+			<key>Values</key>
+			<array>
+				<string>apple</string>
+				<string>kokoro</string>
+			</array>
+			<key>Titles</key>
+			<array>
+				<string>Apple voice</string>
+				<string>Kokoro (Neural Engine)</string>
+			</array>
+		</dict>
+	</array>
+</dict>
+</plist>
