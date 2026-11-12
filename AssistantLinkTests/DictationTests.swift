@@ -194,19 +194,64 @@ struct DictationTests {
     #expect(sent == ["Call David at nine."])
   }
 
-  @Test func cancelWhileFinishingDropsTheWordsAndTheWait() async {
+  @Test func cancelWhileSendingSendsTheLastWordsRightAway() async {
+    let (dictation, listener, _, finalResult) = makeDictation()
+    await dictation.start()
+    listener.hear(.final("Call David"))
+    listener.hear(.partial("at nine"))
+    var sent: [String] = []
+    dictation.send { sent.append($0) }
+    dictation.cancel()
+    #expect(sent == ["Call David at nine"])
+    #expect(dictation.phase == .idle)
+    #expect(dictation.text.isEmpty)
+    #expect(listener.stops == 1)
+    #expect(!finalResult.isPending)
+    listener.hear(.final("at nine."))
+    finalResult.fire()
+    #expect(sent == ["Call David at nine"])
+  }
+
+  @Test func cancelAfterSendingWhileStoppingSendsTheWords() async {
+    let (dictation, listener, _, _) = makeDictation()
+    await dictation.start()
+    listener.hear(.partial("Hello"))
+    dictation.stop()
+    var sent: [String] = []
+    dictation.send { sent.append($0) }
+    dictation.cancel()
+    #expect(sent == ["Hello"])
+    #expect(dictation.phase == .idle)
+  }
+
+  @Test func cancelWhileStoppingDropsTheWordsAndTheWait() async {
     let (dictation, listener, _, finalResult) = makeDictation()
     await dictation.start()
     listener.hear(.partial("Hello"))
-    var sent: [String] = []
-    dictation.send { sent.append($0) }
+    dictation.stop()
     dictation.cancel()
     #expect(dictation.phase == .idle)
     #expect(dictation.text.isEmpty)
     #expect(listener.stops == 1)
     #expect(!finalResult.isPending)
     listener.hear(.final("Hello there"))
-    #expect(sent.isEmpty)
+    #expect(dictation.phase == .idle)
+    #expect(dictation.text.isEmpty)
+  }
+
+  @Test func cancelAfterASentMessageDoesNotSendAgain() async {
+    let (dictation, listener, _, finalResult) = makeDictation()
+    await dictation.start()
+    listener.hear(.partial("Hello"))
+    var sent: [String] = []
+    dictation.send { sent.append($0) }
+    finalResult.fire()
+    await dictation.start()
+    listener.hear(.partial("Draft"))
+    dictation.stop()
+    dictation.cancel()
+    #expect(sent == ["Hello"])
+    #expect(dictation.text.isEmpty)
   }
 
   @Test func aNewSegmentWithoutAFinalResultKeepsTheEarlierWords() async {
