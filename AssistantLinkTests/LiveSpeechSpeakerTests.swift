@@ -21,16 +21,26 @@ struct LiveSpeechSpeakerTests {
     #expect(finishes == 1)
   }
 
-  @Test func theEndOfAnOtherUtteranceIsIgnored() async {
+  @Test func theEndOfAnOtherUtteranceIsIgnored() async throws {
     let speaker = LiveSpeechSpeaker()
     var finishes = 0
     speaker.speak(" ") { finishes += 1 }
+    let utterance = try #require(speaker.current)
+    let synthesizer = try #require(
+      Mirror(reflecting: speaker).children.lazy.compactMap { $0.value as? AVSpeechSynthesizer }
+        .first)
+    // Keeps the real synthesizer, which may finish " " within the settle, from finishing the speech.
+    synthesizer.delegate = nil
 
-    speaker.speechSynthesizer(AVSpeechSynthesizer(), didCancel: AVSpeechUtterance(string: "old"))
+    speaker.speechSynthesizer(synthesizer, didCancel: AVSpeechUtterance(string: "old"))
+    speaker.speechSynthesizer(synthesizer, didFinish: AVSpeechUtterance(string: "older"))
     await settle()
 
     #expect(finishes == 0)
-    speaker.stop()
+    #expect(speaker.current === utterance)
+    speaker.speechSynthesizer(synthesizer, didCancel: utterance)
+    await settle()
+    #expect(finishes == 1)
   }
 
   @Test func stoppingDoesNotFinishTheSpeech() async throws {
