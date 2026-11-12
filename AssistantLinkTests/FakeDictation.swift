@@ -5,6 +5,7 @@ final class FakeDictationListener: SpeechListener {
   var vocabulary: [String] = []
   var startError: (any Error)?
   private(set) var starts = 0
+  private(set) var finishes = 0
   private(set) var stops = 0
   private var handler: (@MainActor (SpeechEvent) -> Void)?
 
@@ -13,6 +14,8 @@ final class FakeDictationListener: SpeechListener {
     starts += 1
     self.handler = handler
   }
+
+  func finish() { finishes += 1 }
 
   func stop() {
     stops += 1
@@ -46,10 +49,27 @@ final class FakeDictationAudio: VoiceAudio {
   func deactivate() { isActive = false }
 }
 
+@MainActor
+final class FakeDictationTimer: SilenceTimer {
+  private var pending: (@MainActor () -> Void)?
+  var isPending: Bool { pending != nil }
+
+  func restart(_ fire: @escaping @MainActor () -> Void) { pending = fire }
+  func cancel() { pending = nil }
+
+  func fire() {
+    let fire = pending
+    pending = nil
+    fire?()
+  }
+}
+
 extension Dictation {
   /// What every test that builds an `AppModel` passes, so none opens the real recognizer or audio session.
   @MainActor
   static func fake() -> Dictation {
-    Dictation(listener: FakeDictationListener(), audio: FakeDictationAudio())
+    Dictation(
+      listener: FakeDictationListener(), audio: FakeDictationAudio(),
+      finalResult: FakeDictationTimer())
   }
 }

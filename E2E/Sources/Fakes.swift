@@ -4,10 +4,17 @@ import Foundation
 final class FakeListener: SpeechListener {
   var vocabulary: [String] = []
   private var handler: (@MainActor (SpeechEvent) -> Void)?
+  private var lastPartial = ""
   var isListening: Bool { handler != nil }
 
   func start(_ handler: @escaping @MainActor (SpeechEvent) -> Void) throws {
     self.handler = handler
+    lastPartial = ""
+  }
+
+  /// The final result is the last partial one, at once, so the E2E doesn't wait for it.
+  func finish() {
+    handler?(.final(lastPartial))
   }
 
   func stop() {
@@ -19,7 +26,8 @@ final class FakeListener: SpeechListener {
     var words: [Substring] = []
     for word in transcription.split(separator: " ") {
       words.append(word)
-      handler?(.partial(words.joined(separator: " ")))
+      lastPartial = words.joined(separator: " ")
+      handler?(.partial(lastPartial))
       try? await Task.sleep(for: .milliseconds(50))
     }
   }

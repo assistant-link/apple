@@ -9,7 +9,9 @@ import Testing
 private final class FakeListener: SpeechListener {
   var vocabulary: [String] = []
   private(set) var isListening = false
+  private(set) var isFinishing = false
   private(set) var starts = 0
+  private(set) var stops = 0
   var startError: (any Error)?
   private var handler: (@MainActor (SpeechEvent) -> Void)?
 
@@ -20,8 +22,15 @@ private final class FakeListener: SpeechListener {
     self.handler = handler
   }
 
-  func stop() {
+  func finish() {
     isListening = false
+    isFinishing = true
+  }
+
+  func stop() {
+    stops += 1
+    isListening = false
+    isFinishing = false
     handler = nil
   }
 
@@ -106,6 +115,7 @@ private final class Setup {
   let silence = FakeSilence()
   let retry = FakeSilence()
   let patience = FakeSilence()
+  let finalResult = FakeSilence()
   let center = NotificationCenter()
   var sent: [String] = []
   private(set) var sentBeforeEnd: [String] = []
@@ -115,7 +125,7 @@ private final class Setup {
   init() {
     call = VoiceCall(
       listener: listener, speaker: speaker, audio: audio, silence: silence, retry: retry,
-      patience: patience, notifications: center)
+      patience: patience, finalResult: finalResult, notifications: center)
   }
 
   func interrupt(_ type: AVAudioSession.InterruptionType, shouldResume: Bool = false) {
@@ -202,6 +212,7 @@ struct VoiceCallStateTests {
     #expect(setup.sent.isEmpty)
 
     setup.silence.fire()
+    setup.finalResult.fire()
 
     #expect(setup.sent == ["Hello"])
 
@@ -779,6 +790,7 @@ struct VoiceCallUtteranceTests {
     #expect(setup.sent.isEmpty)
     setup.listener.hear(.partial("remind me to call David"))
     setup.silence.fire()
+    setup.finalResult.fire()
 
     #expect(setup.sent == ["remind me to call David"])
     #expect(setup.listener.isListening)
@@ -815,6 +827,7 @@ struct VoiceCallUtteranceTests {
     setup.listener.hear(.partial("remind me to call david"))
     setup.listener.hear(.partial("Remind me to call David."))
     setup.silence.fire()
+    setup.finalResult.fire()
 
     #expect(setup.silence.restarts == 1)
     #expect(setup.sent == ["Remind me to call David."])
@@ -841,6 +854,93 @@ struct VoiceCallUtteranceTests {
     #expect(!setup.silence.isPending)
     setup.silence.fire()
     #expect(setup.sent == ["Call David."])
+  }
+
+  @Test func theSilenceWaitsForTheFinalResultAndSendsIt() async {
+    let setup = Setup()
+    await setup.start()
+
+    setup.listener.hear(.partial("remind me to call"))
+    setup.silence.fire()
+
+    #expect(setup.sent.isEmpty)
+    #expect(setup.listener.isFinishing)
+    #expect(setup.finalResult.isPending)
+
+    setup.listener.hear(.final("Remind me to call David."))
+
+    #expect(setup.sent == ["Remind me to call David."])
+    #expect(!setup.finalResult.isPending)
+    #expect(setup.listener.isListening)
+    #expect(setup.listener.starts == 2)
+  }
+
+  @Test func partialResultsWhileWaitingForTheFinalOneDoNotPutOffTheEnd() async {
+    let setup = Setup()
+    await setup.start()
+
+    setup.listener.hear(.partial("remind me to call"))
+    setup.silence.fire()
+    setup.listener.hear(.partial("remind me to call David"))
+
+    #expect(setup.silence.restarts == 1)
+    #expect(!setup.silence.isPending)
+    #expect(setup.sent.isEmpty)
+  }
+
+  @Test func withoutAFinalResultInTimeTheLastPartialOneIsSent() async {
+    let setup = Setup()
+    await setup.start()
+
+    setup.listener.hear(.partial("remind me to call"))
+    setup.silence.fire()
+    setup.listener.hear(.partial("remind me to call David"))
+    setup.finalResult.fire()
+
+    #expect(setup.sent == ["remind me to call David"])
+    #expect(setup.listener.stops == 1)
+    #expect(setup.listener.isListening)
+    #expect(setup.listener.starts == 2)
+  }
+
+  @Test func aLateTimeoutAfterTheFinalResultSendsNothingMore() async {
+    let setup = Setup()
+    await setup.start()
+
+    setup.listener.hear(.partial("remind me"))
+    setup.silence.fire()
+    setup.listener.hear(.final("Remind me."))
+    setup.finalResult.fire()
+
+    #expect(setup.sent == ["Remind me."])
+    #expect(setup.listener.starts == 2)
+  }
+
+  @Test func theRecognizerEndingWhileWaitingSendsTheLastPartialResult() async {
+    let setup = Setup()
+    await setup.start()
+
+    setup.listener.hear(.partial("remind me"))
+    setup.silence.fire()
+    setup.listener.hear(.stopped)
+
+    #expect(setup.sent == ["remind me"])
+    #expect(!setup.finalResult.isPending)
+    #expect(setup.listener.isListening)
+  }
+
+  @Test func endingWhileWaitingForTheFinalResultSendsTheLastPartialOne() async {
+    let setup = Setup()
+    await setup.start()
+
+    setup.listener.hear(.partial("remind me"))
+    setup.silence.fire()
+    setup.call.end()
+    setup.finalResult.fire()
+
+    #expect(setup.sent == ["remind me"])
+    #expect(!setup.listener.isFinishing)
+    #expect(setup.ends == 1)
   }
 
   @Test func theWordsIgnoreCaseAndPunctuation() {
@@ -891,6 +991,7 @@ struct VoiceCallUtteranceTests {
 
     setup.listener.hear(.partial("Hello"))
     setup.silence.fire()
+    setup.finalResult.fire()
     setup.listener.hear(.final("Are you there"))
 
     #expect(setup.sent == ["Hello", "Are you there"])

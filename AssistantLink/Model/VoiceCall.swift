@@ -18,6 +18,10 @@ protocol SpeechListener: AnyObject {
   /// Words the recognizer should expect, such as names it would otherwise mishear.
   var vocabulary: [String] { get set }
   func start(_ handler: @escaping @MainActor (SpeechEvent) -> Void) throws
+  /// Stops the microphone but lets the recognizer finish what it heard, so the handler still gets
+  /// its final result, which often revises the last words. `stop()` ends it.
+  func finish()
+  /// Stops at once; nothing more reaches the handler.
   func stop()
 }
 
@@ -122,6 +126,10 @@ final class VoiceCall {
   /// second, which 1.2 s still split; much longer and the reply feels slow to start.
   static let endOfUtterance = Duration.milliseconds(1500)
 
+  /// How long to wait for the final result after the microphone stops. The recognizer usually
+  /// gives it within a second; without it, the last partial result is taken.
+  static let finalResultWait = Duration.milliseconds(1500)
+
   /// Names the user says often in a call, which the recognizer gets wrong without a hint, for
   /// example "Grok" as "crockpot".
   static let knownNames = ["Grok", "Grok Bot", "Assistant Link"]
@@ -142,6 +150,7 @@ final class VoiceCall {
   /// Tries listening again after it gave up, because the recognizer often fails at first on a
   /// fresh install (its on-device model still loading) and recovers a little later.
   private let patience: any SilenceTimer
+  private let finalResult: any SilenceTimer
   private let notifications: NotificationCenter
   private var interruptionObserver: (any NSObjectProtocol)?
   /// The system holds the audio session, so nothing may listen or speak until it gives it back.
@@ -151,6 +160,8 @@ final class VoiceCall {
   private var isOnline = false
   private var isStarting = false
   private var heard = ""
+  /// The utterance ended and the recognizer is finishing it.
+  private var isFinishing = false
   private var failures = 0
   private var replies: [String] = []
   private var spokenIDs: Set<Event.ID> = []
@@ -160,6 +171,7 @@ final class VoiceCall {
     silence: any SilenceTimer = TaskSilenceTimer(after: VoiceCall.endOfUtterance),
     retry: any SilenceTimer = TaskSilenceTimer(after: .milliseconds(500)),
     patience: any SilenceTimer = TaskSilenceTimer(after: .seconds(5)),
+    finalResult: any SilenceTimer = TaskSilenceTimer(after: VoiceCall.finalResultWait),
     notifications: NotificationCenter = .default
   ) {
     self.listener = listener
@@ -168,6 +180,7 @@ final class VoiceCall {
     self.silence = silence
     self.retry = retry
     self.patience = patience
+    self.finalResult = finalResult
     self.notifications = notifications
   }
 
@@ -395,6 +408,8 @@ final class VoiceCall {
     silence.cancel()
     retry.cancel()
     patience.cancel()
+    finalResult.cancel()
+    isFinishing = false
     heard = ""
     level = 0
     listener.stop()
@@ -412,7 +427,7 @@ final class VoiceCall {
         failures = 0
       }
       // The recognizer keeps refining what it heard after the user stops, which isn't speech.
-      if isNew { restartSilenceTimer() }
+      if isNew, !isFinishing { restartSilenceTimer() }
     case .final(let text):
       heard = text
       finishUtterance()
@@ -431,7 +446,13 @@ final class VoiceCall {
   }
 
   private func restartSilenceTimer() {
-    silence.restart { [weak self] in self?.finishUtterance() }
+    silence.restart { [weak self] in self?.awaitFinalResult() }
+  }
+
+  private func awaitFinalResult() {
+    isFinishing = true
+    finalResult.restart { [weak self] in self?.finishUtterance() }
+    listener.finish()
   }
 
   /// Sends what was heard so far, which a reply, muting or the end of the call would otherwise drop.
