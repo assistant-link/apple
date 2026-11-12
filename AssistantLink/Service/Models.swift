@@ -11,15 +11,13 @@ struct Registration: Decodable, Equatable, Sendable {
 }
 
 struct Assistant: Decodable, Equatable, Identifiable, Sendable {
-  enum Status: String, Decodable, Sendable {
+  enum Status: String, ForwardCompatibleEnum, Sendable {
     case online
     /// No agent is connected, but writing wakes one through the Link's webhook.
     case idle
     case offline
 
-    init(from decoder: Decoder) throws {
-      self = try Self(rawValue: decoder.singleValueContainer().decode(String.self)) ?? .offline
-    }
+    static let fallback = offline
 
     init(links: [Link.Status]) {
       if links.contains(.online) {
@@ -36,8 +34,8 @@ struct Assistant: Decodable, Equatable, Identifiable, Sendable {
   var name: String
   var avatar: String
   var status: Status
-  var links: [Link]
-  var latestEvent: Event?
+  @LossyArray var links: [Link]
+  @LossyOptional var latestEvent: Event? = nil
 
   enum CodingKeys: String, CodingKey {
     case id, name, avatar, status, links
@@ -46,16 +44,14 @@ struct Assistant: Decodable, Equatable, Identifiable, Sendable {
 }
 
 struct Link: Decodable, Equatable, Identifiable, Sendable {
-  enum Status: String, Decodable, Sendable {
+  enum Status: String, ForwardCompatibleEnum, Sendable {
     case notPaired = "not_paired"
     case online
     /// No agent is connected, but writing wakes one through the Link's webhook.
     case idle
     case offline
 
-    init(from decoder: Decoder) throws {
-      self = try Self(rawValue: decoder.singleValueContainer().decode(String.self)) ?? .offline
-    }
+    static let fallback = offline
   }
 
   let id: String
@@ -85,25 +81,35 @@ struct PairingCode: Decodable, Equatable, Sendable {
 
 /// A stored item of an Assistant's conversation, as the app API returns it.
 struct Event: Decodable, Equatable, Identifiable, Sendable {
-  enum Kind: String, Decodable, Sendable {
+  enum Kind: String, ForwardCompatibleEnum, Sendable {
     case textMessage = "text_message"
     case linkCreated = "link_created"
     case callStarted = "call_started"
     case callEnded = "call_ended"
+    case unknown
+
+    static let fallback = unknown
   }
 
-  enum Sender: String, Decodable, Sendable {
+  enum Sender: String, ForwardCompatibleEnum, Sendable {
     case user
     case assistant
     case system
+    case unknown
+
+    static let fallback = unknown
   }
 
-  enum DeliveryStatus: String, Decodable, Sendable {
+  enum DeliveryStatus: String, ForwardCompatibleEnum, Sendable {
     case sent
     case delivered
+    case unknown
+
+    static let fallback = unknown
   }
 
-  /// How the user made a text message, when not by typing it.
+  /// How the user made a text message, when not by typing it. Unlike the other enums, it has no
+  /// fallback: the app sends it, and a value it doesn't know decodes as `nil`.
   enum Via: String, Codable, Sendable {
     case voice
   }
@@ -135,8 +141,7 @@ extension Event {
 
   private struct TextContent: Decodable {
     let text: String
-    /// Kept as text so a value this app doesn't know doesn't fail the whole event.
-    let via: String?
+    @LossyOptional var via: Via?
   }
 
   init(from decoder: any Decoder) throws {
@@ -147,12 +152,12 @@ extension Event {
     sender = try container.decode(Sender.self, forKey: .sender)
     createdAt = try container.decode(Date.self, forKey: .createdAt)
     linkID = try container.decodeIfPresent(String.self, forKey: .linkID)
-    deleted = try container.decode(Bool.self, forKey: .deleted)
+    deleted = try container.decodeIfPresent(Bool.self, forKey: .deleted) ?? false
     deliveryStatus = try container.decodeIfPresent(DeliveryStatus.self, forKey: .deliveryStatus)
     idempotencyKey = try container.decodeIfPresent(String.self, forKey: .idempotencyKey)
     let content = try container.decodeIfPresent(TextContent.self, forKey: .textMessage)
     text = content?.text
-    via = content?.via.flatMap(Via.init(rawValue:))
+    via = content?.via
   }
 }
 

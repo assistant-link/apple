@@ -189,7 +189,7 @@ struct ConversationView: View {
       MessageBubble(
         text: event.text ?? "", isFromUser: event.sender == .user, isDeleted: event.deleted,
         caption: timeline.caption(forMessageID: event.id), isVoice: event.via == .voice)
-    case .callStarted:
+    case .callStarted, .unknown:
       EmptyView()
     case .callEnded:
       VoiceChatCaption(seconds: timeline.voiceChatSeconds(endedBy: event))

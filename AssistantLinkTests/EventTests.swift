@@ -113,16 +113,6 @@ struct EventDecodingTests {
     #expect(event.text == nil)
     #expect(!event.deleted)
   }
-
-  @Test func rejectsAnUnknownType() {
-    #expect(throws: DecodingError.self) {
-      try decode(
-        #"""
-        {"id": "e-3", "assistant_id": "as-1", "type": "poll", "sender": "system",
-         "link_id": null, "created_at": "2026-10-08T12:30:15Z", "deleted": false}
-        """#)
-    }
-  }
 }
 
 struct EventAPITests {
