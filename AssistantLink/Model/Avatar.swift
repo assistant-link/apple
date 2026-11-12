@@ -33,23 +33,28 @@ struct Avatar: Equatable, Identifiable, Sendable {
 struct AvatarView: View {
   let avatar: Avatar
   var size: CGFloat = 40
-  var isOnline = false
+  var status = Assistant.Status.offline
 
   var body: some View {
     Circle()
       .fill(avatar.color)
       .frame(width: size, height: size)
       .overlay(alignment: .bottomTrailing) {
-        if isOnline {
+        if status != .offline {
           Circle()
-            .fill(.green)
+            .fill(status.color)
             .frame(width: size * 0.3, height: size * 0.3)
             .overlay { Circle().strokeBorder(Color(.systemBackground), lineWidth: size * 0.05) }
             .offset(x: size * 0.02, y: size * 0.02)
         }
       }
       .accessibilityElement()
-      .accessibilityLabel(isOnline ? "\(avatar.name) avatar, online" : "\(avatar.name) avatar")
+      .accessibilityLabel(accessibilityLabel)
+  }
+
+  private var accessibilityLabel: String {
+    if status == .offline { return "\(avatar.name) avatar" }
+    return "\(avatar.name) avatar, \(status.label.lowercased())"
   }
 }
 

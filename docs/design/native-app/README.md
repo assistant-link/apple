@@ -15,7 +15,7 @@ Sample assistant: "Hermes" (yellow avatar). Chat blue is the system tint; the ca
 | Part | SwiftUI | SF Symbol | Colors | Notes |
 |---|---|---|---|---|
 | Back button | `ToolbarItem(placement: .topBarLeading)` + `Button`, glass circle 44 | `chevron.left` | `.primary` on `.glassEffect(in: .circle)` | system back |
-| Title bubble | `ToolbarItem(placement: .principal)`, `.glassEffect(in: .capsule)`, avatar 28 | none | name `.headline`, status `.caption` `.secondary`; online dot `.green` | States: Online, Offline, In call (name only, glass tinted light red, `.glassEffect(.regular.tint(.red.opacity(0.4)))`) |
+| Title bubble | `ToolbarItem(placement: .principal)`, `.glassEffect(in: .capsule)`, avatar 28 | none | name `.headline`, status `.caption` `.secondary`; online dot `.green`, idle dot `.yellow` | States: Online, Idle, Offline, In call (name only, glass tinted light red, `.glassEffect(.regular.tint(.red.opacity(0.4)))`) |
 | Call glow | background view behind the toolbar, only while in a call | none | translucent `.red` | see below |
 
 ### Call glow (nav bar background state)

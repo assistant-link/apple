@@ -17,7 +17,8 @@ struct StatusTests {
       Assistant.self,
       from: Data(
         json: #"""
-          {"id": "as-1", "name": "Hermes", "avatar": "avatar-3", "status": "\#(status)", "links": []}
+          {"id": "as-1", "name": "Hermes", "avatar": "avatar-3", "status": "\#(status)",
+           "links": []}
           """#))
   }
 

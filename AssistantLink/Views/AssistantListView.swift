@@ -136,8 +136,7 @@ private struct AssistantRow: View {
 
   var body: some View {
     HStack(spacing: 14) {
-      AvatarView(
-        avatar: Avatar(id: assistant.avatar), size: 52, isOnline: assistant.status == .online)
+      AvatarView(avatar: Avatar(id: assistant.avatar), size: 52, status: assistant.status)
       VStack(alignment: .leading, spacing: 4) {
         HStack(alignment: .firstTextBaseline) {
           Text(assistant.name)
@@ -165,7 +164,7 @@ private struct AssistantRow: View {
     }
     .padding(.vertical, 6)
     .accessibilityElement(children: .combine)
-    .accessibilityValue(assistant.status == .online ? "Online" : "Offline")
+    .accessibilityValue(assistant.status.label)
   }
 
   private var preview: ListPreview {

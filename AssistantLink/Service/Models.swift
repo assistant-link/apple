@@ -13,7 +13,23 @@ struct Registration: Decodable, Equatable, Sendable {
 struct Assistant: Decodable, Equatable, Identifiable, Sendable {
   enum Status: String, Decodable, Sendable {
     case online
+    /// No agent is connected, but writing wakes one through the Link's webhook.
+    case idle
     case offline
+
+    init(from decoder: Decoder) throws {
+      self = try Self(rawValue: decoder.singleValueContainer().decode(String.self)) ?? .offline
+    }
+
+    init(links: [Link.Status]) {
+      if links.contains(.online) {
+        self = .online
+      } else if links.contains(.idle) {
+        self = .idle
+      } else {
+        self = .offline
+      }
+    }
   }
 
   let id: String
@@ -33,7 +49,13 @@ struct Link: Decodable, Equatable, Identifiable, Sendable {
   enum Status: String, Decodable, Sendable {
     case notPaired = "not_paired"
     case online
+    /// No agent is connected, but writing wakes one through the Link's webhook.
+    case idle
     case offline
+
+    init(from decoder: Decoder) throws {
+      self = try Self(rawValue: decoder.singleValueContainer().decode(String.self)) ?? .offline
+    }
   }
 
   let id: String

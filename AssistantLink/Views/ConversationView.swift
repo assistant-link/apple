@@ -117,7 +117,7 @@ struct ConversationView: View {
     NavigationLink(value: Route.details(assistant.id)) {
       TitleBubble(
         name: assistant.name, avatar: Avatar(id: assistant.avatar),
-        status: call.titleStatus(isOnline: assistant.status == .online))
+        status: call.titleStatus(assistant.status))
     }
     .buttonStyle(.plain)
     .accessibilityHint("Shows the Assistant's details and Links")
