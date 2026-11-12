@@ -3,8 +3,9 @@ import Testing
 @testable import AssistantLink
 
 struct TitleBubbleStatusTests {
-  @Test func onlineAndOfflineShowTheStatus() {
+  @Test func onlineIdleAndOfflineShowTheStatus() {
     #expect(TitleBubble.Status.online.statusText == "Online")
+    #expect(TitleBubble.Status.idle.statusText == "Idle")
     #expect(TitleBubble.Status.offline.statusText == "Offline")
   }
 
@@ -14,6 +15,7 @@ struct TitleBubbleStatusTests {
 
   @Test func everyStatusSpeaksItsState() {
     #expect(TitleBubble.Status.online.accessibilityValue == "Online")
+    #expect(TitleBubble.Status.idle.accessibilityValue == "Idle")
     #expect(TitleBubble.Status.offline.accessibilityValue == "Offline")
     #expect(TitleBubble.Status.inCall.accessibilityValue == "In a voice chat")
   }

@@ -37,6 +37,16 @@ struct LiveMessageTests {
             lastActiveAt: Date(timeIntervalSince1970: 1_791_462_660))))
   }
 
+  @Test func decodesAnIdleLinkStatus() {
+    let message = LiveMessage(
+      text: #"""
+        {"jsonrpc": "2.0", "method": "link.status",
+         "params": {"link_id": "l-3", "status": "idle", "last_active_at": null}}
+        """#)
+
+    #expect(message == .linkStatus(LinkStatusChange(linkID: "l-3", status: .idle)))
+  }
+
   @Test func ignoresUnknownFields() {
     let message = LiveMessage(
       text: #"""

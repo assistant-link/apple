@@ -39,6 +39,10 @@ struct ConversationPresentationTests {
     #expect(assistant(status: .offline, links: []).offlineNotice == nil)
   }
 
+  @Test func noOfflineNoticeWhileIdleBecauseWritingWakesTheAgent() {
+    #expect(assistant(status: .idle, links: [.idle]).offlineNotice == nil)
+  }
+
   @Test func previewPrefixesTheUsersMessages() {
     #expect(ListPreview(event: message(), failedMessage: nil).text == "You: Hi")
     #expect(ListPreview(event: message(sender: .assistant), failedMessage: nil).text == "Hi")
