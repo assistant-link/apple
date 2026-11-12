@@ -38,7 +38,7 @@ struct ConversationView: View {
       // from them so it shows while they are hidden too.
       .safeAreaInset(edge: .top) {
         if call.isInCall {
-          ReplyVoiceStatusView(status: model.kokoro?.status) { model.prepareReplyVoice() }
+          ReplyVoiceStatusView(status: model.kokoro?.status) { model.retryReplyVoice() }
             .transition(.opacity)
         }
       }
