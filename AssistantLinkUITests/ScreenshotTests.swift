@@ -16,7 +16,8 @@ final class ScreenshotTests: XCTestCase {
     }
     Self.resetService()
     let app = XCUIApplication()
-    app.launchArguments = ["-serviceURL", Self.service]
+    // Apple voice, so the run does not download Kokoro.
+    app.launchArguments = ["-serviceURL", Self.service, "-replyVoice", "apple"]
     app.launch()
 
     expect(row("Hermes", in: app), "step 1: Hermes row exists", timeout: 30)

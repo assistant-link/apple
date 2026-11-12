@@ -18,6 +18,8 @@ final class AppModel {
   /// Changes whenever the app starts using an account, so live updates restart with it.
   private(set) var session = 0
   let voiceCall: VoiceCall
+  /// The reply voice `start()` gets ready, shared with the speaker of `voiceCall`.
+  let kokoro: KokoroVoice?
   /// Shared by the composers, which SwiftUI creates again whenever a screen refreshes.
   let dictation: Dictation
 
@@ -46,6 +48,7 @@ final class AppModel {
     sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
     voiceCall: VoiceCall = .live(),
     dictation: Dictation = .live(),
+    kokoro: KokoroVoice? = nil,
     keepRunning: @escaping @MainActor (Task<Void, Never>) -> Void = { _ in }
   ) {
     self.keepRunning = keepRunning
@@ -55,14 +58,17 @@ final class AppModel {
     self.sleep = sleep
     self.voiceCall = voiceCall
     self.dictation = dictation
+    self.kokoro = kokoro
   }
 
   static func live() -> AppModel {
     let baseURL = ServiceConfiguration.baseURL()
     let store = KeychainCredentialStore(account: baseURL.absoluteString)
+    let kokoro = KokoroVoice()
     return AppModel(
       connect: { try await AccountSession.connect(baseURL: baseURL, store: store) },
-      forget: { try store.delete() }, keepRunning: BackgroundTime.keepRunning)
+      forget: { try store.delete() }, voiceCall: .live(kokoro: kokoro), kokoro: kokoro,
+      keepRunning: BackgroundTime.keepRunning)
   }
 
   static func preview(
@@ -77,6 +83,7 @@ final class AppModel {
   }
 
   func start() async {
+    prepareReplyVoice()
     phase = .loading
     do {
       let api = try await connect()
@@ -88,6 +95,11 @@ final class AppModel {
     } catch {
       phase = .failed(error.localizedDescription)
     }
+  }
+
+  /// Returns at once: the download goes on by itself, so the account does not wait for it.
+  func prepareReplyVoice() {
+    kokoro?.prepare()
   }
 
   /// Best effort: the Assistants wake in the background, so a failure is only logged.

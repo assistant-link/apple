@@ -34,6 +34,14 @@ struct ConversationView: View {
           .opacity(call.isInCall ? 1 : 0)
           .ignoresSafeArea()
       }
+      // Under the call controls, as the inset applied first sits closest to the content; apart
+      // from them so it shows while they are hidden too.
+      .safeAreaInset(edge: .top) {
+        if call.isInCall {
+          ReplyVoiceStatusView(status: model.kokoro?.status) { model.prepareReplyVoice() }
+            .transition(.opacity)
+        }
+      }
       .safeAreaInset(edge: .top) {
         if let phase = call.bannerPhase {
           Group {

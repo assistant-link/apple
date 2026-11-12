@@ -42,6 +42,47 @@ struct AppModelTests {
     #expect(model.phase == .failed(APIError.unreachable.localizedDescription))
   }
 
+  private func kokoroModel(
+    choice: String?, safe: Bool = true, factory: FakeKokoroFactory
+  ) -> AppModel {
+    let defaults = UserDefaults(suiteName: "AppModelTests.\(UUID().uuidString)")!
+    ReplyVoiceChoice.registerDefaults(in: defaults)
+    if let choice { defaults.set(choice, forKey: ReplyVoiceChoice.key) }
+    let kokoro = KokoroVoice(
+      defaults: defaults, isEnglish: true, runsSafely: safe, make: { factory.make() })
+    return AppModel(connect: { throw APIError.unreachable }, dictation: .fake(), kokoro: kokoro)
+  }
+
+  @Test func startPreparesKokoroEvenWhenTheServiceIsUnreachable() async {
+    let engine = FakeReplyEngine(isReady: false)
+    let model = kokoroModel(choice: nil, factory: FakeKokoroFactory(engine))
+
+    await model.start()
+    await model.start()
+
+    #expect(engine.prepares == 2)
+    #expect(model.kokoro?.status == .notStarted)
+  }
+
+  @Test func startLeavesKokoroAloneWhenTheAppleVoiceIsChosen() async {
+    let factory = FakeKokoroFactory(FakeReplyEngine(isReady: false))
+    let model = kokoroModel(choice: "apple", factory: factory)
+
+    await model.start()
+
+    #expect(factory.made == 0)
+  }
+
+  @Test func startLeavesKokoroAloneOnVersionsWhereCoreMLCrashes() async {
+    let factory = FakeKokoroFactory(FakeReplyEngine(isReady: false))
+    let model = kokoroModel(choice: "kokoro", safe: false, factory: factory)
+
+    await model.start()
+
+    #expect(factory.made == 0)
+    #expect(model.kokoro?.status == nil)
+  }
+
   @Test func wakePostsOnceWhenSignedIn() async throws {
     let wakes = Mutex(0)
     let model = model { request, _ in

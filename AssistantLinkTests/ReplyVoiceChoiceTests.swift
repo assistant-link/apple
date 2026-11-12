@@ -5,50 +5,69 @@ import Testing
 
 @MainActor
 struct ReplyVoiceChoiceTests {
-  private func emptyDefaults() -> UserDefaults {
-    UserDefaults(suiteName: "ReplyVoiceChoiceTests.\(UUID().uuidString)")!
+  private func emptyDefaults(suite: String = "ReplyVoiceChoiceTests.\(UUID().uuidString)")
+    -> UserDefaults
+  {
+    UserDefaults(suiteName: suite)!
   }
 
-  /// Hands out the engines in order, as the speaker asks for Kokoro.
-  @MainActor private final class Factory {
-    let engines: [FakeReplyEngine]
-    private(set) var made = 0
-
-    init(_ engines: FakeReplyEngine...) { self.engines = engines }
-
-    func make() -> any ReplySpeechEngine {
-      defer { made += 1 }
-      return engines[min(made, engines.count - 1)]
-    }
+  private func appleDefaults() -> UserDefaults {
+    let defaults = emptyDefaults()
+    defaults.set("apple", forKey: ReplyVoiceChoice.key)
+    return defaults
   }
 
   private func speaker(
-    _ defaults: UserDefaults, english: Bool = true, factory: Factory
+    _ defaults: UserDefaults, english: Bool = true, safe: Bool = true,
+    factory: FakeKokoroFactory
   ) -> LiveSpeechSpeaker {
-    LiveSpeechSpeaker(defaults: defaults, isEnglish: english, kokoro: { factory.make() })
+    LiveSpeechSpeaker(
+      kokoro: KokoroVoice(
+        defaults: defaults, isEnglish: english, runsSafely: safe, make: { factory.make() }))
   }
 
-  @Test func theChoiceDefaultsToTheAppleVoice() {
-    #expect(ReplyVoiceChoice.current(defaults: emptyDefaults()) == .apple)
+  @Test func theChoiceDefaultsToKokoro() {
+    #expect(ReplyVoiceChoice.current(defaults: emptyDefaults()) == .kokoro)
   }
 
-  @Test func registeringDefaultsSelectsTheAppleVoice() {
-    let defaults = emptyDefaults()
+  @Test func registeringDefaultsSelectsKokoroWithoutWritingTheKey() {
+    let suite = "ReplyVoiceChoiceTests.\(UUID().uuidString)"
+    let defaults = emptyDefaults(suite: suite)
     ReplyVoiceChoice.registerDefaults(in: defaults)
-    #expect(defaults.string(forKey: ReplyVoiceChoice.key) == "apple")
+    #expect(defaults.string(forKey: ReplyVoiceChoice.key) == "kokoro")
+    #expect(defaults.persistentDomain(forName: suite)?[ReplyVoiceChoice.key] == nil)
   }
 
-  @Test func anUnknownValueMeansTheAppleVoice() {
+  @Test func anExplicitAppleChoiceIsKept() {
+    let defaults = appleDefaults()
+    ReplyVoiceChoice.registerDefaults(in: defaults)
+    #expect(ReplyVoiceChoice.current(defaults: defaults) == .apple)
+  }
+
+  @Test func anExplicitKokoroChoiceIsKept() {
+    let defaults = emptyDefaults()
+    defaults.set("kokoro", forKey: ReplyVoiceChoice.key)
+    ReplyVoiceChoice.registerDefaults(in: defaults)
+    #expect(ReplyVoiceChoice.current(defaults: defaults) == .kokoro)
+  }
+
+  @Test func anUnknownValueMeansTheDefault() {
     let defaults = emptyDefaults()
     defaults.set("other", forKey: ReplyVoiceChoice.key)
-    #expect(ReplyVoiceChoice.current(defaults: defaults) == .apple)
+    #expect(ReplyVoiceChoice.current(defaults: defaults) == .kokoro)
+  }
+
+  @Test func aValueOfAnotherTypeMeansTheDefault() {
+    let defaults = emptyDefaults()
+    defaults.set(3, forKey: ReplyVoiceChoice.key)
+    #expect(ReplyVoiceChoice.current(defaults: defaults) == .kokoro)
   }
 
   @Test func kokoroIsUsedWhenChosen() {
     let defaults = emptyDefaults()
     defaults.set("kokoro", forKey: ReplyVoiceChoice.key)
     let engine = FakeReplyEngine(isReady: true)
-    let speaker = speaker(defaults, factory: Factory(engine))
+    let speaker = speaker(defaults, factory: FakeKokoroFactory(engine))
 
     speaker.prepareForCall()
     speaker.speak("Hello.") {}
@@ -57,8 +76,8 @@ struct ReplyVoiceChoiceTests {
   }
 
   @Test func theAppleVoiceNeverCreatesKokoro() {
-    let factory = Factory(FakeReplyEngine(isReady: true))
-    let speaker = speaker(emptyDefaults(), factory: factory)
+    let factory = FakeKokoroFactory(FakeReplyEngine(isReady: true))
+    let speaker = speaker(appleDefaults(), factory: factory)
 
     speaker.prepareForCall()
     speaker.speak(" ") {}
@@ -71,7 +90,7 @@ struct ReplyVoiceChoiceTests {
   @Test func kokoroIsNotUsedForOtherLanguages() {
     let defaults = emptyDefaults()
     defaults.set("kokoro", forKey: ReplyVoiceChoice.key)
-    let factory = Factory(FakeReplyEngine(isReady: true))
+    let factory = FakeKokoroFactory(FakeReplyEngine(isReady: true))
     let speaker = speaker(defaults, english: false, factory: factory)
 
     speaker.prepareForCall()
@@ -80,9 +99,9 @@ struct ReplyVoiceChoiceTests {
   }
 
   @Test func aChangeIsHonouredAtTheNextCall() {
-    let defaults = emptyDefaults()
+    let defaults = appleDefaults()
     let engine = FakeReplyEngine(isReady: true)
-    let speaker = speaker(defaults, factory: Factory(engine))
+    let speaker = speaker(defaults, factory: FakeKokoroFactory(engine))
     speaker.prepareForCall()
     speaker.speak(" ") {}
     #expect(engine.spoken.isEmpty)
@@ -104,7 +123,8 @@ struct ReplyVoiceChoiceTests {
   @Test func kokoroIsCreatedOnceAcrossCalls() {
     let defaults = emptyDefaults()
     defaults.set("kokoro", forKey: ReplyVoiceChoice.key)
-    let factory = Factory(FakeReplyEngine(isReady: true), FakeReplyEngine(isReady: true))
+    let factory = FakeKokoroFactory(
+      FakeReplyEngine(isReady: true), FakeReplyEngine(isReady: true))
     let speaker = speaker(defaults, factory: factory)
 
     speaker.prepareForCall()
@@ -117,7 +137,7 @@ struct ReplyVoiceChoiceTests {
     let defaults = emptyDefaults()
     defaults.set("kokoro", forKey: ReplyVoiceChoice.key)
     let engine = FakeReplyEngine(isReady: false)
-    let speaker = speaker(defaults, factory: Factory(engine))
+    let speaker = speaker(defaults, factory: FakeKokoroFactory(engine))
 
     speaker.prepareForCall()
     speaker.speak(" ") {}
@@ -132,7 +152,7 @@ struct ReplyVoiceChoiceTests {
     let defaults = emptyDefaults()
     defaults.set("kokoro", forKey: ReplyVoiceChoice.key)
     let engine = FakeReplyEngine(isReady: true)
-    let speaker = speaker(defaults, factory: Factory(engine))
+    let speaker = speaker(defaults, factory: FakeKokoroFactory(engine))
     speaker.prepareForCall()
     speaker.speak(" ") {}
 
@@ -142,18 +162,17 @@ struct ReplyVoiceChoiceTests {
     speaker.stop()
   }
 
-  @Test func kokoroIsNotBlockedOnVersionsWhereCoreMLCrashes() {
-    // The opt-in bypasses `runsSafely`, which stays as the record of the crash.
+  @Test func theAppleVoiceSpeaksOnVersionsWhereCoreMLCrashes() {
     let defaults = emptyDefaults()
     defaults.set("kokoro", forKey: ReplyVoiceChoice.key)
-    let engine = FakeReplyEngine(isReady: true)
-    let speaker = speaker(defaults, factory: Factory(engine))
-    let ios27 = OperatingSystemVersion(majorVersion: 27, minorVersion: 0, patchVersion: 1)
-    #expect(!KokoroSynthesizer.runsSafely(on: ios27))
+    let factory = FakeKokoroFactory(FakeReplyEngine(isReady: true))
+    let speaker = speaker(defaults, safe: false, factory: factory)
 
     speaker.prepareForCall()
-    speaker.speak("Hello.") {}
+    speaker.speak(" ") {}
 
-    #expect(engine.spoken == ["Hello."])
+    #expect(factory.made == 0)
+    #expect(speaker.current != nil)
+    speaker.stop()
   }
 }

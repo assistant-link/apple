@@ -1,5 +1,6 @@
 import AVFoundation
 import FluidAudio
+import Observation
 
 /// The reply voice the user picks in Settings > Assistant Link. The raw values are those of
 /// `Settings.bundle`.
@@ -9,12 +10,65 @@ enum ReplyVoiceChoice: String {
 
   static let key = "replyVoice"
 
+  /// Registered rather than written, so a choice the user made stays theirs.
   static func registerDefaults(in defaults: UserDefaults = .standard) {
-    defaults.register(defaults: [key: apple.rawValue])
+    defaults.register(defaults: [key: kokoro.rawValue])
   }
 
+  /// A value this version does not know, such as one a later version wrote, means the default.
   static func current(defaults: UserDefaults = .standard) -> ReplyVoiceChoice {
-    defaults.string(forKey: key).flatMap(ReplyVoiceChoice.init(rawValue:)) ?? .apple
+    defaults.string(forKey: key).flatMap(ReplyVoiceChoice.init(rawValue:)) ?? .kokoro
+  }
+}
+
+/// The one Kokoro engine of the app. It starts getting ready as the app opens, so the model has
+/// downloaded by the time a call needs it, and the calls speak with that same engine.
+@MainActor
+@Observable
+final class KokoroVoice {
+  private let defaults: UserDefaults
+  private let isEnglish: Bool
+  private let runsSafely: Bool
+  private let make: @MainActor () -> any ReplySpeechEngine
+  private var engine: (any ReplySpeechEngine)?
+
+  /// Where Core ML crashes, Kokoro is never made, whatever Settings says: no `catch` survives it.
+  init(
+    defaults: UserDefaults = .standard,
+    isEnglish: Bool = Locale.current.language.languageCode == .english,
+    runsSafely: Bool = KokoroSynthesizer.runsSafely(
+      on: ProcessInfo.processInfo.operatingSystemVersion),
+    make: @escaping @MainActor () -> any ReplySpeechEngine = { NeuralReplyEngine.kokoro() }
+  ) {
+    self.defaults = defaults
+    self.isEnglish = isEnglish
+    self.runsSafely = runsSafely
+    self.make = make
+  }
+
+  /// Read again each time, so a change in Settings applies to the next call. Kokoro speaks
+  /// English only here, so other languages stay with the system voice.
+  var isUsed: Bool {
+    runsSafely && isEnglish && ReplyVoiceChoice.current(defaults: defaults) == .kokoro
+  }
+
+  /// Nil when the replies are not read with Kokoro.
+  var status: ReplyVoiceStatus? {
+    guard isUsed else { return nil }
+    return engine?.status ?? .notStarted
+  }
+
+  /// Made on first use and kept, as it holds the loaded model.
+  func usedEngine() -> (any ReplySpeechEngine)? {
+    guard isUsed else { return nil }
+    if engine == nil { engine = make() }
+    return engine
+  }
+
+  /// Starts the download on any network, or picks it up again after a failure, such as one the
+  /// app's suspension caused. Does nothing while it is on its way or once Kokoro is ready.
+  func prepare() {
+    usedEngine()?.prepare()
   }
 }
 
@@ -33,12 +87,35 @@ struct KokoroSynthesizer: SentenceSynthesizing {
 
   /// Core ML segfaults in Apple's libBNNS from iOS 26.4 on (FluidAudio#844, #889). No `catch`
   /// survives it, it ends the call, and no compute-unit choice avoids it (FluidAudio#587, #817).
-  /// Nothing gates on this: choosing Kokoro in Settings is an explicit opt-in to that risk.
+  /// `KokoroVoice` leaves Kokoro off there.
   static func runsSafely(on system: OperatingSystemVersion) -> Bool {
     system.majorVersion < 26 || (system.majorVersion == 26 && system.minorVersion < 4)
   }
 
-  func prepare() async throws {
+  /// FluidAudio downloads on its own default session, which allows these.
+  static var downloadsOnAnyNetwork: Bool {
+    let configuration = ModelHub.session.configuration
+    return configuration.allowsCellularAccess && configuration.allowsExpensiveNetworkAccess
+  }
+
+  /// `ModelHub.download` reports the download over the first half of the fraction and keeps the
+  /// rest for compiling, which `ensureModels` does not do (FluidAudio 0.18.3).
+  static func downloadFraction(reported: Double) -> Double {
+    min(max(reported / 0.5, 0), 1)
+  }
+
+  /// Downloads first, as `initialize()` takes no progress handler; it then finds the files in
+  /// place. Files already downloaded are kept, so an interrupted download resumes.
+  func prepare(progress: @escaping @Sendable (ReplyVoiceStatus) -> Void) async throws {
+    try await KokoroAneResourceDownloader.ensureModels(progressHandler: { report in
+      if case .listing = report.phase {
+        progress(.downloading(fraction: nil))
+      } else if case .downloading = report.phase {
+        let fraction = Self.downloadFraction(reported: report.fractionCompleted)
+        progress(.downloading(fraction: fraction))
+      }
+    })
+    progress(.preparing)
     try await manager.initialize()
   }
 

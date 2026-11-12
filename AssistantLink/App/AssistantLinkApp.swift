@@ -24,6 +24,10 @@ struct AssistantLinkApp: App {
         AssistantListView()
           .environment(model)
           .task { await model.start() }
+          // A download the suspension broke picks up again; one on its way is left alone.
+          .onChange(of: scenePhase) {
+            if scenePhase == .active { model.prepareReplyVoice() }
+          }
           .task(id: WakeTrigger(isActive: scenePhase == .active, session: model.session)) {
             if scenePhase == .active {
               await model.wake()
