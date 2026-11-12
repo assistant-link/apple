@@ -139,8 +139,7 @@ final class AppModel {
       assistants[index].links[linkIndex].status = change.status
       assistants[index].links[linkIndex].lastActiveAt =
         change.lastActiveAt ?? assistants[index].links[linkIndex].lastActiveAt
-      assistants[index].status =
-        assistants[index].links.contains { $0.status == .online } ? .online : .offline
+      assistants[index].status = Assistant.Status(links: assistants[index].links.map(\.status))
       syncVoiceCall()
       return
     }

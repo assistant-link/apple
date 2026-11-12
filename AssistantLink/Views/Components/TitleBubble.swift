@@ -4,22 +4,25 @@ import SwiftUI
 struct TitleBubble: View {
   enum Status {
     case online
+    case idle
     case offline
     case inCall
 
     var statusText: String? {
-      switch self {
-      case .online: "Online"
-      case .offline: "Offline"
-      case .inCall: nil
-      }
+      assistantStatus?.label
     }
 
     var accessibilityValue: String {
+      statusText ?? "In a voice chat"
+    }
+
+    /// `nil` in a call, which the title shows instead.
+    var assistantStatus: Assistant.Status? {
       switch self {
-      case .online: "Online"
-      case .offline: "Offline"
-      case .inCall: "In a voice chat"
+      case .online: .online
+      case .idle: .idle
+      case .offline: .offline
+      case .inCall: nil
       }
     }
   }
@@ -30,7 +33,7 @@ struct TitleBubble: View {
 
   var body: some View {
     HStack(spacing: 8) {
-      AvatarView(avatar: avatar, size: 28, isOnline: status == .online)
+      AvatarView(avatar: avatar, size: 28, status: status.assistantStatus ?? .offline)
         .accessibilityHidden(true)
       VStack(alignment: .leading, spacing: 0) {
         HStack(spacing: 4) {

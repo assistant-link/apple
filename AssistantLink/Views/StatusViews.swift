@@ -5,18 +5,21 @@ struct StatusBadge: View {
   let color: Color
 
   init(_ status: Assistant.Status) {
-    switch status {
-    case .online: (text, color) = ("Online", .green)
-    case .offline: (text, color) = ("Offline", .secondary)
-    }
+    self.init(text: status.label, color: status.color)
   }
 
   init(_ status: Link.Status) {
     switch status {
-    case .online: (text, color) = ("Online", .green)
-    case .offline: (text, color) = ("Offline", .secondary)
-    case .notPaired: (text, color) = ("Not paired", .orange)
+    case .online: self.init(Assistant.Status.online)
+    case .idle: self.init(Assistant.Status.idle)
+    case .offline: self.init(Assistant.Status.offline)
+    case .notPaired: self.init(text: "Not paired", color: .orange)
     }
+  }
+
+  private init(text: String, color: Color) {
+    self.text = text
+    self.color = color
   }
 
   var body: some View {
@@ -25,6 +28,24 @@ struct StatusBadge: View {
       Text(text)
     }
     .accessibilityElement(children: .combine)
+  }
+}
+
+extension Assistant.Status {
+  var label: String {
+    switch self {
+    case .online: "Online"
+    case .idle: "Idle"
+    case .offline: "Offline"
+    }
+  }
+
+  var color: Color {
+    switch self {
+    case .online: .green
+    case .idle: .yellow
+    case .offline: .gray
+    }
   }
 }
 
@@ -50,6 +71,7 @@ struct LastActiveText: View {
 #Preview {
   List {
     StatusBadge(Assistant.Status.online)
+    StatusBadge(Assistant.Status.idle)
     StatusBadge(Assistant.Status.offline)
     StatusBadge(Link.Status.notPaired)
     LastActiveText(lastActive: .now)

@@ -181,6 +181,16 @@ struct AppModelTests {
     #expect(offline.links[0].lastActiveAt == disconnectedAt)
   }
 
+  @Test func anIdleLinkMakesItsAssistantIdle() async throws {
+    let model = model { _, _ in (200, Data(json: #"{"assistants": [\#(twoLinks)]}"#)) }
+    await model.start()
+
+    model.apply(LinkStatusChange(linkID: "l-1", status: .idle, lastActiveAt: nil))
+
+    #expect(model.assistant(id: "as-1")?.status == .idle)
+    #expect(model.assistant(id: "as-1")?.links.map(\.status) == [.idle, .notPaired])
+  }
+
   @Test func aLinkIsPairedOnceItsStatusLeavesNotPaired() async throws {
     let model = model { _, _ in (200, Data(json: #"{"assistants": [\#(twoLinks)]}"#)) }
     await model.start()

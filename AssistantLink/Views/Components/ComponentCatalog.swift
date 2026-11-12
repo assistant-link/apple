@@ -196,6 +196,7 @@ struct ComponentCatalog: View {
   private var call: some View {
     VStack(alignment: .leading, spacing: 16) {
       TitleBubble(name: "Hermes", avatar: Avatar(id: "avatar-3"), status: .online)
+      TitleBubble(name: "Hermes", avatar: Avatar(id: "avatar-3"), status: .idle)
       TitleBubble(name: "Hermes", avatar: Avatar(id: "avatar-3"), status: .offline)
       TitleBubble(name: "Hermes", avatar: Avatar(id: "avatar-3"), status: .inCall)
       ForEach([CallBannerPhase.connecting, .live, .muted, .notListening], id: \.self) { phase in

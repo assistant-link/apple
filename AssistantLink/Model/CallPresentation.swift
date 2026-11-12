@@ -27,8 +27,12 @@ struct CallPresentation: Equatable {
   /// The banner has End and Mute once the call is on, so the start control only shows before.
   var offersStartCall: Bool { !isInCall }
 
-  func titleStatus(isOnline: Bool) -> TitleBubble.Status {
+  func titleStatus(_ status: Assistant.Status) -> TitleBubble.Status {
     if isInCall { return .inCall }
-    return isOnline ? .online : .offline
+    switch status {
+    case .online: return .online
+    case .idle: return .idle
+    case .offline: return .offline
+    }
   }
 }
