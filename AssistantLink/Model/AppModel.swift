@@ -102,6 +102,11 @@ final class AppModel {
     kokoro?.prepare()
   }
 
+  /// From a call, so unlike `prepareReplyVoice()` it prepares Kokoro where Core ML crashes too.
+  func retryReplyVoice() {
+    kokoro?.retry()
+  }
+
   /// Best effort: the Assistants wake in the background, so a failure is only logged.
   func wake() async {
     guard let api, api.credential != nil else { return }

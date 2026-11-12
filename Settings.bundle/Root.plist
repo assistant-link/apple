@@ -12,7 +12,7 @@
 			<key>Title</key>
 			<string></string>
 			<key>FooterText</key>
-			<string>Kokoro reads English replies on the Neural Engine. It downloads about 280 MB as the app opens, on Wi-Fi or cellular. Until it is ready, and if it fails, Apple voice reads; choose Apple voice here to always use it. Kokoro can crash the app on iOS 26.4 and later, so there Apple voice reads.</string>
+			<string>Kokoro reads English replies on the Neural Engine. It downloads about 280 MB as the app opens, on Wi-Fi or cellular. Until it is ready, and if it fails, Apple voice reads; choose Apple voice here to always use it. Kokoro can crash the app on iOS 26.4 and later, so there it downloads at your first call instead of as the app opens.</string>
 		</dict>
 		<dict>
 			<key>Type</key>

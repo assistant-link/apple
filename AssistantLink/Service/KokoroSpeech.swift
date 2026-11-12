@@ -21,8 +21,9 @@ enum ReplyVoiceChoice: String {
   }
 }
 
-/// The one Kokoro engine of the app. It starts getting ready as the app opens, so the model has
-/// downloaded by the time a call needs it, and the calls speak with that same engine.
+/// The one Kokoro engine of the app. Where Core ML runs safely it starts getting ready as the app
+/// opens, so the model has downloaded by the time a call needs it, and the calls speak with that
+/// same engine. Elsewhere only a call makes and prepares it.
 @MainActor
 @Observable
 final class KokoroVoice {
@@ -32,7 +33,8 @@ final class KokoroVoice {
   private let make: @MainActor () -> any ReplySpeechEngine
   private var engine: (any ReplySpeechEngine)?
 
-  /// Where Core ML crashes, Kokoro is never made, whatever Settings says: no `catch` survives it.
+  /// Where Core ML crashes, no `catch` survives it, so opening the app leaves Kokoro alone there:
+  /// only a call with Kokoro as the reply voice takes that risk, as the Settings footer warns.
   init(
     defaults: UserDefaults = .standard,
     isEnglish: Bool = Locale.current.language.languageCode == .english,
@@ -49,7 +51,7 @@ final class KokoroVoice {
   /// Read again each time, so a change in Settings applies to the next call. Kokoro speaks
   /// English only here, so other languages stay with the system voice.
   var isUsed: Bool {
-    runsSafely && isEnglish && ReplyVoiceChoice.current(defaults: defaults) == .kokoro
+    isEnglish && ReplyVoiceChoice.current(defaults: defaults) == .kokoro
   }
 
   /// Nil when the replies are not read with Kokoro.
@@ -65,9 +67,16 @@ final class KokoroVoice {
     return engine
   }
 
-  /// Starts the download on any network, or picks it up again after a failure, such as one the
-  /// app's suspension caused. Does nothing while it is on its way or once Kokoro is ready.
+  /// Called as the app opens or becomes active. Starts the download on any network, or picks it
+  /// up again after a failure, such as one the app's suspension caused. Does nothing while it is
+  /// on its way, once Kokoro is ready, or where Core ML crashes, even after a call made Kokoro.
   func prepare() {
+    guard runsSafely else { return }
+    usedEngine()?.prepare()
+  }
+
+  /// Asked for during a call, so it prepares Kokoro where `prepare()` does not.
+  func retry() {
     usedEngine()?.prepare()
   }
 }
@@ -87,7 +96,7 @@ struct KokoroSynthesizer: SentenceSynthesizing {
 
   /// Core ML segfaults in Apple's libBNNS from iOS 26.4 on (FluidAudio#844, #889). No `catch`
   /// survives it, it ends the call, and no compute-unit choice avoids it (FluidAudio#587, #817).
-  /// `KokoroVoice` leaves Kokoro off there.
+  /// `KokoroVoice` does not prepare Kokoro there as the app opens, only for a call.
   static func runsSafely(on system: OperatingSystemVersion) -> Bool {
     system.majorVersion < 26 || (system.majorVersion == 26 && system.minorVersion < 4)
   }
