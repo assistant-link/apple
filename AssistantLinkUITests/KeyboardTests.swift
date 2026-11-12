@@ -78,7 +78,8 @@ final class KeyboardTests: XCTestCase {
     _ = done.wait(timeout: .now() + 10)
 
     let app = XCUIApplication()
-    app.launchArguments = ["-serviceURL", service]
+    // Apple voice, so the run does not download Kokoro.
+    app.launchArguments = ["-serviceURL", service, "-replyVoice", "apple"]
     app.launch()
 
     let row = app.descendants(matching: .any)
