@@ -36,6 +36,8 @@ final class Dictation {
   private var clock: Task<Void, Never>?
   /// What to do with the words once they are settled.
   private var finished: (@MainActor () -> Void)?
+  /// Whether `finished` sends the words, which a `cancel` must not lose.
+  private var isSending = false
   /// Counts the starts, so one that was stopped while asking cannot take over a later one.
   private var attempt = 0
 
@@ -107,8 +109,12 @@ final class Dictation {
       deliver(take())
     }
     switch phase {
-    case .recording: finishRecording(then: send)
-    case .finishing: finished = send
+    case .recording:
+      isSending = true
+      finishRecording(then: send)
+    case .finishing:
+      finished = send
+      isSending = true
     case .idle, .preparing, .editing: send()
     }
   }
@@ -120,8 +126,13 @@ final class Dictation {
     return result
   }
 
-  /// Drops the recording and its words, for example when the screen goes away.
+  /// Drops the recording and its words, for example when the screen goes away. Words already
+  /// being sent are sent right away, as they are.
   func cancel() {
+    if phase == .finishing, isSending {
+      settle()
+      return
+    }
     switch phase {
     case .recording:
       stopClock()
@@ -135,6 +146,7 @@ final class Dictation {
       break
     }
     finished = nil
+    isSending = false
     reset()
   }
 
@@ -174,6 +186,7 @@ final class Dictation {
     provisional = ""
     let done = finished
     finished = nil
+    isSending = false
     done?()
   }
 
