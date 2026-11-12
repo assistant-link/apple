@@ -80,7 +80,17 @@ struct AppModelTests {
     await model.start()
 
     #expect(factory.made == 0)
-    #expect(model.kokoro?.status == nil)
+    #expect(model.kokoro?.status == .notStarted)
+  }
+
+  @Test func retryingTheReplyVoicePreparesKokoroOnVersionsWhereCoreMLCrashes() async {
+    let engine = FakeReplyEngine(isReady: false)
+    let model = kokoroModel(choice: nil, safe: false, factory: FakeKokoroFactory(engine))
+
+    await model.start()
+    model.retryReplyVoice()
+
+    #expect(engine.prepares == 1)
   }
 
   @Test func wakePostsOnceWhenSignedIn() async throws {

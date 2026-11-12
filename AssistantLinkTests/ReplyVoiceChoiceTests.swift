@@ -162,11 +162,22 @@ struct ReplyVoiceChoiceTests {
     speaker.stop()
   }
 
-  @Test func theAppleVoiceSpeaksOnVersionsWhereCoreMLCrashes() {
-    let defaults = emptyDefaults()
-    defaults.set("kokoro", forKey: ReplyVoiceChoice.key)
+  @Test func kokoroSpeaksInCallsOnVersionsWhereCoreMLCrashes() {
+    let engine = FakeReplyEngine(isReady: true)
+    let factory = FakeKokoroFactory(engine)
+    let speaker = speaker(emptyDefaults(), safe: false, factory: factory)
+
+    speaker.prepareForCall()
+    speaker.speak("Hello.") {}
+
+    #expect(factory.made == 1)
+    #expect(engine.prepares >= 1)
+    #expect(engine.spoken == ["Hello."])
+  }
+
+  @Test func theAppleVoiceSpeaksWhenChosenOnVersionsWhereCoreMLCrashes() {
     let factory = FakeKokoroFactory(FakeReplyEngine(isReady: true))
-    let speaker = speaker(defaults, safe: false, factory: factory)
+    let speaker = speaker(appleDefaults(), safe: false, factory: factory)
 
     speaker.prepareForCall()
     speaker.speak(" ") {}

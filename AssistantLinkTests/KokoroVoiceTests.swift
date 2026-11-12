@@ -40,9 +40,49 @@ struct KokoroVoiceTests {
   @Test func preparingDoesNothingOnVersionsWhereCoreMLCrashes() {
     let factory = FakeKokoroFactory(FakeReplyEngine(isReady: false))
 
-    voice(defaults("kokoro"), safe: false, factory: factory).prepare()
+    voice(defaults(), safe: false, factory: factory).prepare()
 
     #expect(factory.made == 0)
+  }
+
+  @Test func preparingLeavesTheEngineOfACallAloneOnVersionsWhereCoreMLCrashes() {
+    let engine = FakeReplyEngine(isReady: false)
+    let voice = voice(defaults(), safe: false, factory: FakeKokoroFactory(engine))
+    _ = voice.usedEngine()
+
+    voice.prepare()
+
+    #expect(engine.prepares == 0)
+  }
+
+  @Test func callsUseKokoroOnVersionsWhereCoreMLCrashes() {
+    let engine = FakeReplyEngine(isReady: false)
+    let factory = FakeKokoroFactory(engine)
+    let voice = voice(defaults(), safe: false, factory: factory)
+
+    #expect(voice.usedEngine() === engine)
+    #expect(voice.usedEngine() === engine)
+    #expect(factory.made == 1)
+    #expect(engine.prepares == 0)
+  }
+
+  @Test func callsUseTheAppleVoiceWhenChosenOnVersionsWhereCoreMLCrashes() {
+    let factory = FakeKokoroFactory(FakeReplyEngine(isReady: false))
+    let voice = voice(defaults("apple"), safe: false, factory: factory)
+
+    #expect(voice.usedEngine() == nil)
+    voice.retry()
+    #expect(factory.made == 0)
+  }
+
+  @Test func retryingPreparesKokoroOnVersionsWhereCoreMLCrashes() {
+    let engine = FakeReplyEngine(isReady: false)
+    let factory = FakeKokoroFactory(engine)
+
+    voice(defaults(), safe: false, factory: factory).retry()
+
+    #expect(factory.made == 1)
+    #expect(engine.prepares == 1)
   }
 
   @Test func preparingDoesNothingForOtherLanguages() {
@@ -116,9 +156,20 @@ struct KokoroVoiceTests {
     defaults.set("apple", forKey: ReplyVoiceChoice.key)
 
     #expect(voice.status == nil)
-    let unsafe = self.voice(
-      self.defaults(), safe: false, factory: FakeKokoroFactory(FakeReplyEngine(isReady: true)))
-    #expect(unsafe.status == nil)
+    let other = self.voice(
+      self.defaults(), english: false, factory: FakeKokoroFactory(FakeReplyEngine(isReady: true)))
+    #expect(other.status == nil)
+  }
+
+  @Test func theStatusFollowsTheEngineOfACallOnVersionsWhereCoreMLCrashes() {
+    let engine = FakeReplyEngine(isReady: false)
+    let voice = voice(defaults(), safe: false, factory: FakeKokoroFactory(engine))
+    #expect(voice.status == .notStarted)
+
+    _ = voice.usedEngine()
+    engine.status = .downloading(fraction: 0.2)
+
+    #expect(voice.status == .downloading(fraction: 0.2))
   }
 
   @Test func theModelDownloadsOnCellular() {
