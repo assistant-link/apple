@@ -106,15 +106,25 @@ struct ComposerView: View {
   @ViewBuilder
   private var field: some View {
     switch dictation.phase {
-    case .preparing, .recording:
+    case .preparing, .recording, .finishing:
       DictationComposer(
-        phase: dictation.phase == .recording ? .recording(seconds: dictation.seconds) : .preparing,
+        phase: composerPhase,
         assistantName: assistant.name, confirmed: dictation.confirmed,
         provisional: dictation.provisional, levels: dictation.levels,
-        onSend: { send(dictation.send()) }, onStop: { dictation.stop() })
+        onSend: { dictation.send { send($0) } }, onStop: { dictation.stop() })
     case .idle, .editing:
       MessageComposer(
         draft: $draft, isInCall: isInCall, onSend: { send(takeDraft()) }, onDictate: startDictation)
+    }
+  }
+
+  private var composerPhase: DictationComposer.Phase {
+    switch dictation.phase {
+    case .preparing: .preparing
+    case .recording: .recording(seconds: dictation.seconds)
+    case .finishing: .finishing
+    case .idle: .idle
+    case .editing: .editing
     }
   }
 

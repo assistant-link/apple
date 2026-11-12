@@ -95,6 +95,7 @@ extension Timeline {
 private final class SilentVoice: SpeechListener, SpeechSpeaker, VoiceAudio, SilenceTimer {
   var vocabulary: [String] = []
   func start(_ handler: @escaping @MainActor (SpeechEvent) -> Void) throws {}
+  func finish() {}
   func stop() {}
   func speak(_ text: String, onFinish: @escaping @MainActor () -> Void) {}
   func requestPermission() async -> Bool { true }

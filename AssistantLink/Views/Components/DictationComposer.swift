@@ -8,6 +8,8 @@ struct DictationComposer: View {
     case idle
     case preparing
     case recording(seconds: Int)
+    /// The microphone stopped; the last words may still change.
+    case finishing
     /// Recording stopped; the words stay in the field to fix before sending.
     case editing
   }
@@ -43,6 +45,10 @@ struct DictationComposer: View {
         .padding(.vertical, 11)
       if phase == .editing {
         SendButton(action: onSend)
+      } else if phase == .finishing {
+        ProgressView()
+          .frame(width: 44, height: 44)
+          .accessibilityIdentifier("finishingDictation")
       } else {
         Button("Dictate", systemImage: "mic") {}
           .buttonStyle(.circle())
@@ -66,7 +72,7 @@ struct DictationComposer: View {
         Text("Preparing").foregroundStyle(.secondary)
       }
       .frame(maxWidth: .infinity, alignment: .leading)
-    case .editing, .recording:
+    case .editing, .recording, .finishing:
       transcript
     }
   }

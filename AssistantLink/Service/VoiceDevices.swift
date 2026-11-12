@@ -126,11 +126,15 @@ final class LiveSpeechListener: SpeechListener {
     task = recognizer.recognitionTask(with: request, resultHandler: Self.resultHandler(deliver))
   }
 
-  func stop() {
-    generation += 1
+  func finish() {
     engine.stop()
     engine.inputNode.removeTap(onBus: 0)
     request?.endAudio()
+  }
+
+  func stop() {
+    generation += 1
+    finish()
     task?.cancel()
     request = nil
     task = nil
