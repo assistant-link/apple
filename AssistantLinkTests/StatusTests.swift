@@ -5,9 +5,9 @@ import Testing
 @testable import AssistantLink
 
 struct StatusTests {
-  private func link(_ status: String) throws -> Link {
+  private func link(_ status: String) throws -> AssistantLink.Link {
     try APIClient.decoder.decode(
-      Link.self,
+      AssistantLink.Link.self,
       from: Data(
         json: #"{"id": "l-1", "label": null, "status": "\#(status)", "last_active_at": null}"#))
   }
@@ -33,13 +33,13 @@ struct StatusTests {
   }
 
   @Test func eachStatusHasItsLabelAndColor() {
-    #expect(StatusBadge(Link.Status.online).text == "Online")
-    #expect(StatusBadge(Link.Status.online).color == .green)
-    #expect(StatusBadge(Link.Status.idle).text == "Idle")
-    #expect(StatusBadge(Link.Status.idle).color == .yellow)
-    #expect(StatusBadge(Link.Status.offline).text == "Offline")
-    #expect(StatusBadge(Link.Status.offline).color == .gray)
-    #expect(StatusBadge(Link.Status.notPaired).text == "Not paired")
+    #expect(StatusBadge(AssistantLink.Link.Status.online).text == "Online")
+    #expect(StatusBadge(AssistantLink.Link.Status.online).color == .green)
+    #expect(StatusBadge(AssistantLink.Link.Status.idle).text == "Idle")
+    #expect(StatusBadge(AssistantLink.Link.Status.idle).color == .yellow)
+    #expect(StatusBadge(AssistantLink.Link.Status.offline).text == "Offline")
+    #expect(StatusBadge(AssistantLink.Link.Status.offline).color == .gray)
+    #expect(StatusBadge(AssistantLink.Link.Status.notPaired).text == "Not paired")
     #expect(StatusBadge(Assistant.Status.online).color == .green)
     #expect(StatusBadge(Assistant.Status.idle).text == "Idle")
     #expect(StatusBadge(Assistant.Status.idle).color == .yellow)
