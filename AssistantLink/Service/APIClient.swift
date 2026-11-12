@@ -187,7 +187,7 @@ struct APIClient: Sendable {
 }
 
 private struct AssistantsResponse: Decodable {
-  let assistants: [Assistant]
+  @LossyArray var assistants: [Assistant]
 }
 
 private struct AssistantResponse: Decodable {
@@ -199,7 +199,7 @@ private struct LinkResponse: Decodable {
 }
 
 private struct EventsResponse: Decodable {
-  let events: [Event]
+  @LossyArray var events: [Event]
   let hasMore: Bool
 
   enum CodingKeys: String, CodingKey {

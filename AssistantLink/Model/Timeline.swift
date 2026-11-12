@@ -101,7 +101,7 @@ struct Timeline: Equatable, Sendable {
     switch events.first(where: { $0.id == id })?.deliveryStatus {
     case .sent: return .sent
     case .delivered: return .delivered
-    case nil: return nil
+    case .unknown, nil: return nil
     }
   }
 

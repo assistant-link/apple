@@ -40,6 +40,8 @@ struct ListPreview: Equatable {
     case .textMessage:
       let text = event.deleted ? "This message was deleted" : event.text ?? ""
       self.init(text: event.sender == .user ? "You: \(text)" : text)
+    case .unknown:
+      self.init(text: "")
     }
   }
 
