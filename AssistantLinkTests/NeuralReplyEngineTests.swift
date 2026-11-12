@@ -8,16 +8,28 @@ actor FakeSynthesizer: SentenceSynthesizing {
   private var failing: Set<String> = []
   private var held: Set<String> = []
   private var prepareFails: Bool
+  private let reports: [ReplyVoiceStatus]
+  private var holdsPreparation = false
+  private(set) var prepares = 0
 
-  init(prepareFails: Bool = false) {
+  init(prepareFails: Bool = false, reports: [ReplyVoiceStatus] = []) {
     self.prepareFails = prepareFails
+    self.reports = reports
   }
 
   func fail(on sentence: String) { failing.insert(sentence) }
   func hold(_ sentence: String) { held.insert(sentence) }
   func release(_ sentence: String) { held.remove(sentence) }
+  func holdPreparation() { holdsPreparation = true }
+  func releasePreparation(failing: Bool = false) {
+    prepareFails = failing
+    holdsPreparation = false
+  }
 
-  func prepare() async throws {
+  func prepare(progress: @escaping @Sendable (ReplyVoiceStatus) -> Void) async throws {
+    prepares += 1
+    for report in reports { progress(report) }
+    while holdsPreparation { try await Task.sleep(for: .milliseconds(5)) }
     if prepareFails { throw FakeFailure() }
   }
 
@@ -84,6 +96,70 @@ struct NeuralReplyEngineTests {
     await settle()
 
     #expect(!engine.isReady)
+    #expect(engine.status == .failed)
+  }
+
+  @Test func thePreparationReportsItsProgressUntilReady() async {
+    let synthesizer = FakeSynthesizer(reports: [
+      .downloading(fraction: nil), .downloading(fraction: 0.25), .preparing,
+    ])
+    await synthesizer.holdPreparation()
+    let engine = NeuralReplyEngine(synthesizer: synthesizer, player: FakePlayer())
+    #expect(engine.status == .notStarted)
+
+    engine.prepare()
+    await settle()
+    #expect(engine.status == .preparing)
+    #expect(!engine.isReady)
+
+    await synthesizer.releasePreparation()
+    await settle()
+    #expect(engine.status == .ready)
+  }
+
+  @Test func theDownloadProgressShowsBeforeTheModelIsLoaded() async {
+    let synthesizer = FakeSynthesizer(reports: [.downloading(fraction: 0.25)])
+    await synthesizer.holdPreparation()
+    let engine = NeuralReplyEngine(synthesizer: synthesizer, player: FakePlayer())
+
+    engine.prepare()
+    await settle()
+
+    #expect(engine.status == .downloading(fraction: 0.25))
+    await synthesizer.releasePreparation()
+  }
+
+  @Test func preparingAgainWhileOnTheWayStartsNoSecondDownload() async {
+    let synthesizer = FakeSynthesizer()
+    await synthesizer.holdPreparation()
+    let engine = NeuralReplyEngine(synthesizer: synthesizer, player: FakePlayer())
+
+    engine.prepare()
+    await settle()
+    engine.prepare()
+    engine.prepare()
+    await synthesizer.releasePreparation()
+    await settle()
+    engine.prepare()
+    await settle()
+
+    #expect(await synthesizer.prepares == 1)
+    #expect(engine.isReady)
+  }
+
+  @Test func aFailedPreparationIsTriedAgain() async {
+    let synthesizer = FakeSynthesizer(prepareFails: true)
+    let engine = NeuralReplyEngine(synthesizer: synthesizer, player: FakePlayer())
+    engine.prepare()
+    await settle()
+    #expect(engine.status == .failed)
+
+    await synthesizer.releasePreparation()
+    engine.prepare()
+    await settle()
+
+    #expect(await synthesizer.prepares == 2)
+    #expect(engine.status == .ready)
   }
 
   @Test func eachSentenceIsPlayedInOrderAndTheEndComesOnce() async {
@@ -149,6 +225,7 @@ struct NeuralReplyEngineTests {
     #expect(results == [.failed])
     #expect(player.clips == 0)
     #expect(!engine.isReady)
+    #expect(engine.status == .failed)
   }
 
   @Test func aSentenceThatFailsAfterSpeechStartedIsSkipped() async {
@@ -183,6 +260,13 @@ struct NeuralReplyEngineTests {
     #expect(KokoroSynthesizer.runsSafely(on: version(26, 3)))
     #expect(!KokoroSynthesizer.runsSafely(on: version(26, 4)))
     #expect(!KokoroSynthesizer.runsSafely(on: version(27, 0)))
+  }
+
+  @Test func theDownloadFractionCoversTheWholeDownload() {
+    #expect(KokoroSynthesizer.downloadFraction(reported: 0) == 0)
+    #expect(KokoroSynthesizer.downloadFraction(reported: 0.25) == 0.5)
+    #expect(KokoroSynthesizer.downloadFraction(reported: 0.5) == 1)
+    #expect(KokoroSynthesizer.downloadFraction(reported: 0.8) == 1)
   }
 }
 

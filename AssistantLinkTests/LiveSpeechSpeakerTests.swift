@@ -49,14 +49,14 @@ struct LiveSpeechSpeakerTests {
 
 @MainActor
 final class FakeReplyEngine: ReplySpeechEngine {
-  var isReady: Bool
+  var status: ReplyVoiceStatus
   private(set) var prepares = 0
   private(set) var spoken: [String] = []
   private(set) var stops = 0
   private var onEnd: (@MainActor (ReplySpeechResult) -> Void)?
 
   init(isReady: Bool) {
-    self.isReady = isReady
+    status = isReady ? .ready : .notStarted
   }
 
   func prepare() { prepares += 1 }
@@ -72,6 +72,20 @@ final class FakeReplyEngine: ReplySpeechEngine {
   }
 
   func end(_ result: ReplySpeechResult) { onEnd?(result) }
+}
+
+/// Hands out the engines in order, as Kokoro is asked for.
+@MainActor
+final class FakeKokoroFactory {
+  let engines: [FakeReplyEngine]
+  private(set) var made = 0
+
+  init(_ engines: FakeReplyEngine...) { self.engines = engines }
+
+  func make() -> any ReplySpeechEngine {
+    defer { made += 1 }
+    return engines[min(made, engines.count - 1)]
+  }
 }
 
 @MainActor
