@@ -69,12 +69,25 @@ struct NeuralReplyEngineTests {
     try? await Task.sleep(for: .milliseconds(100))
   }
 
+  /// Polls instead of sleeping a fixed time, which a busy CI runner can outlast; the expectations
+  /// after it still fail when the condition never comes.
+  private func waitUntil(_ condition: () async -> Bool) async {
+    let deadline = ContinuousClock.now + .seconds(10)
+    while await !condition(), ContinuousClock.now < deadline {
+      try? await Task.sleep(for: .milliseconds(5))
+    }
+  }
+
+  private func waitForPreparation(of engine: NeuralReplyEngine) async {
+    await waitUntil { engine.status == .ready || engine.status == .failed }
+  }
+
   private func ready(_ synthesizer: FakeSynthesizer, _ player: FakePlayer) async
     -> NeuralReplyEngine
   {
     let engine = NeuralReplyEngine(synthesizer: synthesizer, player: player)
     engine.prepare()
-    await settle()
+    await waitForPreparation(of: engine)
     return engine
   }
 
@@ -83,7 +96,7 @@ struct NeuralReplyEngineTests {
     #expect(!engine.isReady)
 
     engine.prepare()
-    await settle()
+    await waitForPreparation(of: engine)
 
     #expect(engine.isReady)
   }
@@ -93,7 +106,7 @@ struct NeuralReplyEngineTests {
       synthesizer: FakeSynthesizer(prepareFails: true), player: FakePlayer())
 
     engine.prepare()
-    await settle()
+    await waitForPreparation(of: engine)
 
     #expect(!engine.isReady)
     #expect(engine.status == .failed)
@@ -113,7 +126,7 @@ struct NeuralReplyEngineTests {
     #expect(!engine.isReady)
 
     await synthesizer.releasePreparation()
-    await settle()
+    await waitForPreparation(of: engine)
     #expect(engine.status == .ready)
   }
 
@@ -123,7 +136,7 @@ struct NeuralReplyEngineTests {
     let engine = NeuralReplyEngine(synthesizer: synthesizer, player: FakePlayer())
 
     engine.prepare()
-    await settle()
+    await waitUntil { engine.status == .downloading(fraction: 0.25) }
 
     #expect(engine.status == .downloading(fraction: 0.25))
     await synthesizer.releasePreparation()
@@ -139,7 +152,7 @@ struct NeuralReplyEngineTests {
     engine.prepare()
     engine.prepare()
     await synthesizer.releasePreparation()
-    await settle()
+    await waitForPreparation(of: engine)
     engine.prepare()
     await settle()
 
@@ -151,12 +164,12 @@ struct NeuralReplyEngineTests {
     let synthesizer = FakeSynthesizer(prepareFails: true)
     let engine = NeuralReplyEngine(synthesizer: synthesizer, player: FakePlayer())
     engine.prepare()
-    await settle()
+    await waitForPreparation(of: engine)
     #expect(engine.status == .failed)
 
     await synthesizer.releasePreparation()
     engine.prepare()
-    await settle()
+    await waitForPreparation(of: engine)
 
     #expect(await synthesizer.prepares == 2)
     #expect(engine.status == .ready)
@@ -169,7 +182,7 @@ struct NeuralReplyEngineTests {
     var results: [ReplySpeechResult] = []
 
     engine.speak("One. Two! Three?") { results.append($0) }
-    await settle()
+    await waitUntil { player.clips == 3 }
     #expect(await synthesizer.synthesized == ["One.", "Two!", "Three?"])
     #expect(player.clips == 3)
     #expect(results.isEmpty)
@@ -186,6 +199,7 @@ struct NeuralReplyEngineTests {
     let engine = await ready(synthesizer, player)
 
     engine.speak("One. Two.") { _ in }
+    await waitUntil { player.clips == 1 }
     await settle()
 
     #expect(player.clips == 1)
@@ -199,7 +213,7 @@ struct NeuralReplyEngineTests {
     let engine = await ready(synthesizer, player)
     var results: [ReplySpeechResult] = []
     engine.speak("One. Two. Three.") { results.append($0) }
-    await settle()
+    await waitUntil { player.clips == 1 }
 
     engine.stop()
     await synthesizer.release("Two.")
@@ -220,7 +234,7 @@ struct NeuralReplyEngineTests {
     var results: [ReplySpeechResult] = []
 
     engine.speak("One. Two.") { results.append($0) }
-    await settle()
+    await waitUntil { !results.isEmpty }
 
     #expect(results == [.failed])
     #expect(player.clips == 0)
@@ -236,7 +250,7 @@ struct NeuralReplyEngineTests {
     var results: [ReplySpeechResult] = []
 
     engine.speak("One. Two. Three.") { results.append($0) }
-    await settle()
+    await waitUntil { player.clips == 2 }
     player.finishPlaying()
 
     #expect(player.clips == 2)
