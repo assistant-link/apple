@@ -103,20 +103,36 @@ struct UnreadTests {
     marks.markRead([incoming("e1")], assistantID: assistantID)
     var visit = visit([incoming("e1"), incoming("e2")], marks: marks)
 
-    #expect(visit.leave())
+    let left = visit.leave()
+    #expect(left)
     marks.markRead([incoming("e1"), incoming("e2")], assistantID: assistantID)
 
     #expect(self.visit([incoming("e1"), incoming("e2")], marks: marks).dividerRowID == nil)
   }
 
-  @Test func onlyAnOpenVisitLeaves() {
+  @Test func onlyAPlacedVisitLeaves() {
     var visit = ConversationVisit()
 
-    #expect(!visit.leave())
+    let leftUnopened = visit.leave()
+    #expect(!leftUnopened)
     visit.open()
-    #expect(visit.leave())
-    #expect(!visit.leave())
+    visit.place(in: [incoming("e1")], lastReadID: nil)
+    let left = visit.leave()
+    #expect(left)
+    let leftTwice = visit.leave()
+    #expect(!leftTwice)
     #expect(visit.dividerRowID == nil)
+  }
+
+  @Test func aVisitWhoseLoadFailedPlacesNothingAndMarksNothingRead() {
+    var visit = ConversationVisit()
+    visit.open()
+
+    // The fetch failed, so the visit was never placed.
+    let left = visit.leave()
+
+    #expect(visit.dividerRowID == nil)
+    #expect(!left)
   }
 
   @Test func aClosedVisitPlacesNoDivider() {
@@ -134,7 +150,8 @@ struct UnreadTests {
     #expect(visit.dividerRowID == "e2")
 
     // Backgrounding with e2 on screen.
-    #expect(visit.leave())
+    let left = visit.leave()
+    #expect(left)
     marks.markRead([incoming("e1"), incoming("e2")], assistantID: assistantID)
     // Coming back once e3 and e4 arrived.
     visit.open()
@@ -150,7 +167,8 @@ struct UnreadTests {
     marks.markRead([incoming("e1")], assistantID: assistantID)
     var visit = visit([incoming("e1"), incoming("e2")], marks: marks)
 
-    #expect(visit.leave())
+    let left = visit.leave()
+    #expect(left)
     marks.markRead([incoming("e1"), incoming("e2")], assistantID: assistantID)
     visit.open()
     visit.place(
