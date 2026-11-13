@@ -215,10 +215,10 @@ struct ConversationView: View {
     }
   }
 
-  /// Places the divider once the latest events have loaded, from those the fetch could get.
+  /// Places the divider once the latest events have loaded. A failed fetch leaves it unplaced.
   private func open(_ id: Assistant.ID) async {
     visit.open()
-    try? await model.openConversation(assistantID: id)
+    guard (try? await model.openConversation(assistantID: id)) != nil else { return }
     visit.place(
       in: model.timelines[id]?.events ?? [], lastReadID: readMarks.lastReadID(assistantID: id))
   }

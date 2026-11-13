@@ -36,8 +36,9 @@ struct ConversationVisit: Equatable {
     isOpen = true
   }
 
-  /// Only the first call of a visit places the divider, so messages arriving while the user
-  /// looks get none. A conversation never read on this device has no divider.
+  /// Called once the latest events have been fetched, never with stale cached ones. Only the
+  /// first call of a visit places the divider, so messages arriving while the user looks get
+  /// none. A conversation never read on this device has no divider.
   mutating func place(in events: [Event], lastReadID: String?) {
     guard isOpen, !isPlaced else { return }
     isPlaced = true
@@ -48,10 +49,11 @@ struct ConversationVisit: Equatable {
     dividerRowID = unread.map(Timeline.rowID(of:))
   }
 
-  /// Returns whether the visit was open, in which case what it showed now counts as read.
+  /// Returns whether the visit was placed, in which case what it showed now counts as read.
+  /// Unplaced, its unread messages were never set apart, so they stay unread for the next visit.
   mutating func leave() -> Bool {
     defer { self = ConversationVisit() }
-    return isOpen
+    return isPlaced
   }
 }
 
