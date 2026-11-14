@@ -13,6 +13,10 @@ struct ConversationView: View {
   @State private var isVisible = false
   @Environment(\.scenePhase) private var scenePhase
   var readMarks = ReadMarks()
+  /// Previews cannot fetch, so a visit placed in advance stands in for the one `open` places.
+  var previewVisit: ConversationVisit?
+
+  private var dividerRowID: String? { (previewVisit ?? visit).dividerRowID }
 
   var body: some View {
     if let assistant = model.assistant(id: assistantID) {
@@ -153,7 +157,7 @@ struct ConversationView: View {
           VStack(spacing: 12) {
             switch row.content {
             case .event(let event):
-              if row.id == visit.dividerRowID {
+              if row.id == dividerRowID {
                 UnreadDivider()
                 TimeCaptionView(date: event.createdAt)
               } else if row.showsTimeCaption {
@@ -177,7 +181,7 @@ struct ConversationView: View {
     }
     .defaultScrollAnchor(.bottom)
     .scrollPosition($position)
-    .onChange(of: [content.lastRowID, visit.dividerRowID]) { old, new in
+    .onChange(of: [content.lastRowID, dividerRowID]) { old, new in
       switch TimelineScroll(lastRowID: (old[0], new[0]), dividerRowID: (old[1], new[1])) {
       case .keep: break
       case .bottom(let animated):
@@ -285,9 +289,13 @@ private struct SystemEventView: View {
 #Preview("Unread") {
   let id = Assistant.samples[0].id
   let readMarks = ReadMarks(defaults: UserDefaults(suiteName: "UnreadPreview")!)
-  readMarks.markRead(Array(Timeline.designMock.events.prefix(6)), assistantID: id)
+  let events = Timeline.designMock.events
+  readMarks.markRead(Array(events.prefix(6)), assistantID: id)
+  var visit = ConversationVisit()
+  visit.open()
+  visit.place(in: events, lastReadID: readMarks.lastReadID(assistantID: id))
   return NavigationStack {
-    ConversationView(assistantID: id, readMarks: readMarks)
+    ConversationView(assistantID: id, readMarks: readMarks, previewVisit: visit)
   }
   .environment(AppModel.preview(Assistant.samples, timelines: [id: .designMock]))
 }
