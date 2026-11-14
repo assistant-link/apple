@@ -117,6 +117,7 @@ struct ComponentCatalog: View {
         DeliveryCaption(caption: .notDelivered)
       }
       .frame(maxWidth: .infinity, alignment: .trailing)
+      UnreadDivider()
       TimeCaptionView(date: .now)
       VoiceChatCaption(seconds: 15)
     }

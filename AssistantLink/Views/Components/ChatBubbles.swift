@@ -81,6 +81,26 @@ struct TimeCaptionView: View {
   }
 }
 
+/// Above the first message that arrived since the user last read the conversation.
+struct UnreadDivider: View {
+  var body: some View {
+    HStack(spacing: 12) {
+      line
+      Text("NEW")
+        .font(.footnote.weight(.semibold))
+      line
+    }
+    .foregroundStyle(.tint)
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel("New messages")
+    .accessibilityIdentifier("unreadDivider")
+  }
+
+  private var line: some View {
+    Rectangle().frame(height: 1)
+  }
+}
+
 /// The date, then that a Link was created and its name.
 struct SystemEventCaption: View {
   let date: Date

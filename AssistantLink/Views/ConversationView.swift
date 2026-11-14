@@ -9,6 +9,15 @@ struct ConversationView: View {
   @State private var position = ScrollPosition()
   @State private var isBannerHidden = false
   @State private var startFailure: VoiceCall.StartFailure?
+  @State private var visit = ConversationVisit()
+  @State private var isVisible = false
+  @Environment(\.scenePhase) private var scenePhase
+  var readMarks = ReadMarks()
+  /// Previews cannot fetch, so a visit placed in advance stands in for the one `open` places.
+  var previewVisit: ConversationVisit?
+
+  private var dividerRowID: String? { (previewVisit ?? visit).dividerRowID }
+
   var body: some View {
     if let assistant = model.assistant(id: assistantID) {
       let call = CallPresentation(model.voiceCall, assistantID: assistant.id)
@@ -148,7 +157,12 @@ struct ConversationView: View {
           VStack(spacing: 12) {
             switch row.content {
             case .event(let event):
-              if row.showsTimeCaption { TimeCaptionView(date: event.createdAt) }
+              if row.id == dividerRowID {
+                UnreadDivider()
+                TimeCaptionView(date: event.createdAt)
+              } else if row.showsTimeCaption {
+                TimeCaptionView(date: event.createdAt)
+              }
               eventView(event, in: assistant, timeline: content)
             case .outgoing(let message):
               if row.showsTimeCaption { TimeCaptionView(date: message.createdAt) }
@@ -167,9 +181,13 @@ struct ConversationView: View {
     }
     .defaultScrollAnchor(.bottom)
     .scrollPosition($position)
-    .onChange(of: content.lastRowID) { previous, _ in
-      // The first load lands at the bottom without a visible scroll.
-      withAnimation(previous == nil ? nil : .default) { position.scrollTo(edge: .bottom) }
+    .onChange(of: [content.lastRowID, dividerRowID]) { old, new in
+      switch TimelineScroll(lastRowID: (old[0], new[0]), dividerRowID: (old[1], new[1])) {
+      case .keep: break
+      case .bottom(let animated):
+        withAnimation(animated ? .default : nil) { position.scrollTo(edge: .bottom) }
+      case .divider(let rowID): position.scrollTo(id: rowID, anchor: .top)
+      }
     }
     .safeAreaInset(edge: .bottom) {
       if assistant.hasPairedLink {
@@ -181,10 +199,38 @@ struct ConversationView: View {
       onTryAgain: { message in Task { await model.retry(message) } },
       onDelete: { message in model.cancel(message) }
     )
-    .task { try? await model.openConversation(assistantID: assistant.id) }
+    .task { await open(assistant.id) }
+    .onAppear { isVisible = true }
+    .onDisappear {
+      isVisible = false
+      leave(assistant.id)
+    }
+    .onChange(of: scenePhase) { old, new in
+      guard isVisible else { return }
+      if new == .background {
+        leave(assistant.id)
+      } else if old == .background {
+        Task { await open(assistant.id) }
+      }
+    }
     .refreshable {
       try? await model.refresh()
       try? await model.openConversation(assistantID: assistant.id)
+    }
+  }
+
+  /// Places the divider once the latest events have loaded. A failed fetch leaves it unplaced.
+  private func open(_ id: Assistant.ID) async {
+    visit.open()
+    guard (try? await model.openConversation(assistantID: id)) != nil else { return }
+    visit.place(
+      in: model.timelines[id]?.events ?? [], lastReadID: readMarks.lastReadID(assistantID: id))
+  }
+
+  /// Leaving the screen or the app marks everything the conversation showed as read.
+  private func leave(_ id: Assistant.ID) {
+    if visit.leave() {
+      readMarks.markRead(model.timelines[id]?.events ?? [], assistantID: id)
     }
   }
 
@@ -238,6 +284,20 @@ private struct SystemEventView: View {
     ConversationView(assistantID: Assistant.samples[0].id)
   }
   .environment(AppModel.preview(Assistant.samples, timelines: Assistant.sampleTimelines))
+}
+
+#Preview("Unread") {
+  let id = Assistant.samples[0].id
+  let readMarks = ReadMarks(defaults: UserDefaults(suiteName: "UnreadPreview")!)
+  let events = Timeline.designMock.events
+  readMarks.markRead(Array(events.prefix(6)), assistantID: id)
+  var visit = ConversationVisit()
+  visit.open()
+  visit.place(in: events, lastReadID: readMarks.lastReadID(assistantID: id))
+  return NavigationStack {
+    ConversationView(assistantID: id, readMarks: readMarks, previewVisit: visit)
+  }
+  .environment(AppModel.preview(Assistant.samples, timelines: [id: .designMock]))
 }
 
 #Preview("First pairing") {
