@@ -836,7 +836,7 @@ struct VoiceCallUtteranceTests {
     #expect(setup.sent == ["Remind me to call David."])
   }
 
-  @Test func aChangedWordPutsOffTheEnd() async {
+  @Test func aChangedWordPutsOffTheEndAndReplacesTheOldOne() async {
     let setup = Setup()
     await setup.start()
 
@@ -844,6 +844,51 @@ struct VoiceCallUtteranceTests {
     setup.listener.hear(.partial("talking in the Grok"))
 
     #expect(setup.silence.restarts == 2)
+    #expect(setup.call.heard == "talking in the Grok")
+  }
+
+  @Test func theSilenceIsLongEnoughForAPauseWithinAThought() {
+    #expect(VoiceCall.endOfUtterance == .milliseconds(2500))
+  }
+
+  @Test func wordsBeforeAPauseStayWhenTheRecognizerStartsOver() async {
+    let setup = Setup()
+    await setup.start()
+
+    setup.listener.hear(.partial("remind me to call David"))
+    setup.listener.hear(.partial("tomorrow"))
+    setup.listener.hear(.partial("tomorrow at noon"))
+
+    #expect(setup.call.heard == "remind me to call David tomorrow at noon")
+    #expect(setup.silence.restarts == 3)
+
+    setup.silence.fire()
+    setup.finalResult.fire()
+
+    #expect(setup.sent == ["remind me to call David tomorrow at noon"])
+  }
+
+  @Test func theFinalResultRevisesOnlyTheWordsAfterThePause() async {
+    let setup = Setup()
+    await setup.start()
+
+    setup.listener.hear(.partial("remind me"))
+    setup.listener.hear(.partial("to call David"))
+    setup.silence.fire()
+    setup.listener.hear(.final("to call David."))
+
+    #expect(setup.sent == ["remind me to call David."])
+  }
+
+  @Test func theNextUtteranceStartsWithoutTheWordsOfTheLastOne() async {
+    let setup = Setup()
+    await setup.start()
+    setup.listener.hear(.partial("remind me"))
+    setup.listener.hear(.final("Remind me."))
+
+    setup.listener.hear(.partial("thanks"))
+
+    #expect(setup.call.heard == "thanks")
   }
 
   @Test func aFinalResultWinsOverThePendingSilence() async {
@@ -1035,17 +1080,6 @@ struct VoiceCallUtteranceTests {
     #expect(setup.sent.isEmpty)
   }
 
-  @Test func aReplySendsTheUtteranceInProgressBeforeSpeaking() async {
-    let setup = Setup()
-    await setup.start()
-
-    setup.listener.hear(.partial("Hello"))
-    setup.call.receive(setup.assistantMessage("e-1", "Hi"))
-    setup.silence.fire()
-
-    #expect(setup.sent == ["Hello"])
-    #expect(setup.speaker.spoken == ["Hi"])
-  }
 
   @Test func endingSendsTheUtteranceInProgressBeforeTheEnd() async {
     let setup = Setup()
@@ -1144,6 +1178,130 @@ struct VoiceCallSpeechQueueTests {
 }
 
 @MainActor
+struct VoiceCallTurnTakingTests {
+  @Test func aReplyWhileTheUserIsTalkingWaitsForTheEndOfTheTurn() async {
+    let setup = Setup()
+    await setup.start()
+    setup.listener.hear(.partial("Hello"))
+
+    setup.call.receive(setup.assistantMessage("e-1", "Hi"))
+
+    #expect(setup.speaker.spoken.isEmpty)
+    #expect(setup.call.state == .listening)
+    #expect(setup.listener.isListening)
+    #expect(setup.sent.isEmpty)
+
+    setup.listener.hear(.partial("Hello there"))
+    setup.silence.fire()
+    setup.finalResult.fire()
+
+    #expect(setup.sent == ["Hello there"])
+    #expect(setup.speaker.spoken == ["Hi"])
+    #expect(setup.call.state == .speaking)
+    #expect(!setup.listener.isListening)
+
+    setup.speaker.finish()
+
+    #expect(setup.call.state == .listening)
+    #expect(setup.listener.isListening)
+  }
+
+  @Test func aReplyWhileWaitingForTheFinalResultWaitsForIt() async {
+    let setup = Setup()
+    await setup.start()
+    setup.listener.hear(.partial("Hello"))
+    setup.silence.fire()
+
+    setup.call.receive(setup.assistantMessage("e-1", "Hi"))
+    #expect(setup.speaker.spoken.isEmpty)
+
+    setup.listener.hear(.final("Hello."))
+
+    #expect(setup.sent == ["Hello."])
+    #expect(setup.speaker.spoken == ["Hi"])
+  }
+
+  @Test func aReplyAfterTheUserStartedTheNextTurnWaits() async {
+    let setup = Setup()
+    await setup.start()
+    setup.call.receive(setup.assistantMessage("e-1", "One"))
+    setup.speaker.finish()
+    setup.listener.hear(.partial("wait"))
+
+    setup.call.receive(setup.assistantMessage("e-2", "Two"))
+    #expect(setup.speaker.spoken == ["One"])
+
+    setup.listener.hear(.final("Wait, one more thing."))
+
+    #expect(setup.speaker.spoken == ["One", "Two"])
+  }
+
+  @Test func heldRepliesStayHeldWhileTheUserKeepsTalkingAndPlayInOrder() async {
+    let setup = Setup()
+    await setup.start()
+    setup.listener.hear(.partial("first"))
+    setup.call.receive(setup.assistantMessage("e-1", "One"))
+    setup.listener.hear(.partial("first and"))
+    setup.call.receive(setup.assistantMessage("e-2", "Two"))
+    setup.listener.hear(.partial("first and second"))
+
+    #expect(setup.speaker.spoken.isEmpty)
+
+    setup.silence.fire()
+    setup.finalResult.fire()
+    #expect(setup.speaker.spoken == ["One"])
+    setup.speaker.finish()
+    #expect(setup.speaker.spoken == ["One", "Two"])
+    setup.speaker.finish()
+
+    #expect(setup.call.state == .listening)
+    #expect(setup.listener.isListening)
+  }
+
+  @Test func silenceBeforeAnyWordsDoesNotHoldAReply() async {
+    let setup = Setup()
+    await setup.start()
+    setup.listener.hear(.partial("  "))
+
+    setup.call.receive(setup.assistantMessage("e-1", "Hi"))
+
+    #expect(setup.speaker.spoken == ["Hi"])
+  }
+
+  @Test(arguments: ["mute", "failure", "route"])
+  func aHeldReplyPlaysWhenTheTurnIsCutShortBy(cause: String) async {
+    let setup = Setup()
+    await setup.start()
+    setup.listener.hear(.partial("Hello"))
+    setup.call.receive(setup.assistantMessage("e-1", "Hi"))
+
+    switch cause {
+    case "mute": setup.call.setMuted(true)
+    case "failure": setup.listener.hear(.failed)
+    default: setup.audio.changeRoute()
+    }
+
+    #expect(setup.sent == ["Hello"])
+    #expect(setup.speaker.spoken == ["Hi"])
+    #expect(setup.call.state == .speaking)
+    #expect(!setup.listener.isListening)
+  }
+
+  @Test func mutingWhileSpeakingDoesNotSkipToTheNextReply() async {
+    let setup = Setup()
+    await setup.start()
+    setup.call.receive(setup.assistantMessage("e-1", "One"))
+    setup.call.receive(setup.assistantMessage("e-2", "Two"))
+
+    setup.call.setMuted(true)
+
+    #expect(setup.speaker.spoken == ["One"])
+    setup.speaker.finish()
+    #expect(setup.speaker.spoken == ["One", "Two"])
+  }
+}
+
+@MainActor
 struct VoiceCallTranscriptTests {
   @Test func aCallStartsWithAnEmptyTranscriptAndACountingClock() async {
     let setup = Setup()
@@ -1168,14 +1326,16 @@ struct VoiceCallTranscriptTests {
     #expect(setup.call.transcript.map(\.isFromUser) == [true])
   }
 
-  @Test func aReplyJoinsTheTranscriptAfterTheWordsItCutShort() async {
+  @Test func aReplyJoinsTheTranscriptAfterTheTurnItWaitedFor() async {
     let setup = Setup()
     await setup.start()
     setup.listener.hear(.partial("And also"))
 
     setup.call.receive(setup.assistantMessage("e-1", "Done."))
+    #expect(setup.call.transcript.isEmpty)
+    setup.listener.hear(.final("And also milk."))
 
-    #expect(setup.call.transcript.map(\.text) == ["And also", "Done."])
+    #expect(setup.call.transcript.map(\.text) == ["And also milk.", "Done."])
     #expect(setup.call.transcript.map(\.isFromUser) == [true, false])
     #expect(setup.call.transcript.last?.id == "e-1")
   }

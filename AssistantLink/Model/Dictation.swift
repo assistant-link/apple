@@ -51,7 +51,7 @@ final class Dictation {
   }
 
   /// Everything heard so far, as it would read in the field.
-  var text: String { Self.join(confirmed, provisional) }
+  var text: String { SpeechSegments.join(confirmed, provisional) }
 
   /// Starts recording after `existing`, the text already in the field.
   func start(after existing: String = "", assistantName: String? = nil) async {
@@ -199,10 +199,10 @@ final class Dictation {
     case .partial(let words):
       // After a pause the recognizer may start a new segment without a final result; its words
       // no longer include the earlier ones.
-      if startsNewSegment(words) { confirmed = text }
+      if SpeechSegments.startsNew(words, after: provisional) { confirmed = text }
       provisional = words
     case .final(let words):
-      confirmed = Self.join(confirmed, words)
+      confirmed = SpeechSegments.join(confirmed, words)
       provisional = ""
       if phase == .finishing { settle() }
     case .stopped where phase == .finishing, .failed where phase == .finishing:
@@ -225,31 +225,5 @@ final class Dictation {
   private func endRecording() {
     stop()
     settle()
-  }
-
-  /// A revision of the partial result keeps its first word, or at least the words after it, which
-  /// the recognizer may rewrite ("two friends" to "to friends later"). Otherwise it started over.
-  /// A one-word partial only counts as started over when the next one is longer. Punctuation and
-  /// case do not count, as a revision often adds them.
-  private func startsNewSegment(_ words: String) -> Bool {
-    let old = provisional.split(whereSeparator: \.isWhitespace).map(Self.letters)
-    let new = words.split(whereSeparator: \.isWhitespace).map(Self.letters)
-    guard let oldFirst = old.first, let newFirst = new.first, oldFirst != newFirst else {
-      return false
-    }
-    let oldTail = old.dropFirst()
-    let newTail = new.dropFirst()
-    if oldTail.isEmpty { return !newTail.isEmpty }
-    return !newTail.starts(with: oldTail)
-  }
-
-  private static func letters(_ word: Substring) -> String {
-    String(word.filter { $0.isLetter || $0.isNumber }).lowercased()
-  }
-
-  private static func join(_ first: String, _ second: String) -> String {
-    let second = second.trimmingCharacters(in: .whitespacesAndNewlines)
-    if first.isEmpty { return second }
-    return second.isEmpty ? first : first + " " + second
   }
 }

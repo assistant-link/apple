@@ -13,6 +13,36 @@ enum SpeechEvent: Equatable, Sendable {
   case level(Float)
 }
 
+/// Joins the recognizer's results into one text: after a pause it may start a new segment whose
+/// words no longer include the earlier ones.
+enum SpeechSegments {
+  /// A revision of the partial result keeps its first word, or at least the words after it, which
+  /// the recognizer may rewrite ("two friends" to "to friends later"). Otherwise it started over.
+  /// A one-word partial only counts as started over when the next one is longer. Punctuation and
+  /// case do not count, as a revision often adds them.
+  static func startsNew(_ words: String, after provisional: String) -> Bool {
+    let old = provisional.split(whereSeparator: \.isWhitespace).map(letters)
+    let new = words.split(whereSeparator: \.isWhitespace).map(letters)
+    guard let oldFirst = old.first, let newFirst = new.first, oldFirst != newFirst else {
+      return false
+    }
+    let oldTail = old.dropFirst()
+    let newTail = new.dropFirst()
+    if oldTail.isEmpty { return !newTail.isEmpty }
+    return !newTail.starts(with: oldTail)
+  }
+
+  static func join(_ first: String, _ second: String) -> String {
+    let second = second.trimmingCharacters(in: .whitespacesAndNewlines)
+    if first.isEmpty { return second }
+    return second.isEmpty ? first : first + " " + second
+  }
+
+  private static func letters(_ word: Substring) -> String {
+    String(word.filter { $0.isLetter || $0.isNumber }).lowercased()
+  }
+}
+
 @MainActor
 protocol SpeechListener: AnyObject {
   /// Words the recognizer should expect, such as names it would otherwise mishear.
@@ -107,8 +137,9 @@ enum VoiceChat {
 
 /// A hands-free conversation with one Assistant: it listens for the whole call, sends what the
 /// user says, and speaks the Assistant's replies. It never listens while speaking, so it can't
-/// hear itself. Speech is sent whether or not the Assistant is online: the service keeps it until
-/// the Assistant connects.
+/// hear itself, and it never speaks while the user is talking: a reply waits for the end of their
+/// turn. Speech is sent whether or not the Assistant is online: the service keeps it until the
+/// Assistant connects.
 @MainActor
 @Observable
 final class VoiceCall {
@@ -129,7 +160,7 @@ final class VoiceCall {
   /// Listening gave up after repeated recognizer failures and hears nothing until it tries again.
   private(set) var listeningFailed = false
   /// The words of the utterance in progress.
-  private(set) var heard = ""
+  var heard: String { SpeechSegments.join(earlierSegments, segment) }
   /// What was said in this call: the user's sent utterances and the replies spoken so far.
   private(set) var transcript: [TranscriptLine] = []
   private(set) var startedAt: Date?
@@ -145,9 +176,10 @@ final class VoiceCall {
 
   static let maxFailures = 3
 
-  /// How long after the last new word an utterance ends. Pauses within a sentence often reach a
-  /// second, which 1.2 s still split; much longer and the reply feels slow to start.
-  static let endOfUtterance = Duration.milliseconds(1500)
+  /// How long after the last new word an utterance ends. Pauses between the sentences of one
+  /// thought often reach two seconds, which 1.5 s still split; much longer and the reply feels
+  /// slow to start.
+  static let endOfUtterance = Duration.milliseconds(2500)
 
   /// How long to wait for the final result after the microphone stops. The recognizer usually
   /// gives it within a second; without it, the last partial result is taken.
@@ -185,6 +217,10 @@ final class VoiceCall {
   /// The utterance ended and the recognizer is finishing it.
   private var isFinishing = false
   private var failures = 0
+  /// The utterance in progress before the recognizer last started over.
+  private var earlierSegments = ""
+  /// The recognizer's latest result since it last started over.
+  private var segment = ""
   private var replies: [TranscriptLine] = []
   private var spokenIDs: Set<Event.ID> = []
 
@@ -302,6 +338,7 @@ final class VoiceCall {
     if muted {
       flushUtterance()
       stopListening()
+      speakHeldReplies()
     } else {
       listeningFailed = false
       failures = 0
@@ -326,9 +363,19 @@ final class VoiceCall {
       spokenIDs.insert(event.id).inserted
     else { return }
     replies.append(TranscriptLine(id: event.id, text: text, isFromUser: false))
-    if state != .speaking, !isInterrupted {
+    if state != .speaking, !isInterrupted, !isUserTalking {
       speakNext()
     }
+  }
+
+  private var isUserTalking: Bool { isFinishing || !Self.words(of: heard).isEmpty }
+
+  /// Plays the replies that waited for the user's turn, which just ended.
+  @discardableResult
+  private func speakHeldReplies() -> Bool {
+    guard !replies.isEmpty, state != .speaking, !isInterrupted else { return false }
+    speakNext()
+    return true
   }
 
   private func speakNext() {
@@ -339,7 +386,6 @@ final class VoiceCall {
       startListening()
       return
     }
-    flushUtterance()
     stopListening()
     state = .speaking
     let reply = replies.removeFirst()
@@ -356,6 +402,7 @@ final class VoiceCall {
     guard canHear else { return }
     flushUtterance()
     stopListening()
+    if speakHeldReplies() { return }
     retry.restart { [weak self] in self?.resumeListening() }
   }
 
@@ -449,7 +496,8 @@ final class VoiceCall {
     patience.cancel()
     finalResult.cancel()
     isFinishing = false
-    heard = ""
+    earlierSegments = ""
+    segment = ""
     level = 0
     listener.stop()
   }
@@ -460,15 +508,16 @@ final class VoiceCall {
     case .level(let value):
       level = value
     case .partial(let text):
-      let isNew = Self.words(of: text) != Self.words(of: heard)
-      heard = text
+      let isNew = Self.words(of: text) != Self.words(of: segment)
+      if SpeechSegments.startsNew(text, after: segment) { earlierSegments = heard }
+      segment = text
       if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
         failures = 0
       }
       // The recognizer keeps refining what it heard after the user stops, which isn't speech.
       if isNew, !isFinishing { restartSilenceTimer() }
     case .final(let text):
-      heard = text
+      segment = text
       finishUtterance()
     case .stopped:
       failures = 0
@@ -494,11 +543,13 @@ final class VoiceCall {
     listener.finish()
   }
 
-  /// Sends what was heard so far, which a reply, muting or the end of the call would otherwise drop.
+  /// Sends what was heard so far, which muting, a route change or the end of the call would
+  /// otherwise drop.
   @discardableResult
   private func flushUtterance() -> Bool {
     let text = heard.trimmingCharacters(in: .whitespacesAndNewlines)
-    heard = ""
+    earlierSegments = ""
+    segment = ""
     guard !text.isEmpty else { return false }
     send?(text)
     transcript.append(TranscriptLine(id: UUID().uuidString, text: text, isFromUser: true))
@@ -508,6 +559,7 @@ final class VoiceCall {
   private func finishUtterance() {
     let sent = flushUtterance()
     stopListening()
+    if speakHeldReplies() { return }
     if sent {
       failures = 0
       startListening()
