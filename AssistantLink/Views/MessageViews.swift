@@ -74,7 +74,7 @@ struct ComposerView: View {
 
   private var dictation: Dictation { model.dictation }
 
-  /// The banner already says the call is waiting for the Assistant.
+  /// The call sheet already says the call is waiting for the Assistant.
   private var isInCall: Bool {
     CallPresentation(model.voiceCall, assistantID: assistant.id).isInCall
   }

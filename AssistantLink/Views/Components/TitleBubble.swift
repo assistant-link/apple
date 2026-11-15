@@ -8,21 +8,18 @@ struct TitleBubble: View {
     case offline
     case inCall
 
-    var statusText: String? {
-      assistantStatus?.label
+    var statusText: String {
+      self == .inCall ? "In call" : assistantStatus.label
     }
 
-    var accessibilityValue: String {
-      statusText ?? "In a voice chat"
-    }
+    var accessibilityValue: String { statusText }
 
-    /// `nil` in a call, which the title shows instead.
-    var assistantStatus: Assistant.Status? {
+    /// The avatar badge; a call shows green, like the live badge in the call sheet.
+    var assistantStatus: Assistant.Status {
       switch self {
-      case .online: .online
+      case .online, .inCall: .online
       case .idle: .idle
       case .offline: .offline
-      case .inCall: nil
       }
     }
   }
@@ -33,30 +30,21 @@ struct TitleBubble: View {
 
   var body: some View {
     HStack(spacing: 8) {
-      AvatarView(avatar: avatar, size: 28, status: status.assistantStatus ?? .offline)
+      AvatarView(avatar: avatar, size: 28, status: status.assistantStatus)
         .accessibilityHidden(true)
       VStack(alignment: .leading, spacing: 0) {
-        HStack(spacing: 4) {
-          Text(name)
-            .font(.headline)
-            .lineLimit(1)
-          if status == .inCall {
-            Image(systemName: "waveform")
-              .font(.subheadline)
-              .foregroundStyle(.red)
-          }
-        }
-        if let status = status.statusText {
-          Text(status)
-            .font(.caption)
-            .foregroundStyle(.secondary)
-        }
+        Text(name)
+          .font(.headline)
+          .lineLimit(1)
+        Text(status.statusText)
+          .font(.caption)
+          .foregroundStyle(.secondary)
       }
     }
     .padding(.vertical, 6)
     .padding(.leading, 6)
     .padding(.trailing, 14)
-    .glassBackground(in: Capsule(), tint: status == .inCall ? .red.opacity(0.4) : nil)
+    .glassBackground(in: Capsule())
     .accessibilityElement(children: .ignore)
     .accessibilityLabel(name)
     .accessibilityValue(status.accessibilityValue)

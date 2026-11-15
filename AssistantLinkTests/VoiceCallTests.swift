@@ -67,8 +67,11 @@ private final class FakeAudio: VoiceAudio {
   var isAllowed = true
   var activateError: (any Error)?
   private(set) var isActive = false
+  private(set) var speakerChanges: [Bool] = []
 
   func requestPermission() async -> Bool { isAllowed }
+
+  func setSpeaker(_ on: Bool) { speakerChanges.append(on) }
 
   func activate() throws {
     if let activateError { throw activateError }
@@ -1137,6 +1140,96 @@ struct VoiceCallSpeechQueueTests {
     setup.call.receive(setup.assistantMessage("e-1", "Hello"))
 
     #expect(setup.speaker.spoken == ["Hello"])
+  }
+}
+
+@MainActor
+struct VoiceCallTranscriptTests {
+  @Test func aCallStartsWithAnEmptyTranscriptAndACountingClock() async {
+    let setup = Setup()
+    await setup.start()
+
+    #expect(setup.call.transcript.isEmpty)
+    #expect(setup.call.startedAt != nil)
+  }
+
+  @Test func theWordsBeingHeardShowUntilTheyAreSentAsALine() async {
+    let setup = Setup()
+    await setup.start()
+
+    setup.listener.hear(.partial("Move the review"))
+    #expect(setup.call.heard == "Move the review")
+
+    setup.silence.fire()
+    setup.finalResult.fire()
+
+    #expect(setup.call.heard.isEmpty)
+    #expect(setup.call.transcript.map(\.text) == ["Move the review"])
+    #expect(setup.call.transcript.map(\.isFromUser) == [true])
+  }
+
+  @Test func aReplyJoinsTheTranscriptAfterTheWordsItCutShort() async {
+    let setup = Setup()
+    await setup.start()
+    setup.listener.hear(.partial("And also"))
+
+    setup.call.receive(setup.assistantMessage("e-1", "Done."))
+
+    #expect(setup.call.transcript.map(\.text) == ["And also", "Done."])
+    #expect(setup.call.transcript.map(\.isFromUser) == [true, false])
+    #expect(setup.call.transcript.last?.id == "e-1")
+  }
+
+  @Test func aQueuedReplyJoinsWhenItIsSpoken() async {
+    let setup = Setup()
+    await setup.start()
+    setup.call.receive(setup.assistantMessage("e-1", "One"))
+    setup.call.receive(setup.assistantMessage("e-2", "Two"))
+
+    #expect(setup.call.transcript.map(\.text) == ["One"])
+
+    setup.speaker.finish()
+
+    #expect(setup.call.transcript.map(\.text) == ["One", "Two"])
+  }
+
+  @Test func endingTheCallClearsItsTranscript() async {
+    let setup = Setup()
+    await setup.start()
+    setup.call.receive(setup.assistantMessage("e-1", "Hi"))
+
+    setup.call.end()
+
+    #expect(setup.call.transcript.isEmpty)
+    #expect(setup.call.startedAt == nil)
+  }
+
+  @Test func theSpeakerIsOnAtTheStartOfEveryCall() async {
+    let setup = Setup()
+    await setup.start()
+    setup.call.setSpeaker(false)
+    setup.call.end()
+
+    await setup.start()
+
+    #expect(setup.call.isSpeakerOn)
+    #expect(setup.audio.speakerChanges == [true, false, true])
+  }
+
+  @Test func turningTheSpeakerOffRestartsListeningOnTheNewRoute() async {
+    let setup = Setup()
+    await setup.start()
+    setup.listener.hear(.partial("Hello"))
+
+    setup.call.setSpeaker(false)
+
+    #expect(!setup.call.isSpeakerOn)
+    #expect(setup.audio.speakerChanges == [true, false])
+    #expect(setup.sent == ["Hello"])
+
+    setup.retry.fire()
+
+    #expect(setup.listener.isListening)
   }
 }
 

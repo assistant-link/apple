@@ -24,7 +24,7 @@ struct CallPresentation: Equatable {
 
   var isInCall: Bool { bannerPhase != nil }
 
-  /// The banner has End and Mute once the call is on, so the start control only shows before.
+  /// The call sheet has End once the call is on, so the start control only shows before.
   var offersStartCall: Bool { !isInCall }
 
   func titleStatus(_ status: Assistant.Status) -> TitleBubble.Status {

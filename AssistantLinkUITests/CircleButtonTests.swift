@@ -2,7 +2,7 @@ import XCTest
 
 /// A circle button must take taps on its whole 44 pt target, which reaches past the drawn disc.
 final class CircleButtonTests: XCTestCase {
-  @MainActor func testVoiceButtonAndBannerButtonsTakeTapsNearTheirEdge() {
+  @MainActor func testVoiceButtonAndCallSheetButtonsTakeTapsNearTheirEdge() {
     let app = XCUIApplication()
     app.launchArguments = ["-componentCatalog", "chat"]
     app.launch()
@@ -28,37 +28,21 @@ final class CircleButtonTests: XCTestCase {
       "a tap near the end button's edge missed")
   }
 
-  @MainActor func testSwipingTheBannerUpHidesItAndTheChevronBringsItBack() {
+  @MainActor func testPullingTheCallSheetDownKeepsEndAndATapBringsItBack() {
     let app = XCUIApplication()
     app.launchArguments = ["-componentCatalog", "call-live"]
     app.launch()
 
-    let end = app.buttons["voiceEnd"]
-    XCTAssertTrue(end.waitForExistence(timeout: 30))
-    let banner = app.descendants(matching: .any)["callBanner"].firstMatch
-    // swipeUp() on a 64 pt tall element drags too short and fast to pass the gesture's threshold.
-    let start = banner.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
-    start.press(forDuration: 0.1, thenDragTo: start.withOffset(CGVector(dx: 0, dy: -120)))
-    XCTAssertTrue(app.buttons["showCallBanner"].waitForExistence(timeout: 5))
-    XCTAssertFalse(end.exists)
+    XCTAssertTrue(app.buttons["voiceMute"].waitForExistence(timeout: 30))
+    let grabber = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.1))
+    grabber.press(forDuration: 0.1, thenDragTo: grabber.withOffset(CGVector(dx: 0, dy: 700)))
+    let bar = app.descendants(matching: .any)["compactCallBar"].firstMatch
+    XCTAssertTrue(bar.waitForExistence(timeout: 5))
+    XCTAssertFalse(app.buttons["voiceMute"].exists)
+    assertHitTarget(app.buttons["voiceEnd"])
 
-    assertHitTarget(app.buttons["showCallBanner"])
-    app.buttons["showCallBanner"].tap()
-    XCTAssertTrue(end.waitForExistence(timeout: 5))
-  }
-
-  @MainActor func testTheHideButtonCollapsesTheBannerWithoutTouchingMuteOrEnd() {
-    let app = XCUIApplication()
-    app.launchArguments = ["-componentCatalog", "call-live"]
-    app.launch()
-
-    let end = app.buttons["voiceEnd"]
-    XCTAssertTrue(end.waitForExistence(timeout: 30))
-    assertHitTarget(app.buttons["hideCallBanner"])
-    app.buttons["hideCallBanner"].tap()
-    XCTAssertTrue(app.buttons["showCallBanner"].waitForExistence(timeout: 5))
-    XCTAssertFalse(end.exists)
-    XCTAssertFalse(app.buttons["hideCallBanner"].exists)
+    bar.coordinate(withNormalizedOffset: CGVector(dx: 0.2, dy: 0.5)).tap()
+    XCTAssertTrue(app.buttons["voiceMute"].waitForExistence(timeout: 5))
   }
 
   // The navigation bar reports its own ~39 pt frame for the voice button, so only the circle controls are measured.

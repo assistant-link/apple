@@ -200,10 +200,17 @@ struct ComponentCatalog: View {
       TitleBubble(name: "Hermes", avatar: Avatar(id: "avatar-3"), status: .idle)
       TitleBubble(name: "Hermes", avatar: Avatar(id: "avatar-3"), status: .offline)
       TitleBubble(name: "Hermes", avatar: Avatar(id: "avatar-3"), status: .inCall)
-      ForEach([CallBannerPhase.connecting, .live, .muted, .notListening], id: \.self) { phase in
-        CallBanner(
-          phase: phase, avatar: Avatar(id: "avatar-3"), onRetry: {}, onMute: {}, onEnd: {})
+      ForEach([CallBannerPhase.live, .muted], id: \.self) { phase in
+        CallSheetHeader(
+          name: "Hermes", avatar: Avatar(id: "avatar-3"), startedAt: .now, phase: phase,
+          isWorking: phase == .live)
       }
+      ThinkingIndicator(avatar: Avatar(id: "avatar-3"))
+      CallControls(isMuted: false, isSpeakerOn: true, actions: CallSheetContent.Actions())
+      CompactCallBar(
+        name: "Hermes", avatar: Avatar(id: "avatar-3"), startedAt: .now, onEnd: {}, onExpand: {}
+      )
+      .frame(height: CallSheet.compactHeight)
     }
   }
 }
