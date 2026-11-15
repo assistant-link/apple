@@ -42,7 +42,8 @@ struct ConversationView: View {
       .modifier(sheets(assistant, duringCall: false))
       .callSheet(
         isPresented: call.isInCall, assistant: assistant, detent: $callDetent,
-        sheets: sheets(assistant, duringCall: true))
+        sheets: sheets(assistant, duringCall: true)
+      )
       .onChange(of: call.isInCall) {
         if call.isInCall { callDetent = .large }
         // A sheet the call sheet presented went away with it.
@@ -239,7 +240,8 @@ private struct ConversationSheets: ViewModifier {
     content
       .sheet(item: presented($voiceChat)) { VoiceTranscriptSheet(chat: $0) }
       .failedMessageSheet(
-        item: presented($failedMessage), onTryAgain: onTryAgain, onDelete: onDelete)
+        item: presented($failedMessage), onTryAgain: onTryAgain, onDelete: onDelete
+      )
       .sheet(item: presented($pairingLink)) { link in
         PairingView(
           assistantName: assistant.name, linkID: link.id,
