@@ -31,12 +31,16 @@ struct CallSheet: View {
 }
 
 extension View {
+  /// `sheets` presents the sheets the chat behind the compact bar opens, which the view under
+  /// the call sheet can't while it is up.
   func callSheet(
-    isPresented: Bool, assistant: Assistant, detent: Binding<PresentationDetent>
+    isPresented: Bool, assistant: Assistant, detent: Binding<PresentationDetent>,
+    sheets: some ViewModifier
   ) -> some View {
     // Pulling the sheet down only collapses it, so nothing but the call ending dismisses it.
     sheet(isPresented: .constant(isPresented)) {
       CallSheet(assistant: assistant, detent: detent)
+        .modifier(sheets)
         .presentationDetents([CallSheet.compact, .large], selection: detent)
         .presentationDragIndicator(.visible)
         .presentationCornerRadius(28)

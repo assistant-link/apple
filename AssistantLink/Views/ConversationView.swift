@@ -4,11 +4,11 @@ struct ConversationView: View {
   let assistantID: Assistant.ID
 
   @Environment(AppModel.self) private var model
-  @State private var pairingLink: Link?
-  @State private var failedMessage: OutgoingMessage?
+  @State private var pairingLink: SheetRequest<Link>?
+  @State private var failedMessage: SheetRequest<OutgoingMessage>?
   @State private var position = ScrollPosition()
   @State private var callDetent = PresentationDetent.large
-  @State private var voiceChat: VoiceChatRecord?
+  @State private var voiceChat: SheetRequest<VoiceChatRecord>?
   @State private var startFailure: VoiceCall.StartFailure?
   @State private var visit = ConversationVisit()
   @State private var isVisible = false
@@ -24,7 +24,7 @@ struct ConversationView: View {
       let call = CallPresentation(model.voiceCall, assistantID: assistant.id)
       Group {
         if assistant.links.isEmpty {
-          FirstPairingView(assistant: assistant) { pairingLink = $0 }
+          FirstPairingView(assistant: assistant) { pairingLink = request($0) }
         } else {
           timeline(assistant)
         }
@@ -39,17 +39,34 @@ struct ConversationView: View {
           }
         }
       }
-      .callSheet(isPresented: call.isInCall, assistant: assistant, detent: $callDetent)
-      .onChange(of: call.isInCall) { if call.isInCall { callDetent = .large } }
-      .startFailureAlert("Can't start the voice chat", failure: $startFailure)
-      .sheet(item: $pairingLink) { link in
-        PairingView(
-          assistantName: assistant.name, linkID: link.id,
-          linkName: link.displayName(position: assistant.links.firstIndex(of: link) ?? 0))
+      .modifier(sheets(assistant, duringCall: false))
+      .callSheet(
+        isPresented: call.isInCall, assistant: assistant, detent: $callDetent,
+        sheets: sheets(assistant, duringCall: true))
+      .onChange(of: call.isInCall) {
+        if call.isInCall { callDetent = .large }
+        // A sheet the call sheet presented went away with it.
+        pairingLink = nil
+        failedMessage = nil
+        voiceChat = nil
       }
+      .startFailureAlert("Can't start the voice chat", failure: $startFailure)
     } else {
       ContentUnavailableView("Assistant not found", systemImage: "questionmark.circle")
     }
+  }
+
+  private func sheets(_ assistant: Assistant, duringCall: Bool) -> ConversationSheets {
+    ConversationSheets(
+      assistant: assistant, duringCall: duringCall, pairingLink: $pairingLink,
+      failedMessage: $failedMessage, voiceChat: $voiceChat,
+      onTryAgain: { message in Task { await model.retry(message) } },
+      onDelete: { message in model.cancel(message) })
+  }
+
+  private func request<Item>(_ item: Item) -> SheetRequest<Item> {
+    SheetRequest(
+      item: item, duringCall: CallPresentation(model.voiceCall, assistantID: assistantID).isInCall)
   }
 
   private func startCall(_ assistant: Assistant) {
@@ -113,7 +130,7 @@ struct ConversationView: View {
                 text: message.text, isFromUser: true,
                 caption: content.caption(forMessageID: message.id),
                 isVoice: message.via == .voice,
-                onFailureTap: message.state == .failed ? { failedMessage = message } : nil)
+                onFailureTap: message.state == .failed ? { failedMessage = request(message) } : nil)
             }
           }
         }
@@ -140,12 +157,6 @@ struct ConversationView: View {
         ComposerView(assistant: assistant)
       }
     }
-    .sheet(item: $voiceChat) { VoiceTranscriptSheet(chat: $0) }
-    .failedMessageSheet(
-      item: $failedMessage,
-      onTryAgain: { message in Task { await model.retry(message) } },
-      onDelete: { message in model.cancel(message) }
-    )
     .task { await open(assistant.id) }
     .onAppear { isVisible = true }
     .onDisappear {
@@ -194,7 +205,9 @@ struct ConversationView: View {
       EmptyView()
     case .callEnded:
       let chat = timeline.voiceChat(endedBy: event)
-      Button { voiceChat = chat } label: {
+      Button {
+        voiceChat = request(chat)
+      } label: {
         VoiceChatCaption(seconds: chat.seconds)
       }
       .buttonStyle(.plain)
@@ -205,10 +218,39 @@ struct ConversationView: View {
       if let position = assistant.links.firstIndex(where: { $0.id == event.linkID }) {
         let link = assistant.links[position]
         SystemEventView(event: event, link: link, linkName: link.displayName(position: position)) {
-          pairingLink = link
+          pairingLink = request(link)
         }
       }
     }
+  }
+}
+
+/// The sheets the conversation opens, on the presenter the request was for.
+private struct ConversationSheets: ViewModifier {
+  let assistant: Assistant
+  let duringCall: Bool
+  @Binding var pairingLink: SheetRequest<Link>?
+  @Binding var failedMessage: SheetRequest<OutgoingMessage>?
+  @Binding var voiceChat: SheetRequest<VoiceChatRecord>?
+  let onTryAgain: (OutgoingMessage) -> Void
+  let onDelete: (OutgoingMessage) -> Void
+
+  func body(content: Content) -> some View {
+    content
+      .sheet(item: presented($voiceChat)) { VoiceTranscriptSheet(chat: $0) }
+      .failedMessageSheet(
+        item: presented($failedMessage), onTryAgain: onTryAgain, onDelete: onDelete)
+      .sheet(item: presented($pairingLink)) { link in
+        PairingView(
+          assistantName: assistant.name, linkID: link.id,
+          linkName: link.displayName(position: assistant.links.firstIndex(of: link) ?? 0))
+      }
+  }
+
+  private func presented<Item>(_ request: Binding<SheetRequest<Item>?>) -> Binding<Item?> {
+    Binding(
+      get: { request.wrappedValue?.presented(duringCall: duringCall) },
+      set: { if $0 == nil { request.wrappedValue = nil } })
   }
 }
 

@@ -114,7 +114,7 @@ struct Timeline: Equatable, Sendable {
   var rows: [TimelineRow] {
     let stored = Set(events.compactMap(\.idempotencyKey))
     let folded = foldedIndices
-    let eventRows = events.indices.filter { !folded.contains($0) }.map { index in
+    let eventRows = events.indices.filter { folded[$0] == nil }.map { index in
       TimelineRow(
         id: Self.rowID(of: events[index]), content: .event(events[index]),
         showsTimeCaption: events[index].type == .textMessage
@@ -143,9 +143,20 @@ struct Timeline: Equatable, Sendable {
     return TimeCaption.isShown(for: outgoing[index].createdAt, after: previous)
   }
 
-  /// The indices of the text messages between a `call_started` and the `call_ended` after it.
-  private var foldedIndices: Set<Int> {
-    var folded: Set<Int> = []
+  /// The row of the first incoming message after `lastReadID`. A message folded into an ended
+  /// voice chat shows as that chat's entry.
+  func firstUnreadRowID(after lastReadID: String) -> String? {
+    let unread = events.firstIndex {
+      $0.id > lastReadID && $0.type == .textMessage && $0.sender == .assistant
+    }
+    let folded = foldedIndices
+    return unread.map { Self.rowID(of: events[folded[$0] ?? $0]) }
+  }
+
+  /// The indices of the text messages between a `call_started` and the `call_ended` after it,
+  /// each with the index of that `call_ended`.
+  private var foldedIndices: [Int: Int] {
+    var folded: [Int: Int] = [:]
     var start: Int?
     for (index, event) in events.enumerated() {
       switch event.type {
@@ -153,7 +164,9 @@ struct Timeline: Equatable, Sendable {
         start = index
       case .callEnded:
         if let start {
-          folded.formUnion((start + 1..<index).filter { events[$0].type == .textMessage })
+          for message in start + 1..<index where events[message].type == .textMessage {
+            folded[message] = index
+          }
         }
         start = nil
       default:

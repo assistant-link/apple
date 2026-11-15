@@ -20,6 +20,12 @@ struct UnreadTests {
       createdAt: Date(timeIntervalSince1970: 0), text: id, via: via)
   }
 
+  private func call(_ id: String, _ type: Event.Kind) -> Event {
+    Event(
+      id: id, assistantID: assistantID, type: type, sender: .system,
+      createdAt: Date(timeIntervalSince1970: 0))
+  }
+
   /// Opens the conversation and places the divider once its events have loaded.
   private func visit(_ events: [Event], marks: ReadMarks) -> ConversationVisit {
     var visit = ConversationVisit()
@@ -67,6 +73,26 @@ struct UnreadTests {
       createdAt: Date(timeIntervalSince1970: 0))
 
     #expect(visit([incoming("e1"), call], marks: marks).dividerRowID == nil)
+  }
+
+  @Test func anUnreadReplyInAnEndedVoiceChatPutsTheDividerOnItsEntry() {
+    let marks = marks()
+    marks.markRead([incoming("e1")], assistantID: assistantID)
+    let events = [
+      incoming("e1"), call("e2", .callStarted), own("e3", via: .voice), incoming("e4"),
+      call("e5", .callEnded), incoming("e6"),
+    ]
+
+    #expect(visit(events, marks: marks).dividerRowID == "e5")
+    #expect(Timeline(events: events).rows.map(\.id).contains("e5"))
+  }
+
+  @Test func anUnreadReplyInAVoiceChatStillOnKeepsTheDividerOnIt() {
+    let marks = marks()
+    marks.markRead([incoming("e1")], assistantID: assistantID)
+    let events = [incoming("e1"), call("e2", .callStarted), own("e3", via: .voice), incoming("e4")]
+
+    #expect(visit(events, marks: marks).dividerRowID == "e4")
   }
 
   @Test func theDividerNamesTheRowOfItsMessage() {

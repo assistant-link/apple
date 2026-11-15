@@ -52,3 +52,19 @@ struct CallPresentationTests {
     #expect(presentation(.listening, failed: true).bannerPhase == .notListening)
   }
 }
+
+struct SheetRequestTests {
+  @Test func theCallSheetPresentsWhatWasAskedForDuringTheCall() {
+    let request = SheetRequest(item: "transcript", duringCall: true)
+
+    #expect(request.presented(duringCall: true) == "transcript")
+    #expect(request.presented(duringCall: false) == nil)
+  }
+
+  @Test func theConversationPresentsWhatWasAskedForWithoutACall() {
+    let request = SheetRequest(item: "pairing", duringCall: false)
+
+    #expect(request.presented(duringCall: false) == "pairing")
+    #expect(request.presented(duringCall: true) == nil)
+  }
+}

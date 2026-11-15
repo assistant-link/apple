@@ -36,3 +36,15 @@ struct CallPresentation: Equatable {
     }
   }
 }
+
+/// A sheet the conversation asked for. SwiftUI presents one sheet per presenter, so while the call
+/// sheet is up it presents the sheets asked for behind its compact bar, and the conversation the
+/// others. A request is for one presenter only, so it never shows late on the other.
+struct SheetRequest<Item> {
+  let item: Item
+  let duringCall: Bool
+
+  func presented(duringCall presenterDuringCall: Bool) -> Item? {
+    duringCall == presenterDuringCall ? item : nil
+  }
+}
