@@ -26,7 +26,8 @@ struct ReadMarks {
 
 /// One visit to a conversation, from opening it or returning to the app until leaving either.
 struct ConversationVisit: Equatable {
-  /// The row of the first incoming message that was unread when the visit's events loaded.
+  /// The row of the first incoming message that was unread when the visit's events loaded, or
+  /// the entry of the ended voice chat it is folded into.
   private(set) var dividerRowID: String?
   private(set) var isOpen = false
   private var isPlaced = false
@@ -43,10 +44,7 @@ struct ConversationVisit: Equatable {
     guard isOpen, !isPlaced else { return }
     isPlaced = true
     guard let lastReadID else { return }
-    let unread = events.first {
-      $0.id > lastReadID && $0.type == .textMessage && $0.sender == .assistant
-    }
-    dividerRowID = unread.map(Timeline.rowID(of:))
+    dividerRowID = Timeline(events: events).firstUnreadRowID(after: lastReadID)
   }
 
   /// Returns whether the visit was placed, in which case what it showed now counts as read.

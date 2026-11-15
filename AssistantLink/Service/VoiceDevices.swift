@@ -34,12 +34,24 @@ final class LiveVoiceAudio: VoiceAudio {
     }
   }
 
+  private var isSpeakerOn = true
+
   func activate() throws {
-    let session = AVAudioSession.sharedInstance()
-    try session.setCategory(
-      .playAndRecord, mode: .voiceChat,
-      options: [.defaultToSpeaker, .allowBluetoothHFP, .allowBluetoothA2DP])
-    try session.setActive(true)
+    try setCategory()
+    try AVAudioSession.sharedInstance().setActive(true)
+  }
+
+  func setSpeaker(_ on: Bool) {
+    isSpeakerOn = on
+    try? setCategory()
+  }
+
+  /// Unlike overriding the output port, `defaultToSpeaker` leaves a connected headset in use.
+  private func setCategory() throws {
+    var options: AVAudioSession.CategoryOptions = [.allowBluetoothHFP, .allowBluetoothA2DP]
+    if isSpeakerOn { options.insert(.defaultToSpeaker) }
+    try AVAudioSession.sharedInstance().setCategory(
+      .playAndRecord, mode: .voiceChat, options: options)
   }
 
   /// Only these reasons change the devices; a category change is our own `activate()`.

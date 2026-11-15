@@ -46,26 +46,28 @@ States: Empty (plus, field, dictation), Typing (plus, field, send; the box grows
 
 ### Start-call control (`voiceButton`)
 
-A `Button("Call")` with the `phone` symbol in the navigation bar, trailing. Tapping the title bubble opens Details, so there is no More menu. It starts the voice chat and is hidden while a call with this Assistant is on, because the banner has End and Mute. Dictation stays in the composer and only focuses the field.
+A `Button("Call")` with the `phone` symbol in the navigation bar, trailing. Tapping the title bubble opens Details, so there is no More menu. It starts the voice chat and is hidden while a call with this Assistant is on, because the call sheet has End. Dictation stays in the composer and only focuses the field.
 
-### Voice call banner (`voiceMute`, `voiceEnd`)
+### Call sheet (`voiceMute`, `voiceSpeaker`, `voiceEnd`)
 
-A glass capsule below the nav bar (x 16, 361 x 64, `.glassEffect(in: .capsule)`). No name and no status text: the name is in the nav title.
+Starting a voice chat opens a sheet (`CallSheet`) with the live transcript and the call controls; there is no banner
+and no red glow. Pulling it down leaves a compact bar (avatar, name, duration, waveform, End) at a 112 pt detent while
+the call goes on; a tap brings it back. Only End hangs up. The title bubble says "In call" while the call is on.
 
-| Part | SwiftUI | SF Symbol | Colors | Copy |
-|---|---|---|---|---|
-| Avatar | `Circle`, 36, left | none | avatar yellow | none |
-| Waveform | `WaveformView`, thin bars growing toward the right, `.red`; Connecting and Live show the bars, Muted a flat dotted line (`.tertiary`) | none | `.red` | none |
-| Mute (`voiceMute`) | `Button`, glass circle 40; muted = filled `.primary` circle | `mic` / `mic.slash` | `.primary` | "Mute" / "Unmute" |
-| End (`voiceEnd`) | `Button`, filled `.red` circle 40, `.white` glyph | `xmark` | `.red` | "End voice chat" |
+| Part | SwiftUI | Copy |
+|---|---|---|
+| Header | avatar 28, name `.headline`, green dot + "Live", duration `mm:ss` counting up | "Working…" before the duration while the Assistant works |
+| Transcript | `MessageBubble`s of the call, under "Voice chat started" | under the last turn: waveform + "Speaking", or the partial bubble + "Listening…" |
+| Thinking indicator (`thinkingIndicator`) | avatar 28 + grey capsule, three pulsing dots | "Working…", from the moment the user's words are sent until a reply comes |
+| Mute (`voiceMute`) | circle 56, `mic` / `mic.slash.fill`; muted = filled `.primary` circle | "Mute" / "Unmute" |
+| Speaker (`voiceSpeaker`) | circle 56, `speaker.wave.2.fill`; on (the default) = `.tint` fill | "Speaker" |
+| End (`voiceEnd`) | circle 56, filled `.red`, `phone.down.fill` | "End" |
 
-Variants: Connecting (bars, the mic is already live), Live (bars), Muted (dotted waveform, filled mute button).
+A 72 pt empty slot under the buttons is kept for a later push-to-talk control.
 
-Swiping the banner up hides it and leaves a small chevron button that brings it back; VoiceOver gets a "Hide" action. VoiceOver reads the banner as "Voice chat" with the value Connecting, Live, Muted or Not listening.
+### Voice chat marker (`voiceChatEntry`)
 
-### Voice chat marker (`VoiceChatBubble`)
-
-Not a bubble: a small centered caption under the last assistant message, `Label("Voice chat · 00:15", systemImage: "waveform")` in `.footnote`, `.secondary`. No summary line, no other voice turns in the timeline.
+Not a bubble: a small centered caption where the call ended, `Label("Voice chat · 00:15", systemImage: "waveform")` in `.footnote`, `.secondary`. The call's messages fold into it; tapping it opens the transcript in a sheet (`VoiceTranscriptSheet`).
 
 ### Empty state (`createLink`)
 
@@ -85,6 +87,7 @@ System keyboard (simplified in the mock); the composer sits directly on top of i
 
 - **01-chat.** Timeline ending with "Added both. Anything else?", Composer Empty. The red waveform button starts a voice chat; typing turns it into Send. Only the 2 pm request shows "Delivered".
 - **02-typing.** Newest message visible, draft "Remind me to call David tomorrow at 9" wraps to two lines and grows the capsule; keyboard below, home indicator hidden. Send takes the spot of the dictation mic, posts the message and clears the draft.
+- **03 to 05** show the first call design, which the call sheet above replaces.
 - **03-call-connecting.** Call glow behind the nav bar, title bubble tinted red, banner Connecting (live waveform) under the nav bar, Composer In call. The video shows no collapsed state, so the banner is always visible during a call.
 - **04-call-live.** Same, banner Live (red bars). Mute toggles (Muted variant), End ends the call. v1 has no settings button and no grabber: the banner stays while the call lasts.
 - **05-after-call.** End removes the glow and the banner and posts the "Voice chat · 00:15" caption under the last assistant message. Composer Empty again.

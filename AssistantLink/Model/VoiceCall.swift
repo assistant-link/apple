@@ -43,10 +43,16 @@ protocol VoiceAudio: AnyObject {
   /// Asks for the microphone and speech recognition permissions; whether both are granted.
   func requestPermission() async -> Bool
   func activate() throws
+  /// Plays through the loudspeaker, or else the receiver; a headset takes the sound either way.
+  func setSpeaker(_ on: Bool)
   /// Calls `handler` when the audio route changed in a way that affects the microphone, for
   /// example a Bluetooth headset connecting or disconnecting. Ends with `deactivate()`.
   func observeRouteChanges(_ handler: @escaping @MainActor () -> Void)
   func deactivate()
+}
+
+extension VoiceAudio {
+  func setSpeaker(_ on: Bool) {}
 }
 
 @MainActor
@@ -81,10 +87,21 @@ final class TaskSilenceTimer: SilenceTimer {
 }
 
 enum VoiceChat {
-  /// Minutes and seconds, `mm:ss`; minutes keep counting past an hour.
   static func text(seconds: Int?) -> String {
     guard let seconds else { return "Voice chat" }
-    return String(format: "Voice chat · %02d:%02d", seconds / 60, seconds % 60)
+    return "Voice chat · \(duration(seconds: seconds))"
+  }
+
+  /// Minutes and seconds, `mm:ss`; minutes keep counting past an hour.
+  static func duration(seconds: Int) -> String {
+    String(format: "%02d:%02d", seconds / 60, seconds % 60)
+  }
+
+  static func accessibilityLabel(seconds: Int?) -> String {
+    guard let seconds else { return "Voice chat" }
+    let length = Duration.seconds(seconds).formatted(
+      .units(allowed: [.minutes, .seconds], width: .wide))
+    return "Voice chat, \(length)"
   }
 }
 
@@ -105,11 +122,17 @@ final class VoiceCall {
 
   private(set) var state = State.idle
   private(set) var isMuted = false
+  private(set) var isSpeakerOn = true
   private(set) var assistantID: Assistant.ID?
   /// The microphone input level, 0 to 1, while listening or connecting.
   private(set) var level: Float = 0
   /// Listening gave up after repeated recognizer failures and hears nothing until it tries again.
   private(set) var listeningFailed = false
+  /// The words of the utterance in progress.
+  private(set) var heard = ""
+  /// What was said in this call: the user's sent utterances and the replies spoken so far.
+  private(set) var transcript: [TranscriptLine] = []
+  private(set) var startedAt: Date?
 
   /// Why the last `start` failed; nil when it started, or did not because a call was running.
   enum StartFailure: Equatable {
@@ -159,11 +182,10 @@ final class VoiceCall {
   private var onEnd: (@MainActor () -> Void)?
   private var isOnline = false
   private var isStarting = false
-  private var heard = ""
   /// The utterance ended and the recognizer is finishing it.
   private var isFinishing = false
   private var failures = 0
-  private var replies: [String] = []
+  private var replies: [TranscriptLine] = []
   private var spokenIDs: Set<Event.ID> = []
 
   init(
@@ -200,6 +222,8 @@ final class VoiceCall {
       return false
     }
     guard state == .idle else { return false }
+    isSpeakerOn = true
+    audio.setSpeaker(true)
     do {
       try audio.activate()
     } catch {
@@ -215,6 +239,8 @@ final class VoiceCall {
     isMuted = false
     listeningFailed = false
     failures = 0
+    transcript = []
+    startedAt = .now
     state = isOnline ? .listening : .connecting
     startListening()
     guard state != .idle else {
@@ -246,6 +272,8 @@ final class VoiceCall {
     stopObservingInterruptions()
     replies = []
     spokenIDs = []
+    transcript = []
+    startedAt = nil
     send = nil
     isMuted = false
     listeningFailed = false
@@ -281,6 +309,15 @@ final class VoiceCall {
     }
   }
 
+  /// Moving the sound changes the route under the recognizer, so listening restarts as it does
+  /// for a headset.
+  func setSpeaker(_ on: Bool) {
+    guard state != .idle, on != isSpeakerOn else { return }
+    isSpeakerOn = on
+    audio.setSpeaker(on)
+    routeChanged()
+  }
+
   /// Queues a new text message of the Assistant to be spoken.
   func receive(_ event: Event) {
     guard state != .idle, event.assistantID == assistantID, event.type == .textMessage,
@@ -288,7 +325,7 @@ final class VoiceCall {
       let text = event.text?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty,
       spokenIDs.insert(event.id).inserted
     else { return }
-    replies.append(text)
+    replies.append(TranscriptLine(id: event.id, text: text, isFromUser: false))
     if state != .speaking, !isInterrupted {
       speakNext()
     }
@@ -305,7 +342,9 @@ final class VoiceCall {
     flushUtterance()
     stopListening()
     state = .speaking
-    speaker.speak(replies.removeFirst()) { [weak self] in
+    let reply = replies.removeFirst()
+    transcript.append(reply)
+    speaker.speak(reply.text) { [weak self] in
       guard let self, state == .speaking else { return }
       speakNext()
     }
@@ -378,7 +417,7 @@ final class VoiceCall {
   }
 
   /// Without `shouldResume` the system doesn't say whether the user is done with the other
-  /// audio, so the user decides, through the same banner as a failed recognizer.
+  /// audio, so the user decides, through the same retry as a failed recognizer.
   private func interruptionEnded(shouldResume: Bool) {
     guard state != .idle, isInterrupted else { return }
     isInterrupted = false
@@ -462,6 +501,7 @@ final class VoiceCall {
     heard = ""
     guard !text.isEmpty else { return false }
     send?(text)
+    transcript.append(TranscriptLine(id: UUID().uuidString, text: text, isFromUser: true))
     return true
   }
 

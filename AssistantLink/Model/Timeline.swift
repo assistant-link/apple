@@ -109,10 +109,12 @@ struct Timeline: Equatable, Sendable {
     event.idempotencyKey ?? event.id
   }
 
-  /// The events, then the outgoing messages a reload has not already stored.
+  /// The events, then the outgoing messages a reload has not already stored. The messages of an
+  /// ended voice chat show in its transcript instead.
   var rows: [TimelineRow] {
     let stored = Set(events.compactMap(\.idempotencyKey))
-    let eventRows = events.indices.map { index in
+    let folded = foldedIndices
+    let eventRows = events.indices.filter { folded[$0] == nil }.map { index in
       TimelineRow(
         id: Self.rowID(of: events[index]), content: .event(events[index]),
         showsTimeCaption: events[index].type == .textMessage
@@ -139,6 +141,54 @@ struct Timeline: Equatable, Sendable {
   func showsTimeCaption(beforeOutgoingAt index: Int) -> Bool {
     let previous = index > 0 ? outgoing[index - 1].createdAt : events.last?.createdAt
     return TimeCaption.isShown(for: outgoing[index].createdAt, after: previous)
+  }
+
+  /// The row of the first incoming message after `lastReadID`. A message folded into an ended
+  /// voice chat shows as that chat's entry.
+  func firstUnreadRowID(after lastReadID: String) -> String? {
+    let unread = events.firstIndex {
+      $0.id > lastReadID && $0.type == .textMessage && $0.sender == .assistant
+    }
+    let folded = foldedIndices
+    return unread.map { Self.rowID(of: events[folded[$0] ?? $0]) }
+  }
+
+  /// The indices of the text messages between a `call_started` and the `call_ended` after it,
+  /// each with the index of that `call_ended`.
+  private var foldedIndices: [Int: Int] {
+    var folded: [Int: Int] = [:]
+    var start: Int?
+    for (index, event) in events.enumerated() {
+      switch event.type {
+      case .callStarted:
+        start = index
+      case .callEnded:
+        if let start {
+          for message in start + 1..<index where events[message].type == .textMessage {
+            folded[message] = index
+          }
+        }
+        start = nil
+      default:
+        break
+      }
+    }
+    return folded
+  }
+
+  /// The voice chat that `event`, a `call_ended`, ended, with the messages since its start.
+  func voiceChat(endedBy event: Event) -> VoiceChatRecord {
+    let before = events.prefix(while: { $0.id != event.id })
+    let start = before.lastIndex(where: { $0.type == .callStarted })
+    let lines = start.map { before[($0 + 1)...].compactMap(Self.transcriptLine) } ?? []
+    return VoiceChatRecord(
+      id: event.id, startedAt: start.map { events[$0].createdAt },
+      seconds: voiceChatSeconds(endedBy: event), lines: lines)
+  }
+
+  private static func transcriptLine(_ event: Event) -> TranscriptLine? {
+    guard event.type == .textMessage, !event.deleted, let text = event.text else { return nil }
+    return TranscriptLine(id: event.id, text: text, isFromUser: event.sender == .user)
   }
 
   /// The seconds a voice chat lasted, from the latest `call_started` before its `call_ended`.
@@ -221,6 +271,15 @@ struct Timeline: Equatable, Sendable {
     events = page.events.filter { !loadedIDs.contains($0.id) } + events
     hasMore = page.hasMore
   }
+}
+
+/// An ended voice chat, which its timeline entry opens.
+struct VoiceChatRecord: Equatable, Identifiable, Sendable {
+  /// The id of the `call_ended` event.
+  let id: String
+  let startedAt: Date?
+  let seconds: Int?
+  let lines: [TranscriptLine]
 }
 
 enum EventTime {
