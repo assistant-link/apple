@@ -620,6 +620,7 @@ struct AppModelTests {
     #expect(
       requests.all == [
         "GET /api/v1/assistants Bearer ala_old",
+        "DELETE /api/v1/device/push_token Bearer ala_old",
         "DELETE /api/v1/account Bearer ala_old",
         "POST /api/v1/accounts none",
         "GET /api/v1/assistants Bearer ala_new",

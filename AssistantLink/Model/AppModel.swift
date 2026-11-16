@@ -12,7 +12,9 @@ final class AppModel {
   }
 
   private(set) var phase = Phase.loading
-  private(set) var assistants: [Assistant] = []
+  private(set) var assistants: [Assistant] = [] {
+    didSet { enableNotificationsOncePaired() }
+  }
   /// The conversations opened so far, by Assistant.
   private(set) var timelines: [Assistant.ID: Timeline] = [:]
   /// Changes whenever the app starts using an account, so live updates restart with it.
@@ -22,6 +24,9 @@ final class AppModel {
   let kokoro: KokoroVoice?
   /// Shared by the composers, which SwiftUI creates again whenever a screen refreshes.
   let dictation: Dictation
+  /// The conversation on top of the navigation stack, whose pushes need no banner.
+  @ObservationIgnored private(set) var conversationOnScreen: Assistant.ID?
+  private(set) var pushTokenUpload: Task<Void, Never>?
 
   /// How often a call's posts are tried. With `Backoff` this keeps trying for a few minutes.
   static let callEventAttempts = 12
@@ -40,6 +45,12 @@ final class AppModel {
   /// Keeps the process running until the task finishes, so posts started when the app leaves the
   /// foreground are not cut off by suspension.
   private let keepRunning: @MainActor (Task<Void, Never>) -> Void
+  private let enableNotifications: @MainActor () -> Void
+  private var hasEnabledNotifications = false
+  /// The device's APNs token in hex, uploaded for each account the app uses.
+  private var pushToken: String?
+  /// The conversation a tapped push asked for, until the Assistants list opens it.
+  private var requestedConversation: Assistant.ID?
 
   init(
     connect: @escaping @Sendable () async throws -> APIClient,
@@ -49,9 +60,11 @@ final class AppModel {
     voiceCall: VoiceCall = .live(),
     dictation: Dictation = .live(),
     kokoro: KokoroVoice? = nil,
-    keepRunning: @escaping @MainActor (Task<Void, Never>) -> Void = { _ in }
+    keepRunning: @escaping @MainActor (Task<Void, Never>) -> Void = { _ in },
+    enableNotifications: @escaping @MainActor () -> Void = {}
   ) {
     self.keepRunning = keepRunning
+    self.enableNotifications = enableNotifications
     self.connect = connect
     self.forget = forget
     self.makeLiveUpdates = liveUpdates
@@ -68,7 +81,7 @@ final class AppModel {
     return AppModel(
       connect: { try await AccountSession.connect(baseURL: baseURL, store: store) },
       forget: { try store.delete() }, voiceCall: .live(kokoro: kokoro), kokoro: kokoro,
-      keepRunning: BackgroundTime.keepRunning)
+      keepRunning: BackgroundTime.keepRunning, enableNotifications: PushNotifications.enable)
   }
 
   static func preview(
@@ -90,6 +103,7 @@ final class AppModel {
       self.api = api
       session += 1
       timelines = [:]
+      uploadPushToken()
       assistants = try await api.listAssistants()
       phase = .ready
     } catch {
@@ -270,9 +284,15 @@ final class AppModel {
     if let callOutbox { keepRunning(callOutbox) }
   }
 
-  /// A call outlives the screens pushed on top of its conversation, such as Details, and ends
-  /// once the conversation is no longer in the stack.
+  /// A conversation under Details is not on screen. A call outlives the screens pushed on top
+  /// of its conversation, such as Details, and ends once the conversation is no longer in the
+  /// stack.
   func navigated(to path: [Route]) {
+    if case .conversation(let id) = path.last {
+      conversationOnScreen = id
+    } else {
+      conversationOnScreen = nil
+    }
     guard let id = voiceCall.assistantID, !path.contains(.conversation(id)) else { return }
     endVoiceCall()
   }
@@ -374,17 +394,80 @@ final class AppModel {
     // The account owns the call, so the Assistant hears the end before the account is gone.
     endVoiceCall()
     await callOutbox?.value
+    // The service keeps a deleted account's devices for a while, so the token leaves first.
+    try? await client().deletePushToken()
     do {
       try await client().deleteAccount()
     } catch APIError.service(status: 401, code: _, message: _) {
       // The service no longer accepts this credential, so its account is already gone.
+    } catch {
+      uploadPushToken()
+      throw error
     }
     try forget()
     api = nil
     assistants = []
     timelines = [:]
     pairingCodes = [:]
+    requestedConversation = nil
     await start()
+  }
+
+  /// APNs hands the token over at each launch once notifications are allowed, and again when it
+  /// changes.
+  func received(pushToken token: Data) {
+    pushToken = PushNotifications.hex(token)
+    uploadPushToken()
+  }
+
+  /// Without an account yet, `start()` uploads the token once it has one.
+  private func uploadPushToken() {
+    guard let api, let pushToken else { return }
+    let session = session
+    pushTokenUpload?.cancel()
+    pushTokenUpload = Task {
+      do {
+        try await retrying(attempts: Self.callEventAttempts, in: session) {
+          try await api.setPushToken(pushToken)
+        }
+      } catch {
+        Self.logger.notice(
+          "Push token upload failed: \(error.localizedDescription, privacy: .public)")
+      }
+    }
+  }
+
+  /// The permission prompt waits for a paired Link, when there are messages to be notified of.
+  /// Afterwards the system answers without asking, so each launch registers with APNs again.
+  private func enableNotificationsOncePaired() {
+    guard !hasEnabledNotifications, assistants.contains(where: \.hasPairedLink) else { return }
+    hasEnabledNotifications = true
+    enableNotifications()
+  }
+
+  /// A push for the conversation on screen shows no banner: its message is already in view.
+  func showsBanner(for push: Push) -> Bool {
+    guard let id = push.assistantID else { return true }
+    return id != conversationOnScreen
+  }
+
+  func open(_ push: Push) {
+    if let id = push.assistantID { requestedConversation = id }
+  }
+
+  /// The conversation a tapped push asked for, once the Assistants have loaded and include it.
+  var conversationToOpen: Assistant.ID? {
+    guard phase == .ready, let id = requestedConversation, assistant(id: id) != nil else {
+      return nil
+    }
+    return id
+  }
+
+  /// Returns `conversationToOpen` and forgets the request, so it opens once.
+  func takeConversationToOpen() -> Assistant.ID? {
+    guard let id = conversationToOpen else { return nil }
+    requestedConversation = nil
+    return id
   }
 
   func assistant(id: Assistant.ID) -> Assistant? {

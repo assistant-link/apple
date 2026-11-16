@@ -31,7 +31,15 @@ targets:
         buildPhase: resources
     dependencies:
       - package: FluidAudio
+    entitlements:
+      path: AssistantLink/AssistantLink.entitlements
     settings:
+      # TestFlight and App Store builds use Release, whose pushes go through production APNs.
+      configs:
+        Debug:
+          APS_ENVIRONMENT: development
+        Release:
+          APS_ENVIRONMENT: production
       base:
         PRODUCT_BUNDLE_IDENTIFIER: ai.assistantlink.app
         TARGETED_DEVICE_FAMILY: "1"

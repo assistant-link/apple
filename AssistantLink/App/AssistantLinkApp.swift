@@ -7,12 +7,14 @@ struct AssistantLinkApp: App {
   nonisolated static let isRunningUnitTests =
     ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
 
-  @State private var model = AppModel.live()
+  @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
   @Environment(\.scenePhase) private var scenePhase
 
   init() {
     ReplyVoiceChoice.registerDefaults()
   }
+
+  private var model: AppModel { appDelegate.model }
 
   var body: some Scene {
     WindowGroup {
