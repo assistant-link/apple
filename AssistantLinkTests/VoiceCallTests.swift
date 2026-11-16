@@ -1080,7 +1080,6 @@ struct VoiceCallUtteranceTests {
     #expect(setup.sent.isEmpty)
   }
 
-
   @Test func endingSendsTheUtteranceInProgressBeforeTheEnd() async {
     let setup = Setup()
     await setup.start()
