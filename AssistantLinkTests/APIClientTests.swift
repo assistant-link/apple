@@ -140,6 +140,30 @@ struct APIClientTests {
     try await api.deleteAccount()
   }
 
+  @Test func setPushTokenPutsTheTokenWithTheCredential() async throws {
+    let api = client { request, body in
+      #expect(request.httpMethod == "PUT")
+      #expect(request.url?.path() == "/api/v1/device/push_token")
+      #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer ala_secret")
+      let json = try body?.jsonObject()
+      #expect(json as? [String: String] == ["token": "0aff"])
+      return (204, Data())
+    }
+
+    try await api.setPushToken("0aff")
+  }
+
+  @Test func deletePushTokenSendsDeleteWithTheCredential() async throws {
+    let api = client { request, _ in
+      #expect(request.httpMethod == "DELETE")
+      #expect(request.url?.path() == "/api/v1/device/push_token")
+      #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer ala_secret")
+      return (204, Data())
+    }
+
+    try await api.deletePushToken()
+  }
+
   @Test func wakeSendsAnEmptyPostWithTheCredential() async throws {
     let api = client { request, body in
       #expect(request.httpMethod == "POST")

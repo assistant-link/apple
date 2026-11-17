@@ -63,6 +63,10 @@ struct AssistantListView: View {
           }
         }
         .onChange(of: path) { model.navigated(to: path) }
+        // Opening the conversation places its NEW divider, like opening it from the list.
+        .onChange(of: model.conversationToOpen, initial: true) {
+          if let id = model.takeConversationToOpen() { path = [.conversation(id)] }
+        }
         // The conversation can sit under Details mid-call, so the root ends it on backgrounding.
         .onChange(of: scenePhase) {
           if scenePhase == .background { model.leftForeground() }

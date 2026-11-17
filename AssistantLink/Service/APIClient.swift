@@ -100,6 +100,16 @@ struct APIClient: Sendable {
     _ = try await perform("POST", "wake")
   }
 
+  /// Pushes for the account reach this device through its APNs token, which replaces any
+  /// earlier one.
+  func setPushToken(_ token: String) async throws {
+    _ = try await perform("PUT", "device/push_token", body: ["token": token])
+  }
+
+  func deletePushToken() async throws {
+    _ = try await perform("DELETE", "device/push_token")
+  }
+
   func deleteAccount() async throws {
     _ = try await perform("DELETE", "account")
   }

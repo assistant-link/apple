@@ -7,7 +7,12 @@ so nothing has to be set up by hand in the Apple Developer portal.
 
 A paid team's profile lasts a year. A free personal team works too, but its installs expire
 after 7 days (run `make device` again) and it may refuse the bundle ID `ai.assistantlink.app`
-if that is registered to another team; see [Bundle ID](#bundle-id).
+if that is registered to another team; see [Bundle ID](#bundle-id). A free team can't sign
+push notifications either, so leave them out by adding this to `Local.mk`:
+
+```make
+XCODEBUILD_FLAGS := -quiet CODE_SIGN_ENTITLEMENTS=
+```
 
 ## One-time setup
 
