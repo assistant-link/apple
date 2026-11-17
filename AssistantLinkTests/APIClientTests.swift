@@ -145,7 +145,8 @@ struct APIClientTests {
       #expect(request.httpMethod == "PUT")
       #expect(request.url?.path() == "/api/v1/device/push_token")
       #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer ala_secret")
-      #expect(try body?.jsonObject() as? [String: String] == ["token": "0aff"])
+      let json = try body?.jsonObject()
+      #expect(json as? [String: String] == ["token": "0aff"])
       return (204, Data())
     }
 
