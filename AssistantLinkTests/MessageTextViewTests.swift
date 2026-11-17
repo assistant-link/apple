@@ -6,7 +6,7 @@ import UIKit
 
 @MainActor
 struct MessageTextViewTests {
-  @Observable private final class Draft {
+  @Observable fileprivate final class Draft {
     var text = ""
   }
 
