@@ -18,12 +18,18 @@ struct MessageComposer: View {
         .buttonStyle(.circle())
         .disabled(true)
         .accessibilityIdentifier("attachButton")
-      TextField("Message", text: $draft, axis: .vertical)
-        .lineLimit(1...DictationComposer.maxLines)
+      MessageTextView(text: $draft)
+        .overlay(alignment: .topLeading) {
+          if draft.isEmpty {
+            Text("Message")
+              .foregroundStyle(Color(.placeholderText))
+              .allowsHitTesting(false)
+              .accessibilityHidden(true)
+          }
+        }
         .disabled(!state.isFieldEnabled)
         // Centres a single line on the 44 pt buttons, and the last line once it wraps.
         .padding(.vertical, 11)
-        .accessibilityIdentifier("messageField")
       switch state.trailingButton {
       case .dictate:
         Button("Dictate", systemImage: "mic", action: onDictate)
