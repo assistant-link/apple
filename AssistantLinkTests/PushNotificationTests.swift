@@ -44,13 +44,14 @@ struct PushNotificationTests {
   }
 
   private func model(
-    _ service: Service, enableNotifications: @escaping @MainActor () -> Void = {}
+    _ service: Service, enableNotifications: @escaping @MainActor () -> Void = {},
+    sleep: @escaping @Sendable (Duration) async throws -> Void = { _ in }
   ) -> AppModel {
     let api = APIClient(
       baseURL: baseURL, credential: "ala_secret",
       session: StubURLProtocol.session { try service.respond(to: $0, body: $1) })
     return AppModel(
-      connect: { api }, sleep: { _ in }, dictation: .fake(),
+      connect: { api }, sleep: sleep, dictation: .fake(),
       enableNotifications: enableNotifications)
   }
 
@@ -122,6 +123,24 @@ struct PushNotificationTests {
     await model.start()
     model.received(pushToken: Data([0xbe, 0xef]))
     await model.pushTokenUpload?.value
+
+    try await model.logOut()
+    await model.pushTokenUpload?.value
+
+    #expect(service.requests == ["PUT beef", "DELETE", "PUT beef"])
+  }
+
+  @Test func logOutStopsARetryingUploadSoItCannotRestoreTheToken() async throws {
+    let service = Service(tokenStatuses: [503])
+    // The retry would wake once the token is removed, while the old account still exists.
+    let model = model(
+      service,
+      sleep: { _ in
+        while !service.requests.contains("DELETE") { try await Task.sleep(for: .milliseconds(1)) }
+      })
+    await model.start()
+    model.received(pushToken: Data([0xbe, 0xef]))
+    while service.requests.isEmpty { try await Task.sleep(for: .milliseconds(1)) }
 
     try await model.logOut()
     await model.pushTokenUpload?.value

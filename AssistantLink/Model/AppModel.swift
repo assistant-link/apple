@@ -332,7 +332,7 @@ final class AppModel {
       do {
         return try await operation()
       } catch {
-        guard attempt < attempts, session == nil || self.session == session,
+        guard attempt < attempts, !Task.isCancelled, session == nil || self.session == session,
           (error as? APIError)?.isTransient ?? true
         else { throw error }
         try await sleep(backoff.next())
@@ -394,6 +394,10 @@ final class AppModel {
     // The account owns the call, so the Assistant hears the end before the account is gone.
     endVoiceCall()
     await callOutbox?.value
+    // A retrying upload would put the token back on the account it is leaving.
+    pushTokenUpload?.cancel()
+    await pushTokenUpload?.value
+    pushTokenUpload = nil
     // The service keeps a deleted account's devices for a while, so the token leaves first.
     try? await client().deletePushToken()
     do {
