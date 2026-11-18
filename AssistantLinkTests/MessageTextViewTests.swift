@@ -4,15 +4,16 @@ import UIKit
 
 @testable import AssistantLink
 
-@MainActor
+/// Serialized: each test makes its window key and its text view first responder.
+@MainActor @Suite(.serialized)
 struct MessageTextViewTests {
-  @Observable fileprivate final class Draft {
+  private final class Draft {
     var text = ""
   }
 
   private let draft: Draft
   private let coordinator: MessageTextView.Coordinator
-  private let textView = UITextView()
+  private let textView = UITextView(frame: CGRect(x: 0, y: 0, width: 320, height: 44))
   private let window: UIWindow
 
   init() throws {
@@ -21,9 +22,13 @@ struct MessageTextViewTests {
     window = UIWindow(windowScene: scene)
     let draft = Draft()
     self.draft = draft
-    coordinator = MessageTextView.Coordinator(text: Bindable(draft).text)
+    coordinator = MessageTextView.Coordinator(
+      text: Binding(get: { draft.text }, set: { draft.text = $0 }))
     textView.delegate = coordinator
-    window.addSubview(textView)
+    let host = UIViewController()
+    textView.frame = CGRect(x: 0, y: 100, width: 320, height: 44)
+    host.view.addSubview(textView)
+    window.rootViewController = host
     window.makeKeyAndVisible()
     textView.becomeFirstResponder()
   }
