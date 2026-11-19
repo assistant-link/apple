@@ -4,7 +4,7 @@ import UIKit
 
 @testable import AssistantLink
 
-/// Serialized: each test makes its window key and its text view first responder.
+/// Serialized: each test makes the window key and its text view first responder.
 @MainActor @Suite(.serialized)
 struct MessageTextViewTests {
   private final class Draft {
@@ -14,12 +14,18 @@ struct MessageTextViewTests {
   private let draft: Draft
   private let coordinator: MessageTextView.Coordinator
   private let textView = UITextView(frame: CGRect(x: 0, y: 0, width: 320, height: 44))
-  private let window: UIWindow
+
+  /// Shared and never released: the keyboard keeps working with the first responder's window
+  /// after a test ends, and forming a weak reference to a deallocating window aborts the runner.
+  private static var window: UIWindow?
 
   init() throws {
-    let scene = try #require(
-      UIApplication.shared.connectedScenes.first { $0 is UIWindowScene } as? UIWindowScene)
-    window = UIWindow(windowScene: scene)
+    if Self.window == nil {
+      let scene = try #require(
+        UIApplication.shared.connectedScenes.first { $0 is UIWindowScene } as? UIWindowScene)
+      Self.window = UIWindow(windowScene: scene)
+    }
+    let window = try #require(Self.window)
     let draft = Draft()
     self.draft = draft
     coordinator = MessageTextView.Coordinator(
