@@ -107,12 +107,15 @@ struct DictationComposer: View {
     }
     .defaultScrollAnchor(.bottom)
     .scrollBounceBehavior(.basedOnSize)
-    .frame(maxHeight: Self.lineHeight * CGFloat(Self.maxLines))
+    .frame(maxHeight: Self.maxHeight)
     // Takes the height of the text, up to the limit, rather than all of it.
     .fixedSize(horizontal: false, vertical: true)
   }
 
-  private static var lineHeight: CGFloat { UIFont.preferredFont(forTextStyle: .body).lineHeight }
+  /// The height of `maxLines` lines, which the message field shares so the bar keeps its height.
+  static var maxHeight: CGFloat {
+    UIFont.preferredFont(forTextStyle: .body).lineHeight * CGFloat(maxLines)
+  }
 
   static func transcript(confirmed: String, provisional: String) -> AttributedString {
     var result = AttributedString(confirmed)
