@@ -56,6 +56,7 @@ struct LiveUpdates {
   func run(
     onOpen: () async -> Void,
     onLinkStatus: (LinkStatusChange) -> Void,
+    onLinkActivity: (LinkActivityChange) -> Void,
     onEventCreated: (Event) -> Void,
     onEventUpdated: (Event) -> Void
   ) async -> Stop? {
@@ -71,6 +72,7 @@ struct LiveUpdates {
           case .message(let text):
             switch LiveMessage(text: text) {
             case .linkStatus(let change): onLinkStatus(change)
+            case .linkActivity(let change): onLinkActivity(change)
             case .eventCreated(let event): onEventCreated(event)
             case .eventUpdated(let event): onEventUpdated(event)
             case .closing(reason: "account_deleted"): return .accountDeleted

@@ -58,12 +58,15 @@ struct Link: Decodable, Equatable, Identifiable, Sendable {
   var label: String?
   var status: Status
   var lastActiveAt: Date?
+  /// What the agent says it is doing. Only live, never stored.
+  @ActivityText var activity: String? = nil
 
   enum CodingKeys: String, CodingKey {
     case id
     case label
     case status
     case lastActiveAt = "last_active_at"
+    case activity
   }
 }
 

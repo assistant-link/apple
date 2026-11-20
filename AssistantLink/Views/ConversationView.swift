@@ -135,7 +135,14 @@ struct ConversationView: View {
             }
           }
         }
+        if let activity = assistant.activity {
+          ThinkingIndicator(
+            avatar: Avatar(id: assistant.avatar), name: assistant.name, label: activity
+          )
+          .transition(.move(edge: .bottom).combined(with: .opacity))
+        }
       }
+      .animation(.default, value: assistant.activity)
       .scrollTargetLayout()
       .padding(.horizontal, 16)
       .padding(.vertical, 24)
@@ -149,6 +156,9 @@ struct ConversationView: View {
         withAnimation(animated ? .default : nil) { position.scrollTo(edge: .bottom) }
       case .divider(let rowID): position.scrollTo(id: rowID, anchor: .top)
       }
+    }
+    .onChange(of: assistant.activity != nil) { _, isShown in
+      if isShown { withAnimation { position.scrollTo(edge: .bottom) } }
     }
     .safeAreaInset(edge: .bottom) {
       // The call sheet takes the composer's place.

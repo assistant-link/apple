@@ -18,6 +18,7 @@ struct CallSheet: View {
       startedAt: call.startedAt ?? .now, lines: call.transcript,
       presentation: CallSheetPresentation(call), isSpeakerOn: call.isSpeakerOn,
       isCompact: detent == Self.compact, replyVoice: model.kokoro?.status,
+      activity: assistant.activity,
       amplitude: { model.voiceCall.amplitude },
       actions: CallSheetContent.Actions(
         mute: { call.setMuted(!call.isMuted) },
@@ -69,6 +70,8 @@ struct CallSheetContent: View {
   var isSpeakerOn = true
   var isCompact = false
   var replyVoice: ReplyVoiceStatus?
+  /// What the agent says it is doing, for the indicator under the transcript.
+  var activity: String?
   /// Read by the waveforms only, so the fast changing level redraws nothing else.
   var amplitude: () -> Double = { 0.7 }
   var actions = Actions()
@@ -140,7 +143,7 @@ struct CallSheetContent: View {
         .padding(.trailing, 6)
         .frame(maxWidth: .infinity, alignment: .trailing)
     case .thinking:
-      ThinkingIndicator(avatar: avatar)
+      ThinkingIndicator(avatar: avatar, name: name, label: activity)
     case nil:
       EmptyView()
     }
@@ -237,11 +240,15 @@ struct TurnStatus: View {
   }
 }
 
-/// Shows the Assistant working on what the user said, until its reply comes.
+/// Shows the Assistant working on what the user said, until its reply comes. `label` is what
+/// the agent says it is doing, when it says so, and "Working…" otherwise.
 struct ThinkingIndicator: View {
   let avatar: Avatar
+  let name: String
+  var label: String?
 
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @State private var announcements = AnnouncementThrottle()
 
   var body: some View {
     HStack(spacing: 8) {
@@ -259,19 +266,31 @@ struct ThinkingIndicator: View {
           }
           .foregroundStyle(Color(.secondaryLabel))
         }
-        Text("Working…")
+        Text(label ?? AgentActivity.defaultLabel)
           .font(.subheadline)
           .foregroundStyle(.secondary)
+          .lineLimit(1)
       }
       .padding(.leading, 16)
       .padding(.trailing, 18)
-      .frame(height: 44)
+      .frame(minHeight: 44)
       .background(Color(.secondarySystemBackground), in: Capsule())
     }
     .frame(maxWidth: .infinity, alignment: .leading)
     .accessibilityElement(children: .ignore)
-    .accessibilityLabel("Working")
+    .accessibilityLabel(accessibilityText)
     .accessibilityIdentifier("thinkingIndicator")
+    .onAppear(perform: announce)
+    .onChange(of: label, announce)
+  }
+
+  private var accessibilityText: String {
+    AgentActivity.accessibilityLabel(label, name: name)
+  }
+
+  private func announce() {
+    guard label != nil, announcements.allows(at: .now) else { return }
+    AccessibilityNotification.Announcement(accessibilityText).post()
   }
 }
 
@@ -435,13 +454,20 @@ extension TranscriptLine {
 
 private func sampleSheet(
   _ state: VoiceCall.State, heard: String = "", lines: [TranscriptLine] = TranscriptLine.samples,
-  seconds: TimeInterval
+  seconds: TimeInterval, activity: String? = nil
 ) -> some View {
   CallSheetContent(
     name: "Hermes", avatar: Avatar(id: "avatar-3"), startedAt: .now.addingTimeInterval(-seconds),
     lines: lines,
     presentation: CallSheetPresentation(
-      state: state, isMuted: false, listeningFailed: false, heard: heard, transcript: lines))
+      state: state, isMuted: false, listeningFailed: false, heard: heard, transcript: lines),
+    activity: activity)
+}
+
+private func activitySheet() -> some View {
+  sampleSheet(
+    .listening, lines: Array(TranscriptLine.samples.prefix(3)), seconds: 62,
+    activity: "Moving the design review…")
 }
 
 #Preview("Call sheet, speaking") { sampleSheet(.speaking, seconds: 48) }
@@ -455,6 +481,8 @@ private func sampleSheet(
   sampleSheet(.listening, lines: Array(TranscriptLine.samples.prefix(3)), seconds: 62)
     .preferredColorScheme(.dark)
 }
+#Preview("Call sheet, activity") { activitySheet() }
+#Preview("Call sheet, activity, dark") { activitySheet().preferredColorScheme(.dark) }
 #Preview("Call sheet, collapsed") {
   CompactCallBar(
     name: "Hermes", avatar: Avatar(id: "avatar-3"), startedAt: .now.addingTimeInterval(-68),

@@ -57,6 +57,29 @@ struct LiveMessageTests {
     #expect(message == .linkStatus(LinkStatusChange(linkID: "l-1", status: .offline)))
   }
 
+  @Test func decodesALinkActivity() {
+    let message = LiveMessage(
+      text: #"""
+        {"jsonrpc": "2.0", "method": "link.activity",
+         "params": {"link_id": "l-1", "activity": "Searching the code…"}}
+        """#)
+
+    #expect(
+      message == .linkActivity(LinkActivityChange(linkID: "l-1", activity: "Searching the code…")))
+  }
+
+  @Test(arguments: [
+    #"{"link_id": "l-1", "activity": null}"#,
+    #"{"link_id": "l-1"}"#,
+    #"{"link_id": "l-1", "activity": {"text": "Typing…"}, "new": 1}"#,
+  ])
+  func aLinkActivityWithoutTextClearsIt(params: String) {
+    let message = LiveMessage(
+      text: #"{"jsonrpc": "2.0", "method": "link.activity", "params": \#(params)}"#)
+
+    #expect(message == .linkActivity(LinkActivityChange(linkID: "l-1", activity: nil)))
+  }
+
   @Test func decodesConnectionClosing() {
     let message = LiveMessage(
       text: #"""
@@ -101,6 +124,7 @@ struct LiveMessageTests {
     #"{"jsonrpc": "2.0", "method": "link.status", "params": {"link_id": "l-1"}}"#,
     #"{"jsonrpc": "1.0", "method": "connection.closing", "params": {"reason": "x"}}"#,
     #"[{"jsonrpc": "2.0", "method": "link.status"}]"#,
+    #"{"jsonrpc": "2.0", "method": "link.activity", "params": {"activity": "Typing…"}}"#,
     "not json",
   ])
   func ignoresEverythingElse(text: String) {

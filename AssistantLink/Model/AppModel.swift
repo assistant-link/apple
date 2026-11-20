@@ -156,6 +156,7 @@ final class AppModel {
         }
       },
       onLinkStatus: { apply($0) },
+      onLinkActivity: { apply($0) },
       onEventCreated: { apply(created: $0) },
       onEventUpdated: { apply(updated: $0) })
     if let stop {
@@ -164,19 +165,27 @@ final class AppModel {
   }
 
   func apply(_ change: LinkStatusChange) {
-    for index in assistants.indices {
-      guard let linkIndex = assistants[index].links.firstIndex(where: { $0.id == change.linkID })
-      else { continue }
-      assistants[index].links[linkIndex].status = change.status
-      assistants[index].links[linkIndex].lastActiveAt =
-        change.lastActiveAt ?? assistants[index].links[linkIndex].lastActiveAt
-      assistants[index].status = Assistant.Status(links: assistants[index].links.map(\.status))
-      syncVoiceCall()
-      return
+    let index = updateLink(id: change.linkID) { link in
+      link.status = change.status
+      link.lastActiveAt = change.lastActiveAt ?? link.lastActiveAt
+      if change.status != .online { link.activity = nil }
     }
+    guard let index else { return }
+    assistants[index].status = Assistant.Status(links: assistants[index].links.map(\.status))
+    syncVoiceCall()
+  }
+
+  func apply(_ change: LinkActivityChange) {
+    // The service also sends a clear after every agent message and disconnect.
+    guard link(id: change.linkID)?.activity != change.activity else { return }
+    updateLink(id: change.linkID) { $0.activity = change.activity }
   }
 
   func apply(created event: Event) {
+    // The service clears it too, but this way the reply takes the indicator's place at once.
+    if event.sender == .assistant, event.type == .textMessage {
+      clearActivity(assistantID: event.assistantID)
+    }
     timelines[event.assistantID]?.receive(event)
     setLatestEvent(event, onlyIfLatest: false)
     voiceCall.receive(event)
@@ -185,6 +194,30 @@ final class AppModel {
   func apply(updated event: Event) {
     timelines[event.assistantID]?.update(event)
     setLatestEvent(event, onlyIfLatest: true)
+  }
+
+  private func clearActivity(assistantID: Assistant.ID) {
+    guard let index = assistants.firstIndex(where: { $0.id == assistantID }) else { return }
+    for linkIndex in assistants[index].links.indices
+    where assistants[index].links[linkIndex].activity != nil {
+      assistants[index].links[linkIndex].activity = nil
+    }
+  }
+
+  private func link(id: Link.ID) -> Link? {
+    assistants.lazy.flatMap(\.links).first { $0.id == id }
+  }
+
+  /// Returns the index of the Link's Assistant, or `nil` for an unknown Link.
+  @discardableResult
+  private func updateLink(id: Link.ID, _ update: (inout Link) -> Void) -> Int? {
+    for index in assistants.indices {
+      if let linkIndex = assistants[index].links.firstIndex(where: { $0.id == id }) {
+        update(&assistants[index].links[linkIndex])
+        return index
+      }
+    }
+    return nil
   }
 
   /// Loads the conversation's latest events when it opens. The timeline exists before the

@@ -13,6 +13,7 @@ struct ComponentCatalog: View {
     case composerDictating = "composer-dictating"
     case call
     case chat
+    case chatActivity = "chat-activity"
     case callConnecting = "call-connecting"
     case callLive = "call-live"
     case afterCall = "after-call"
@@ -64,11 +65,17 @@ struct ComponentCatalog: View {
     var assistants = Assistant.samples
     switch page {
     case .chat, .afterCall: break
+    case .chatActivity: assistants[0].links[0].activity = Self.sampleActivity
     case .callConnecting: assistants[0].status = .offline
     case .callLive: break
     default: return nil
     }
-    let timeline = page == .afterCall ? Timeline.designMockAfterCall : .designMock
+    let timeline: Timeline =
+      switch page {
+      case .afterCall: .designMockAfterCall
+      case .chatActivity: .designMockWorking
+      default: .designMock
+      }
     return AppModel.preview(
       assistants, timelines: [assistants[0].id: timeline], voiceCall: .preview())
   }
@@ -133,6 +140,8 @@ struct ComponentCatalog: View {
         .disabled(true)
     }
   }
+
+  static let sampleActivity = "Searching the code…"
 
   /// The number of sample lines in the message field of the page, or nil on other pages.
   private var composerLines: Int? {
@@ -205,7 +214,8 @@ struct ComponentCatalog: View {
           name: "Hermes", avatar: Avatar(id: "avatar-3"), startedAt: .now, phase: phase,
           isWorking: phase == .live)
       }
-      ThinkingIndicator(avatar: Avatar(id: "avatar-3"))
+      ThinkingIndicator(avatar: Avatar(id: "avatar-3"), name: "Hermes")
+      ThinkingIndicator(avatar: Avatar(id: "avatar-3"), name: "Hermes", label: Self.sampleActivity)
       CallControls(isMuted: false, isSpeakerOn: true, actions: CallSheetContent.Actions())
       CompactCallBar(
         name: "Hermes", avatar: Avatar(id: "avatar-3"), startedAt: .now, onEnd: {}, onExpand: {}
@@ -245,6 +255,10 @@ struct ComponentCatalog: View {
 
 #Preview("Chat") { ComponentCatalog(page: .chat) }
 #Preview("Chat, dark") { ComponentCatalog(page: .chat).preferredColorScheme(.dark) }
+#Preview("Chat, activity") { ComponentCatalog(page: .chatActivity) }
+#Preview("Chat, activity, dark") {
+  ComponentCatalog(page: .chatActivity).preferredColorScheme(.dark)
+}
 
 #Preview("Dictation, idle") { ComponentCatalog(page: .dictationIdle) }
 #Preview("Dictation, preparing") { ComponentCatalog(page: .dictationPreparing) }

@@ -83,6 +83,19 @@ final class ComponentScreenshotTests: XCTestCase {
     capture(app, "33-chat-typing-long")
   }
 
+  /// The chat of the activity design mock 01-chat-activity: the agent's activity under the
+  /// latest message.
+  @MainActor func testCaptureChatActivity() {
+    let app = XCUIApplication()
+    app.launchArguments = ["-componentCatalog", "chat-activity"]
+    app.launch()
+    let indicator = app.descendants(matching: .any)["thinkingIndicator"]
+    XCTAssertTrue(indicator.waitForExistence(timeout: 30), "the activity did not appear")
+    XCTAssertEqual(indicator.label, "Hermes: Searching the code")
+    Thread.sleep(forTimeInterval: 1)
+    capture(app, "39-chat-activity")
+  }
+
   /// Design mocks 03-call-connecting, 04-call-live and 05-after-call, on sample data.
   @MainActor func testCaptureCall() {
     for (index, section) in ["call-connecting", "call-live", "after-call"].enumerated() {

@@ -89,6 +89,25 @@ struct ForwardCompatibilityTests {
     #expect(assistants[1].latestEvent == nil)
   }
 
+  @Test func aLinkHasNoActivityUnlessTheServiceSendsItAsText() async throws {
+    let api = client(
+      responding: #"""
+        {"assistants": [
+          {"id": "as-1", "name": "Hermes", "avatar": "avatar-3", "status": "online",
+           "links": [
+             {"id": "l-1", "status": "online", "activity": "Searching the code…"},
+             {"id": "l-2", "status": "online", "activity": null},
+             {"id": "l-3", "status": "online"},
+             {"id": "l-4", "status": "online", "activity": {"text": "Typing…"}}
+           ]}
+        ]}
+        """#)
+
+    let links = try await api.listAssistants()[0].links
+
+    #expect(links.map(\.activity) == ["Searching the code…", nil, nil, nil])
+  }
+
   @Test func anEventPageSkipsTheEventsItCannotDecode() async throws {
     let api = client(
       responding: #"""
