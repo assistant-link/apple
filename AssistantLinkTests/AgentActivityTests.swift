@@ -41,9 +41,8 @@ struct AgentActivityTests {
     var throttle = AnnouncementThrottle()
     let start = Date(timeIntervalSince1970: 1_791_462_615)
 
-    #expect(throttle.allows(at: start))
-    #expect(!throttle.allows(at: start.addingTimeInterval(1)))
-    #expect(!throttle.allows(at: start.addingTimeInterval(4)))
-    #expect(throttle.allows(at: start.addingTimeInterval(5)))
+    let allowed = [0, 1, 4, 5].map { throttle.allows(at: start.addingTimeInterval($0)) }
+
+    #expect(allowed == [true, false, false, true])
   }
 }
