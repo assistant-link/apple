@@ -128,3 +128,17 @@ extension Timeline {
     return Timeline(events: events)
   }()
 }
+
+extension Timeline {
+  /// The design mock ending with a request the Assistant is working on.
+  static let designMockWorking: Timeline = {
+    var events = designMock.events
+    events.append(
+      Event(
+        id: "01a11a4e-0a6b-7000-8000-000000000300", assistantID: Assistant.samples[0].id,
+        type: .textMessage, sender: .user,
+        createdAt: (events.last?.createdAt ?? .now).addingTimeInterval(60),
+        deliveryStatus: .delivered, text: "Can you find out what causes them and file an issue?"))
+    return Timeline(events: events)
+  }()
+}

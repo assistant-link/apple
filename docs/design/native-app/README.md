@@ -58,7 +58,7 @@ the call goes on; a tap brings it back. Only End hangs up. The title bubble says
 |---|---|---|
 | Header | avatar 28, name `.headline`, green dot + "Live", duration `mm:ss` counting up | "Working…" before the duration while the Assistant works |
 | Transcript | `MessageBubble`s of the call, under "Voice chat started" | under the last turn: waveform + "Speaking", or the partial bubble + "Listening…" |
-| Thinking indicator (`thinkingIndicator`) | avatar 28 + grey capsule, three pulsing dots | "Working…", from the moment the user's words are sent until a reply comes |
+| Thinking indicator (`thinkingIndicator`) | avatar 28 + grey capsule, three pulsing dots | "Working…", from the moment the user's words are sent until a reply comes; the agent's activity in its place while one is set |
 | Mute (`voiceMute`) | circle 56, `mic` / `mic.slash.fill`; muted = filled `.primary` circle | "Mute" / "Unmute" |
 | Speaker (`voiceSpeaker`) | circle 56, `speaker.wave.2.fill`; on (the default) = `.tint` fill | "Speaker" |
 | End (`voiceEnd`) | circle 56, filled `.red`, `phone.down.fill` | "End" |
@@ -68,6 +68,13 @@ A 72 pt empty slot under the buttons is kept for a later push-to-talk control.
 ### Voice chat marker (`voiceChatEntry`)
 
 Not a bubble: a small centered caption where the call ended, `Label("Voice chat · 00:15", systemImage: "waveform")` in `.footnote`, `.secondary`. The call's messages fold into it; tapping it opens the transcript in a sheet (`VoiceTranscriptSheet`).
+
+### Agent activity (`thinkingIndicator`)
+
+While the agent says what it is doing (`al activity`), the thinking indicator shows that text as its label at the
+bottom of the chat timeline, and under the call transcript in place of "Working…"; the call header stays "Working…".
+One line, cut at 60 characters, tail-truncated. It goes when the agent replies, stops, or clears it, and is never
+stored. VoiceOver reads "Hermes: Searching the code". Design: assistant-link/assistant-link#45.
 
 ### Empty state (`createLink`)
 

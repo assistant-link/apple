@@ -12,10 +12,22 @@ struct LinkStatusChange: Decodable, Equatable, Sendable {
   }
 }
 
+/// A Link's activity was set, or cleared with `nil`.
+struct LinkActivityChange: Decodable, Equatable, Sendable {
+  let linkID: String
+  @ActivityText var activity: String?
+
+  enum CodingKeys: String, CodingKey {
+    case linkID = "link_id"
+    case activity
+  }
+}
+
 /// A JSON-RPC 2.0 message from the app's live connection. Anything the app doesn't use
 /// (responses, errors, unknown notifications, malformed frames) is `.ignored`.
 enum LiveMessage: Equatable, Sendable {
   case linkStatus(LinkStatusChange)
+  case linkActivity(LinkActivityChange)
   case eventCreated(Event)
   case eventUpdated(Event)
   case closing(reason: String)
@@ -35,6 +47,10 @@ enum LiveMessage: Equatable, Sendable {
       self =
         (try? decoder.decode(Notification<LinkStatusChange>.self, from: data))
         .map { .linkStatus($0.params) } ?? .ignored
+    case "link.activity":
+      self =
+        (try? decoder.decode(Notification<LinkActivityChange>.self, from: data))
+        .map { .linkActivity($0.params) } ?? .ignored
     case "event.created":
       self =
         (try? decoder.decode(Notification<EventParams>.self, from: data))

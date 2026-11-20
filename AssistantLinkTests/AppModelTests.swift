@@ -269,6 +269,76 @@ struct AppModelTests {
     #expect(model.assistants == before)
   }
 
+  private func workingModel() async -> AppModel {
+    let model = model { _, _ in (200, Data(json: #"{"assistants": [\#(twoLinks)]}"#)) }
+    await model.start()
+    model.apply(LinkStatusChange(linkID: "l-1", status: .online, lastActiveAt: .now))
+    model.apply(LinkActivityChange(linkID: "l-1", activity: "Searching the code…"))
+    return model
+  }
+
+  private func message(from sender: Event.Sender) -> Event {
+    Event(
+      id: "e-1", assistantID: "as-1", type: .textMessage, sender: sender, createdAt: .now,
+      linkID: sender == .assistant ? "l-1" : nil, text: "Found it.")
+  }
+
+  @Test func aLinkActivityShowsOnItsAssistantUntilItIsCleared() async throws {
+    let model = await workingModel()
+
+    #expect(model.assistant(id: "as-1")?.activity == "Searching the code…")
+    model.apply(LinkActivityChange(linkID: "l-1", activity: "  "))
+    #expect(model.assistant(id: "as-1")?.activity == nil)
+    model.apply(LinkActivityChange(linkID: "l-1", activity: "Testing…"))
+    model.apply(LinkActivityChange(linkID: "l-1", activity: nil))
+    #expect(model.assistant(id: "as-1")?.activity == nil)
+  }
+
+  @Test(arguments: [Link.Status.idle, .offline])
+  func aLinkThatStopsLosesItsActivity(status: Link.Status) async throws {
+    let model = await workingModel()
+
+    model.apply(LinkStatusChange(linkID: "l-1", status: status, lastActiveAt: .now))
+
+    #expect(model.assistant(id: "as-1")?.activity == nil)
+  }
+
+  @Test func aMessageFromTheAssistantClearsItsActivity() async throws {
+    let model = await workingModel()
+
+    model.apply(created: message(from: .assistant))
+
+    #expect(model.assistant(id: "as-1")?.activity == nil)
+  }
+
+  @Test func aMessageFromOneLinkKeepsTheOtherLinksActivity() async throws {
+    let model = await workingModel()
+    model.apply(LinkStatusChange(linkID: "l-2", status: .online, lastActiveAt: .now))
+    model.apply(LinkActivityChange(linkID: "l-2", activity: "Running the tests…"))
+
+    model.apply(created: message(from: .assistant))
+
+    #expect(model.assistant(id: "as-1")?.links.map(\.activity) == [nil, "Running the tests…"])
+    #expect(model.assistant(id: "as-1")?.activity == "Running the tests…")
+  }
+
+  @Test func theUsersMessageKeepsTheActivity() async throws {
+    let model = await workingModel()
+
+    model.apply(created: message(from: .user))
+
+    #expect(model.assistant(id: "as-1")?.activity == "Searching the code…")
+  }
+
+  @Test func anActivityForAnUnknownLinkChangesNothing() async throws {
+    let model = await workingModel()
+    let before = model.assistants
+
+    model.apply(LinkActivityChange(linkID: "l-9", activity: "Typing…"))
+
+    #expect(model.assistants == before)
+  }
+
   @Test func liveUpdatesRefetchOnOpenAndApplyStatus() async throws {
     let fetches = Mutex(0)
     let api = APIClient(
