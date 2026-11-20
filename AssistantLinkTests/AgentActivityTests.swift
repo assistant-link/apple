@@ -41,12 +41,14 @@ struct AgentActivityTests {
     var throttle = AnnouncementThrottle()
     let start = Date(timeIntervalSince1970: 1_791_462_615)
 
-    let steps = [0, 1, 4].map { throttle.receive("\($0)", at: start.addingTimeInterval($0)) }
+    let steps = [("a", 0), ("b", 1), ("c", 4)].map { text, offset in
+      throttle.receive(text, at: start.addingTimeInterval(TimeInterval(offset)))
+    }
     let flushed = throttle.flush(at: start.addingTimeInterval(5))
-    let afterFlush = throttle.receive("6", at: start.addingTimeInterval(6))
+    let afterFlush = throttle.receive("d", at: start.addingTimeInterval(6))
 
-    #expect(steps == [.announce("0"), .wait(4), .none])
-    #expect(flushed == "4")
+    #expect(steps == [.announce("a"), .wait(4), .none])
+    #expect(flushed == "c")
     #expect(afterFlush == .wait(4))
   }
 
