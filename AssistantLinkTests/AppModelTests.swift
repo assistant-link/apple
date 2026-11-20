@@ -311,6 +311,17 @@ struct AppModelTests {
     #expect(model.assistant(id: "as-1")?.activity == nil)
   }
 
+  @Test func aMessageFromOneLinkKeepsTheOtherLinksActivity() async throws {
+    let model = await workingModel()
+    model.apply(LinkStatusChange(linkID: "l-2", status: .online, lastActiveAt: .now))
+    model.apply(LinkActivityChange(linkID: "l-2", activity: "Running the tests…"))
+
+    model.apply(created: message(from: .assistant))
+
+    #expect(model.assistant(id: "as-1")?.links.map(\.activity) == [nil, "Running the tests…"])
+    #expect(model.assistant(id: "as-1")?.activity == "Running the tests…")
+  }
+
   @Test func theUsersMessageKeepsTheActivity() async throws {
     let model = await workingModel()
 

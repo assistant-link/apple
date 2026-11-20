@@ -137,7 +137,8 @@ struct ConversationView: View {
         }
         if let activity = assistant.activity {
           ThinkingIndicator(
-            avatar: Avatar(id: assistant.avatar), name: assistant.name, label: activity
+            avatar: Avatar(id: assistant.avatar), name: assistant.name, label: activity,
+            announces: !CallPresentation(model.voiceCall, assistantID: assistant.id).isInCall
           )
           .transition(.move(edge: .bottom).combined(with: .opacity))
         }

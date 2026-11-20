@@ -183,8 +183,8 @@ final class AppModel {
 
   func apply(created event: Event) {
     // The service clears it too, but this way the reply takes the indicator's place at once.
-    if event.sender == .assistant, event.type == .textMessage {
-      clearActivity(assistantID: event.assistantID)
+    if event.sender == .assistant, event.type == .textMessage, let linkID = event.linkID {
+      updateLink(id: linkID) { $0.activity = nil }
     }
     timelines[event.assistantID]?.receive(event)
     setLatestEvent(event, onlyIfLatest: false)
@@ -194,14 +194,6 @@ final class AppModel {
   func apply(updated event: Event) {
     timelines[event.assistantID]?.update(event)
     setLatestEvent(event, onlyIfLatest: true)
-  }
-
-  private func clearActivity(assistantID: Assistant.ID) {
-    guard let index = assistants.firstIndex(where: { $0.id == assistantID }) else { return }
-    for linkIndex in assistants[index].links.indices
-    where assistants[index].links[linkIndex].activity != nil {
-      assistants[index].links[linkIndex].activity = nil
-    }
   }
 
   private func link(id: Link.ID) -> Link? {

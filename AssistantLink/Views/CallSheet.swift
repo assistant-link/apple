@@ -246,9 +246,12 @@ struct ThinkingIndicator: View {
   let avatar: Avatar
   let name: String
   var label: String?
+  /// Off for the chat's indicator during a call, so the call sheet's alone announces.
+  var announces = true
 
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @State private var announcements = AnnouncementThrottle()
+  @State private var trailingAnnouncement: Task<Void, Never>?
 
   var body: some View {
     HStack(spacing: 8) {
@@ -282,6 +285,7 @@ struct ThinkingIndicator: View {
     .accessibilityIdentifier("thinkingIndicator")
     .onAppear(perform: announce)
     .onChange(of: label, announce)
+    .onDisappear(perform: cancelAnnouncement)
   }
 
   private var accessibilityText: String {
@@ -289,8 +293,22 @@ struct ThinkingIndicator: View {
   }
 
   private func announce() {
-    guard label != nil, announcements.allows(at: .now) else { return }
-    AccessibilityNotification.Announcement(accessibilityText).post()
+    guard label != nil, announces else { return cancelAnnouncement() }
+    switch announcements.receive(accessibilityText, at: .now) {
+    case .announce(let text): AccessibilityNotification.Announcement(text).post()
+    case .wait(let delay):
+      trailingAnnouncement = Task {
+        try? await Task.sleep(for: .seconds(delay))
+        guard !Task.isCancelled, let text = announcements.flush(at: .now) else { return }
+        AccessibilityNotification.Announcement(text).post()
+      }
+    case .none: break
+    }
+  }
+
+  private func cancelAnnouncement() {
+    trailingAnnouncement?.cancel()
+    announcements.cancel()
   }
 }
 

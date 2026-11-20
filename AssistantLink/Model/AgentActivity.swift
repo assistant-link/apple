@@ -55,15 +55,37 @@ extension Assistant {
 }
 
 /// Lets VoiceOver announce a new activity at most once every few seconds, so it isn't flooded.
+/// What arrives in between waits, and only the latest of it is announced when the interval ends.
 struct AnnouncementThrottle {
+  enum Step: Equatable {
+    case announce(String)
+    case wait(TimeInterval)
+    case none
+  }
+
   static let interval: TimeInterval = 5
   private var lastAnnounced: Date?
+  private var pending: String?
 
-  mutating func allows(at date: Date) -> Bool {
-    if let lastAnnounced, date.timeIntervalSince(lastAnnounced) < Self.interval { return false }
+  /// After `.wait`, call `flush(at:)` once the delay has passed.
+  mutating func receive(_ text: String, at date: Date) -> Step {
+    if let lastAnnounced, date.timeIntervalSince(lastAnnounced) < Self.interval {
+      defer { pending = text }
+      return pending == nil ? .wait(Self.interval - date.timeIntervalSince(lastAnnounced)) : .none
+    }
     lastAnnounced = date
-    return true
+    pending = nil
+    return .announce(text)
   }
+
+  mutating func flush(at date: Date) -> String? {
+    guard let text = pending else { return nil }
+    pending = nil
+    lastAnnounced = date
+    return text
+  }
+
+  mutating func cancel() { pending = nil }
 }
 
 extension Character {
