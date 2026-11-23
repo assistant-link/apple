@@ -378,6 +378,61 @@ struct AppModelTests {
     #expect(model.assistant(id: "as-1")?.status == .online)
   }
 
+  @Test func anAssistantUpdateRenamesItAndSetsItsPlatform() async throws {
+    let model = await workingModel()
+
+    model.apply(AssistantChange(id: "as-1", name: "Athena", platform: "openclaw"))
+
+    #expect(model.assistant(id: "as-1")?.name == "Athena")
+    #expect(model.assistant(id: "as-1")?.platform == "openclaw")
+    #expect(model.assistant(id: "as-1")?.activity == "Searching the code…")
+  }
+
+  @Test func anUpdateForAnUnknownAssistantChangesNothing() async throws {
+    let model = await workingModel()
+    let before = model.assistants
+
+    model.apply(AssistantChange(id: "as-9", name: "Athena", platform: nil))
+
+    #expect(model.assistants == before)
+  }
+
+  @Test func liveUpdatesRenameTheAssistant() async throws {
+    let api = APIClient(
+      baseURL: baseURL, credential: "ala_secret",
+      session: StubURLProtocol.session { [hermes] _, _ in
+        (200, Data(json: #"{"assistants": [\#(hermes)]}"#))
+      })
+    let renamed = #"""
+      {"jsonrpc": "2.0", "method": "assistant.updated",
+       "params": {"assistant": {"id": "as-1", "name": "Athena", "platform": "muse"}}}
+      """#
+    let model = liveModel(api: api, messages: [renamed, Self.accountDeleted])
+    await model.start()
+
+    await model.runLiveUpdates()
+
+    #expect(model.assistant(id: "as-1")?.name == "Athena")
+    #expect(model.assistant(id: "as-1")?.platform == "muse")
+  }
+
+  @Test func refreshingTakesTheNameAnAgentSetWhileTheAppWasOffline() async throws {
+    let fetches = Mutex(0)
+    let model = model { [hermes] _, _ in
+      let count = fetches.withLock {
+        $0 += 1
+        return $0
+      }
+      let assistant = count == 1 ? hermes : hermes.replacing("Hermes", with: "Athena")
+      return (200, Data(json: #"{"assistants": [\#(assistant)]}"#))
+    }
+    await model.start()
+
+    try await model.refresh()
+
+    #expect(model.assistant(id: "as-1")?.name == "Athena")
+  }
+
   private nonisolated static func eventJSON(_ id: String) -> String {
     #"""
     {"id": "\#(id)", "assistant_id": "as-1", "type": "text_message", "sender": "assistant",

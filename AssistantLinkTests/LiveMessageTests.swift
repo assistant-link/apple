@@ -80,6 +80,30 @@ struct LiveMessageTests {
     #expect(message == .linkActivity(LinkActivityChange(linkID: "l-1", activity: nil)))
   }
 
+  @Test func decodesAnAssistantUpdate() {
+    let message = LiveMessage(
+      text: #"""
+        {"jsonrpc": "2.0", "method": "assistant.updated",
+         "params": {"assistant": {"id": "as-1", "name": "Athena", "platform": "openclaw",
+                                  "avatar": "avatar-3"}}}
+        """#)
+
+    let change = AssistantChange(id: "as-1", name: "Athena", platform: "openclaw")
+    #expect(message == .assistantUpdated(change))
+  }
+
+  @Test(arguments: [#""platform": null"#, #""platform": 7"#, #""other": 1"#])
+  func anAssistantUpdateWithoutAPlatformAsTextHasNone(field: String) {
+    let message = LiveMessage(
+      text: #"""
+        {"jsonrpc": "2.0", "method": "assistant.updated",
+         "params": {"assistant": {"id": "as-1", "name": "Athena", \#(field)}}}
+        """#)
+
+    let change = AssistantChange(id: "as-1", name: "Athena", platform: nil)
+    #expect(message == .assistantUpdated(change))
+  }
+
   @Test func decodesConnectionClosing() {
     let message = LiveMessage(
       text: #"""
@@ -125,6 +149,7 @@ struct LiveMessageTests {
     #"{"jsonrpc": "1.0", "method": "connection.closing", "params": {"reason": "x"}}"#,
     #"[{"jsonrpc": "2.0", "method": "link.status"}]"#,
     #"{"jsonrpc": "2.0", "method": "link.activity", "params": {"activity": "Typing…"}}"#,
+    #"{"jsonrpc": "2.0", "method": "assistant.updated", "params": {"assistant": {"id": "as-1"}}}"#,
     "not json",
   ])
   func ignoresEverythingElse(text: String) {

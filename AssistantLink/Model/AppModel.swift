@@ -157,6 +157,7 @@ final class AppModel {
       },
       onLinkStatus: { apply($0) },
       onLinkActivity: { apply($0) },
+      onAssistantUpdated: { apply($0) },
       onEventCreated: { apply(created: $0) },
       onEventUpdated: { apply(updated: $0) })
     if let stop {
@@ -179,6 +180,12 @@ final class AppModel {
     // The service also sends a clear after every agent message and disconnect.
     guard link(id: change.linkID)?.activity != change.activity else { return }
     updateLink(id: change.linkID) { $0.activity = change.activity }
+  }
+
+  func apply(_ change: AssistantChange) {
+    guard let index = assistants.firstIndex(where: { $0.id == change.id }) else { return }
+    assistants[index].name = change.name
+    assistants[index].platform = change.platform
   }
 
   func apply(created event: Event) {

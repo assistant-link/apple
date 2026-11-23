@@ -36,9 +36,11 @@ struct Assistant: Decodable, Equatable, Identifiable, Sendable {
   var status: Status
   @LossyArray var links: [Link]
   @LossyOptional var latestEvent: Event? = nil
+  /// What the agent says it runs on, free-form. Not shown yet.
+  @LossyOptional var platform: String? = nil
 
   enum CodingKeys: String, CodingKey {
-    case id, name, avatar, status, links
+    case id, name, avatar, status, links, platform
     case latestEvent = "latest_event"
   }
 }
