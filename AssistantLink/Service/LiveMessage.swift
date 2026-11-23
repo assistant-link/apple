@@ -23,11 +23,19 @@ struct LinkActivityChange: Decodable, Equatable, Sendable {
   }
 }
 
+/// An agent renamed its Assistant or changed its platform.
+struct AssistantChange: Decodable, Equatable, Sendable {
+  let id: Assistant.ID
+  let name: String
+  @LossyOptional var platform: String?
+}
+
 /// A JSON-RPC 2.0 message from the app's live connection. Anything the app doesn't use
 /// (responses, errors, unknown notifications, malformed frames) is `.ignored`.
 enum LiveMessage: Equatable, Sendable {
   case linkStatus(LinkStatusChange)
   case linkActivity(LinkActivityChange)
+  case assistantUpdated(AssistantChange)
   case eventCreated(Event)
   case eventUpdated(Event)
   case closing(reason: String)
@@ -51,6 +59,10 @@ enum LiveMessage: Equatable, Sendable {
       self =
         (try? decoder.decode(Notification<LinkActivityChange>.self, from: data))
         .map { .linkActivity($0.params) } ?? .ignored
+    case "assistant.updated":
+      self =
+        (try? decoder.decode(Notification<AssistantParams>.self, from: data))
+        .map { .assistantUpdated($0.params.assistant) } ?? .ignored
     case "event.created":
       self =
         (try? decoder.decode(Notification<EventParams>.self, from: data))
@@ -89,6 +101,10 @@ private struct Header: Decodable {
 
 private struct Notification<Params: Decodable>: Decodable {
   let params: Params
+}
+
+private struct AssistantParams: Decodable {
+  let assistant: AssistantChange
 }
 
 private struct EventParams: Decodable {

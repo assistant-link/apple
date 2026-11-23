@@ -108,6 +108,27 @@ struct ForwardCompatibilityTests {
     #expect(links.map(\.activity) == ["Searching the code…", nil, nil, nil])
   }
 
+  @Test func anAssistantKeepsAnyPlatformTextAndHasNoneOtherwise() async throws {
+    let api = client(
+      responding: #"""
+        {"assistants": [
+          {"id": "as-1", "name": "Hermes", "avatar": "avatar-3", "status": "online", "links": [],
+           "platform": "openclaw"},
+          {"id": "as-2", "name": "Muse", "avatar": "avatar-1", "status": "online", "links": [],
+           "platform": "My Own Bot"},
+          {"id": "as-3", "name": "Iris", "avatar": "avatar-2", "status": "online", "links": [],
+           "platform": null},
+          {"id": "as-4", "name": "Dots", "avatar": "avatar-4", "status": "online", "links": []},
+          {"id": "as-5", "name": "Duet", "avatar": "avatar-5", "status": "online", "links": [],
+           "platform": {"name": "duet"}}
+        ]}
+        """#)
+
+    let assistants = try await api.listAssistants()
+
+    #expect(assistants.map(\.platform) == ["openclaw", "My Own Bot", nil, nil, nil])
+  }
+
   @Test func anEventPageSkipsTheEventsItCannotDecode() async throws {
     let api = client(
       responding: #"""

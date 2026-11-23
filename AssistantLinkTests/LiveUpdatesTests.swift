@@ -217,7 +217,7 @@ struct LiveUpdatesTests {
     var log: [String] = []
 
     _ = await script.liveUpdates().run(
-      onOpen: {}, onLinkStatus: { _ in }, onLinkActivity: { _ in },
+      onOpen: {}, onLinkStatus: { _ in }, onLinkActivity: { _ in }, onAssistantUpdated: { _ in },
       onEventCreated: { log.append("created \($0.id)") },
       onEventUpdated: { log.append("updated \($0.id)") })
 
@@ -234,9 +234,25 @@ struct LiveUpdatesTests {
 
     _ = await script.liveUpdates().run(
       onOpen: {}, onLinkStatus: { _ in }, onLinkActivity: { changes.append($0) },
-      onEventCreated: { _ in }, onEventUpdated: { _ in })
+      onAssistantUpdated: { _ in }, onEventCreated: { _ in }, onEventUpdated: { _ in })
 
     #expect(changes == [LinkActivityChange(linkID: "l-1", activity: "Typing…")])
+  }
+
+  @Test func passesAssistantUpdates() async {
+    let update =
+      #"{"jsonrpc": "2.0", "method": "assistant.updated", "params": {"assistant": {"id": "as-1", "name": "Athena", "platform": null}}}"#
+    let script = Script([
+      .init(steps: [.open, .message(update), .message(accountDeleted)], end: .closed)
+    ])
+    var changes: [AssistantChange] = []
+
+    _ = await script.liveUpdates().run(
+      onOpen: {}, onLinkStatus: { _ in }, onLinkActivity: { _ in },
+      onAssistantUpdated: { changes.append($0) }, onEventCreated: { _ in },
+      onEventUpdated: { _ in })
+
+    #expect(changes == [AssistantChange(id: "as-1", name: "Athena", platform: nil)])
   }
 }
 
@@ -244,7 +260,7 @@ extension LiveUpdates {
   func run(onOpen: () async -> Void, onLinkStatus: (LinkStatusChange) -> Void) async -> Stop? {
     await run(
       onOpen: onOpen, onLinkStatus: onLinkStatus, onLinkActivity: { _ in },
-      onEventCreated: { _ in }, onEventUpdated: { _ in })
+      onAssistantUpdated: { _ in }, onEventCreated: { _ in }, onEventUpdated: { _ in })
   }
 }
 
