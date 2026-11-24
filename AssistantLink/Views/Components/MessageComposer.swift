@@ -6,6 +6,7 @@ import SwiftUI
 struct MessageComposer: View {
   @Binding var draft: String
   var isInCall = false
+  var focusRequest = 0
   let onSend: () -> Void
   var onDictate: () -> Void = {}
 
@@ -18,7 +19,7 @@ struct MessageComposer: View {
         .buttonStyle(.circle())
         .disabled(true)
         .accessibilityIdentifier("attachButton")
-      MessageTextView(text: $draft)
+      MessageTextView(text: $draft, focusRequest: focusRequest)
         .overlay(alignment: .topLeading) {
           if draft.isEmpty {
             Text("Message")
@@ -43,6 +44,43 @@ struct MessageComposer: View {
       }
     }
     .composerBox()
+  }
+}
+
+/// Above the composer while the user replies to a message.
+struct ReplyQuoteBar: View {
+  let title: String
+  let text: String
+  let onCancel: () -> Void
+
+  var body: some View {
+    HStack(spacing: 10) {
+      RoundedRectangle(cornerRadius: 1.5)
+        .fill(.tint)
+        .frame(width: 3, height: 36)
+      VStack(alignment: .leading, spacing: 2) {
+        Text(title)
+          .font(.footnote.weight(.semibold))
+        Text(text)
+          .font(.footnote)
+          .foregroundStyle(.secondary)
+          .lineLimit(1)
+      }
+      .accessibilityElement(children: .combine)
+      Spacer(minLength: 0)
+      Button("Cancel Reply", systemImage: "xmark", action: onCancel)
+        .buttonStyle(.circle(foreground: .secondary, diameter: 28))
+        .accessibilityIdentifier("cancelReplyButton")
+    }
+    .padding(.leading, 12)
+    .padding(.trailing, 2)
+    .padding(.vertical, 4)
+    .glassBackground(in: RoundedRectangle(cornerRadius: 20))
+    .overlay {
+      RoundedRectangle(cornerRadius: 20).strokeBorder(Color(.separator), lineWidth: 0.5)
+    }
+    .accessibilityElement(children: .contain)
+    .accessibilityIdentifier("replyQuoteBar")
   }
 }
 

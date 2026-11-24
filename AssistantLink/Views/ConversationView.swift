@@ -12,6 +12,9 @@ struct ConversationView: View {
   @State private var startFailure: VoiceCall.StartFailure?
   @State private var visit = ConversationVisit()
   @State private var isVisible = false
+  @State private var draft = MessageDraft()
+  /// The row a tap on a reply's quote scrolled to, washed with the tint for a moment.
+  @State private var highlightedRowID: String?
   @Environment(\.scenePhase) private var scenePhase
   var readMarks = ReadMarks()
   /// Previews cannot fetch, so a visit placed in advance stands in for the one `open` places.
@@ -103,6 +106,7 @@ struct ConversationView: View {
 
   private func timeline(_ assistant: Assistant) -> some View {
     let content = model.timelines[assistant.id] ?? Timeline()
+    let isInCall = CallPresentation(model.voiceCall, assistantID: assistant.id).isInCall
     return ScrollView {
       // Not lazy: when the composer or keyboard resizes the view, a lazy stack anchored to the
       // bottom can lose its place and draw nothing until the next scroll. Events load 50 to a
@@ -114,7 +118,7 @@ struct ConversationView: View {
             if let first { position.scrollTo(id: first, anchor: .top) }
           }
         }
-        ForEach(content.rows) { row in
+        ForEach(content.rows(isInCall: isInCall)) { row in
           VStack(spacing: 12) {
             switch row.content {
             case .event(let event):
@@ -124,15 +128,24 @@ struct ConversationView: View {
               } else if row.showsTimeCaption {
                 TimeCaptionView(date: event.createdAt)
               }
-              eventView(event, in: assistant, timeline: content)
+              eventView(event, in: assistant, timeline: content, replyTarget: row.replyTarget)
             case .outgoing(let message):
               if row.showsTimeCaption { TimeCaptionView(date: message.createdAt) }
               MessageBubble(
                 text: message.text, isFromUser: true,
                 caption: content.caption(forMessageID: message.id),
                 isVoice: message.via == .voice,
-                onFailureTap: message.state == .failed ? { failedMessage = request(message) } : nil)
+                onFailureTap: message.state == .failed ? { failedMessage = request(message) } : nil,
+                quote: message.replyTo.flatMap(content.quote(forReplyTo:)),
+                onQuoteTap: message.replyTo.map { id in
+                  { showOriginal(id, assistantID: assistant.id) }
+                })
             }
+          }
+          .background {
+            Color.accentColor.opacity(row.id == highlightedRowID ? 0.1 : 0)
+              .padding(.horizontal, -16)
+              .padding(.vertical, -6)
           }
         }
         if let activity = assistant.activity {
@@ -166,7 +179,7 @@ struct ConversationView: View {
       if CallPresentation(model.voiceCall, assistantID: assistant.id).isInCall {
         Color.clear.frame(height: CallSheet.compactHeight)
       } else if assistant.hasPairedLink {
-        ComposerView(assistant: assistant)
+        ComposerView(assistant: assistant, draft: $draft)
       }
     }
     .task { await open(assistant.id) }
@@ -197,6 +210,20 @@ struct ConversationView: View {
       in: model.timelines[id]?.events ?? [], lastReadID: readMarks.lastReadID(assistantID: id))
   }
 
+  /// Scrolls to the message a reply answers, loading earlier pages until it is there.
+  private func showOriginal(_ id: String, assistantID: Assistant.ID) {
+    Task {
+      guard await model.loadEarlier(untilEventID: id, assistantID: assistantID),
+        case .message(_, let rowID)? = model.timelines[assistantID]?.quote(forReplyTo: id)
+      else { return }
+      withAnimation { position.scrollTo(id: rowID, anchor: .center) }
+      highlightedRowID = rowID
+      try? await Task.sleep(for: .seconds(1))
+      guard highlightedRowID == rowID else { return }
+      withAnimation(.easeOut(duration: 0.4)) { highlightedRowID = nil }
+    }
+  }
+
   /// Leaving the screen or the app marks everything the conversation showed as read.
   private func leave(_ id: Assistant.ID) {
     if visit.leave() {
@@ -205,14 +232,17 @@ struct ConversationView: View {
   }
 
   @ViewBuilder
-  private func eventView(_ event: Event, in assistant: Assistant, timeline: Timeline)
-    -> some View
-  {
+  private func eventView(
+    _ event: Event, in assistant: Assistant, timeline: Timeline, replyTarget: ReplyTarget?
+  ) -> some View {
     switch event.type {
     case .textMessage:
       MessageBubble(
         text: event.text ?? "", isFromUser: event.sender == .user, isDeleted: event.deleted,
-        caption: timeline.caption(forMessageID: event.id), isVoice: event.via == .voice)
+        caption: timeline.caption(forMessageID: event.id), isVoice: event.via == .voice,
+        quote: event.replyTo.flatMap(timeline.quote(forReplyTo:)),
+        onQuoteTap: event.replyTo.map { id in { showOriginal(id, assistantID: assistant.id) } },
+        onReply: replyTarget.map { target in { draft.replyTarget = target } })
     case .callStarted, .unknown:
       EmptyView()
     case .callEnded:
@@ -307,6 +337,14 @@ private struct SystemEventView: View {
     ConversationView(assistantID: id, readMarks: readMarks, previewVisit: visit)
   }
   .environment(AppModel.preview(Assistant.samples, timelines: [id: .designMock]))
+}
+
+#Preview("Replies") {
+  let id = Assistant.samples[0].id
+  return NavigationStack {
+    ConversationView(assistantID: id)
+  }
+  .environment(AppModel.preview(Assistant.samples, timelines: [id: .designMockReplies]))
 }
 
 #Preview("First pairing") {

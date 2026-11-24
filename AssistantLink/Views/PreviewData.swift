@@ -142,3 +142,24 @@ extension Timeline {
     return Timeline(events: events)
   }()
 }
+
+extension Timeline {
+  /// The design mock with a reply from each side.
+  static let designMockReplies: Timeline = {
+    var events = designMock.events
+    let question = events[4]
+    var answer = Event(
+      id: "01a11a4e-0a6b-7000-8000-000000000400", assistantID: Assistant.samples[0].id,
+      type: .textMessage, sender: .user,
+      createdAt: (events.last?.createdAt ?? .now).addingTimeInterval(60),
+      deliveryStatus: .delivered, text: "Yes, the one with Dana first.")
+    answer.replyTo = question.id
+    var thanks = Event(
+      id: "01a11a4e-0a6b-7000-8000-000000000401", assistantID: Assistant.samples[0].id,
+      type: .textMessage, sender: .assistant, createdAt: answer.createdAt.addingTimeInterval(30),
+      text: "Got it. I will remind you at 9:50.")
+    thanks.replyTo = answer.id
+    events += [answer, thanks]
+    return Timeline(events: events)
+  }()
+}

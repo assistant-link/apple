@@ -5,8 +5,12 @@ import UIKit
 /// words keyboard dictation has not committed yet marked in place, so they come back after Send.
 struct MessageTextView: UIViewRepresentable {
   @Binding var text: String
+  /// Each change puts the cursor in the field and brings up the keyboard.
+  var focusRequest = 0
 
-  func makeCoordinator() -> Coordinator { Coordinator(text: $text) }
+  func makeCoordinator() -> Coordinator {
+    Coordinator(text: $text, focusRequest: focusRequest)
+  }
 
   func makeUIView(context: Context) -> UITextView {
     let textView = UITextView()
@@ -36,6 +40,10 @@ struct MessageTextView: UIViewRepresentable {
       textView.accessibilityTraits.insert(.notEnabled)
     }
     context.coordinator.show(text, in: textView)
+    if context.coordinator.focusRequest != focusRequest {
+      context.coordinator.focusRequest = focusRequest
+      if isEnabled { textView.becomeFirstResponder() }
+    }
   }
 
   /// The height of the text, up to as many lines as dictation shows; beyond that it scrolls.
@@ -49,10 +57,12 @@ struct MessageTextView: UIViewRepresentable {
 
   @MainActor final class Coordinator: NSObject, UITextViewDelegate {
     var text: Binding<String>
+    var focusRequest: Int
     private var isShowing = false
 
-    init(text: Binding<String>) {
+    init(text: Binding<String>, focusRequest: Int = 0) {
       self.text = text
+      self.focusRequest = focusRequest
     }
 
     /// Ends any dictation or composition before replacing the text: left marked, the keyboard

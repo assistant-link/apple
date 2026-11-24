@@ -117,6 +117,16 @@ struct ComponentCatalog: View {
       }
       ChatBubble(text: "This message was deleted", style: .deleted)
         .frame(maxWidth: .infinity, alignment: .trailing)
+      ChatBubble(
+        text: "Yes, keep Friday.", style: .outgoing,
+        quote: "Is Friday still good for the 8:30 appointment?"
+      )
+      .frame(maxWidth: 295, alignment: .trailing)
+      .frame(maxWidth: .infinity, alignment: .trailing)
+      ChatBubble(
+        text: "Got it, Friday at 8:30 stays.", style: .incoming, quote: "Yes, keep Friday."
+      )
+      .frame(maxWidth: .infinity, alignment: .leading)
       VStack(alignment: .trailing, spacing: 4) {
         DeliveryCaption(caption: .sending)
         DeliveryCaption(caption: .sent)
@@ -132,6 +142,12 @@ struct ComponentCatalog: View {
 
   private var composer: some View {
     VStack(spacing: 16) {
+      VStack(spacing: 8) {
+        ReplyQuoteBar(
+          title: "Replying to Hermes", text: "Is Friday still good for the 8:30 appointment?",
+          onCancel: {})
+        MessageComposer(draft: .constant("Yes, keep Friday."), onSend: {})
+      }
       MessageComposer(draft: .constant(""), onSend: {})
       MessageComposer(
         draft: .constant("Also add it to my calendar"), onSend: {})

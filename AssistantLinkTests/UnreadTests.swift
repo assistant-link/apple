@@ -84,7 +84,7 @@ struct UnreadTests {
     ]
 
     #expect(visit(events, marks: marks).dividerRowID == "e5")
-    #expect(Timeline(events: events).rows.map(\.id).contains("e5"))
+    #expect(Timeline(events: events).rows().map(\.id).contains("e5"))
   }
 
   @Test func anUnreadReplyInAVoiceChatStillOnKeepsTheDividerOnIt() {

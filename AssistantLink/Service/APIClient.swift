@@ -77,11 +77,12 @@ struct APIClient: Sendable {
 
   /// Posting the same `idempotencyKey` again returns the stored event instead of a new one.
   func sendMessage(
-    assistantID: String, text: String, idempotencyKey: String, via: Event.Via? = nil
+    assistantID: String, text: String, idempotencyKey: String, via: Event.Via? = nil,
+    replyTo: String? = nil
   ) async throws -> Event {
     let response: MessageResponse = try await send(
       "POST", "assistants/\(assistantID)/messages",
-      body: MessageRequest(text: text, idempotencyKey: idempotencyKey, via: via))
+      body: MessageRequest(text: text, idempotencyKey: idempotencyKey, via: via, replyTo: replyTo))
     return response.message
   }
 
@@ -222,10 +223,13 @@ private struct MessageRequest: Encodable {
   let text: String
   let idempotencyKey: String
   let via: Event.Via?
+  /// Left out, not `null`, when the message answers nothing.
+  let replyTo: String?
 
   enum CodingKeys: String, CodingKey {
     case text, via
     case idempotencyKey = "idempotency_key"
+    case replyTo = "reply_to"
   }
 }
 

@@ -131,6 +131,8 @@ struct Event: Decodable, Equatable, Identifiable, Sendable {
   var idempotencyKey: String?
   var text: String?
   var via: Via?
+  /// The id of the message this one answers, which may no longer exist.
+  var replyTo: String?
 }
 
 extension Event {
@@ -142,6 +144,7 @@ extension Event {
     case deliveryStatus = "delivery_status"
     case idempotencyKey = "idempotency_key"
     case textMessage = "text_message"
+    case replyTo = "reply_to"
   }
 
   private struct TextContent: Decodable {
@@ -163,6 +166,7 @@ extension Event {
     let content = try container.decodeIfPresent(TextContent.self, forKey: .textMessage)
     text = content?.text
     via = content?.via
+    replyTo = container.decode(LossyOptional<String>.self, forKey: .replyTo).wrappedValue
   }
 }
 

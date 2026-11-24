@@ -9,14 +9,35 @@ struct ChatBubble: View {
 
   let text: String
   let style: Style
+  /// The start of the message this one answers.
+  var quote: String?
+  var onQuoteTap: (() -> Void)?
 
   var body: some View {
-    Text(text)
-      .italic(style == .deleted)
-      .foregroundStyle(foreground)
-      .padding(.horizontal, 14)
-      .padding(.vertical, 9)
-      .background(background, in: RoundedRectangle(cornerRadius: 18))
+    VStack(alignment: .leading, spacing: 0) {
+      if let quote {
+        let block = QuoteBlock(text: quote, isOutgoing: style == .outgoing)
+        Group {
+          if let onQuoteTap {
+            Button(action: onQuoteTap) { block }
+              .buttonStyle(.plain)
+              .accessibilityHint("Shows the message")
+          } else {
+            block
+          }
+        }
+        .accessibilityLabel("Reply to: \(quote)")
+        .accessibilityIdentifier("replyQuote")
+        .padding([.top, .horizontal], 6)
+      }
+      Text(text)
+        .italic(style == .deleted)
+        .foregroundStyle(foreground)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 9)
+    }
+    .background(background, in: RoundedRectangle(cornerRadius: 18))
+    .contentShape(.contextMenuPreview, RoundedRectangle(cornerRadius: 18))
   }
 
   private var foreground: Color {
@@ -33,6 +54,42 @@ struct ChatBubble: View {
     case .outgoing: .accentColor
     case .deleted: Color(.secondarySystemFill)
     }
+  }
+}
+
+/// One line of the message a reply answers, at the top of the reply's bubble.
+struct QuoteBlock: View {
+  let text: String
+  let isOutgoing: Bool
+
+  /// Darker than the outgoing bubble's tint.
+  private static let outgoingBackground = Color(red: 0, green: 0x62 / 255, blue: 0xD1 / 255)
+  /// A shade darker than the incoming bubble.
+  private static let incomingBackground = Color(
+    UIColor {
+      $0.userInterfaceStyle == .dark
+        ? UIColor(red: 0x3A / 255, green: 0x3A / 255, blue: 0x3C / 255, alpha: 1)
+        : UIColor(red: 0xE3 / 255, green: 0xE3 / 255, blue: 0xE8 / 255, alpha: 1)
+    })
+
+  var body: some View {
+    HStack(spacing: 8) {
+      RoundedRectangle(cornerRadius: 1.5)
+        .fill(isOutgoing ? AnyShapeStyle(.white.opacity(0.7)) : AnyShapeStyle(.tint))
+        .frame(width: 3)
+      Text(text)
+        .font(.subheadline)
+        .lineLimit(1)
+        .foregroundStyle(
+          isOutgoing ? AnyShapeStyle(.white.opacity(0.85)) : AnyShapeStyle(.secondary))
+    }
+    .fixedSize(horizontal: false, vertical: true)
+    .padding(.leading, 8)
+    .padding(.trailing, 10)
+    .padding(.vertical, 6)
+    .background(
+      isOutgoing ? Self.outgoingBackground : Self.incomingBackground,
+      in: RoundedRectangle(cornerRadius: 12))
   }
 }
 

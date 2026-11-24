@@ -524,6 +524,40 @@ struct AppModelTests {
     #expect(model.timelines["as-1"]?.hasMore == false)
   }
 
+  @Test func showingAnOriginalLoadsEarlierPagesUntilItIsLoaded() async throws {
+    let api = eventsAPI { query in
+      switch query["before"] {
+      case nil: Self.pageJSON(["e-5", "e-6"], hasMore: true)
+      case "e-5": Self.pageJSON(["e-3", "e-4"], hasMore: true)
+      default: Self.pageJSON(["e-1", "e-2"], hasMore: true)
+      }
+    }
+    let model = AppModel(connect: { api }, dictation: .fake())
+    await model.start()
+    try await model.openConversation(assistantID: "as-1")
+
+    #expect(await model.loadEarlier(untilEventID: "e-4", assistantID: "as-1"))
+    #expect(model.timelines["as-1"]?.events.map(\.id) == ["e-3", "e-4", "e-5", "e-6"])
+    #expect(await model.loadEarlier(untilEventID: "e-6", assistantID: "as-1"))
+    #expect(model.timelines["as-1"]?.events.count == 4)
+  }
+
+  @Test func showingAnOriginalStopsAtTheFirstEvent() async throws {
+    let requests = Mutex(0)
+    let api = eventsAPI { query in
+      requests.withLock { $0 += 1 }
+      return query["before"] == nil
+        ? Self.pageJSON(["e-3", "e-4"], hasMore: true) : Self.pageJSON(["e-2"])
+    }
+    let model = AppModel(connect: { api }, dictation: .fake())
+    await model.start()
+    try await model.openConversation(assistantID: "as-1")
+
+    #expect(await !model.loadEarlier(untilEventID: "e-0", assistantID: "as-1"))
+    #expect(requests.withLock { $0 } == 2)
+    #expect(model.timelines["as-1"]?.events.map(\.id) == ["e-2", "e-3", "e-4"])
+  }
+
   @Test func loadingEarlierWithoutAConversationRequestsNothing() async throws {
     let api = eventsAPI { _ in
       Issue.record("unexpected events request")
