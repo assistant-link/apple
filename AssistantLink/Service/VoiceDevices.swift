@@ -92,27 +92,27 @@ enum SpeechListenerError: Error {
   case recognizerUnavailable
 }
 
-/// Recognizes speech from the microphone, on the device when the language supports it.
+/// Recognizes English speech from the microphone with the best recognizer that is ready.
 @MainActor
 final class LiveSpeechListener: SpeechListener {
   var vocabulary: [String] = []
   private let engine = AVAudioEngine()
-  private var recognizer: SFSpeechRecognizer?
-  private var request: SFSpeechAudioBufferRecognitionRequest?
-  private var task: SFSpeechRecognitionTask?
+  private var session: (any RecognitionSession)?
   /// Tells results of a recognition that was stopped from those of the current one.
   private var generation = 0
 
+  init() {
+    if #available(iOS 26, *) { TranscriberModel.shared.prepare() }
+  }
+
   func start(_ handler: @escaping @MainActor (SpeechEvent) -> Void) throws {
     stop()
-    guard let recognizer = SFSpeechRecognizer(locale: .current), recognizer.isAvailable else {
+    let input = engine.inputNode
+    let format = input.outputFormat(forBus: 0)
+    // A route still switching reports no sample rate, which `installTap` can't take.
+    guard format.sampleRate > 0, let session = makeSession(microphone: format) else {
       throw SpeechListenerError.recognizerUnavailable
     }
-    self.recognizer = recognizer
-    let request = SFSpeechAudioBufferRecognitionRequest()
-    request.shouldReportPartialResults = true
-    request.requiresOnDeviceRecognition = recognizer.supportsOnDeviceRecognition
-    request.contextualStrings = vocabulary
     let generation = generation
     let deliver: @Sendable (SpeechEvent) -> Void = { [weak self] event in
       Task { @MainActor in
@@ -120,83 +120,72 @@ final class LiveSpeechListener: SpeechListener {
         handler(event)
       }
     }
-    let input = engine.inputNode
-    // A route still switching reports no sample rate, which `installTap` can't take.
-    guard input.outputFormat(forBus: 0).sampleRate > 0 else {
-      throw SpeechListenerError.recognizerUnavailable
-    }
-    let tap = MicrophoneTap(request: request, deliver: deliver)
-    input.installTap(
-      onBus: 0, bufferSize: 1024, format: input.outputFormat(forBus: 0), block: Self.block(of: tap))
+    let tap = MicrophoneTap(session: session, deliver: deliver)
+    input.installTap(onBus: 0, bufferSize: 1024, format: format, block: Self.block(of: tap))
     do {
       engine.prepare()
       try engine.start()
     } catch {
       input.removeTap(onBus: 0)
+      session.cancel()
       throw error
     }
-    self.request = request
-    task = recognizer.recognitionTask(with: request, resultHandler: Self.resultHandler(deliver))
+    self.session = session
+    session.begin(deliver)
+  }
+
+  /// SpeechTranscriber from iOS 26 once its model is installed, else SFSpeechRecognizer.
+  private func makeSession(microphone: AVAudioFormat) -> (any RecognitionSession)? {
+    if #available(iOS 26, *) {
+      let model = TranscriberModel.shared
+      model.prepare()
+      if let ready = model.ready,
+        let session = TranscriberSession(ready, microphone: microphone, vocabulary: vocabulary)
+      {
+        return session
+      }
+    }
+    return RecognizerSession(vocabulary: vocabulary)
   }
 
   func finish() {
-    engine.stop()
-    engine.inputNode.removeTap(onBus: 0)
-    request?.endAudio()
+    stopMicrophone()
+    session?.finish()
   }
 
   func stop() {
     generation += 1
-    finish()
-    task?.cancel()
-    request = nil
-    task = nil
+    stopMicrophone()
+    session?.cancel()
+    session = nil
   }
 
-  // The system calls these from background queues, so they must not be isolated to the main
+  private func stopMicrophone() {
+    engine.stop()
+    engine.inputNode.removeTap(onBus: 0)
+  }
+
+  // The system calls this from a background queue, so it must not be isolated to the main
   // actor, which closures made in a main actor method would be.
   private nonisolated static func block(
     of tap: MicrophoneTap
   ) -> @Sendable (AVAudioPCMBuffer, AVAudioTime) -> Void {
     { buffer, _ in tap.process(buffer) }
   }
-
-  /// The recognizer reports silence, or a cancel, as an error of the assistant domain.
-  private nonisolated static func isBenign(_ error: any Error) -> Bool {
-    let error = error as NSError
-    return error.domain == "kLSRErrorDomain" && error.code == 301
-      || error.domain == "kAFAssistantErrorDomain" && [216, 1110].contains(error.code)
-  }
-
-  private nonisolated static func resultHandler(
-    _ deliver: @escaping @Sendable (SpeechEvent) -> Void
-  ) -> @Sendable (SFSpeechRecognitionResult?, (any Error)?) -> Void {
-    { result, error in
-      if let result {
-        let text = result.bestTranscription.formattedString
-        deliver(result.isFinal ? .final(text) : .partial(text))
-      } else if let error {
-        deliver(Self.isBenign(error) ? .stopped : .failed)
-      }
-    }
-  }
 }
 
 /// Feeds microphone buffers to the recognizer and reports their level, on the audio thread.
-private final class MicrophoneTap: @unchecked Sendable {
-  private let request: SFSpeechAudioBufferRecognitionRequest
+private final class MicrophoneTap: Sendable {
+  private let session: any RecognitionSession
   private let deliver: @Sendable (SpeechEvent) -> Void
 
-  init(
-    request: SFSpeechAudioBufferRecognitionRequest,
-    deliver: @escaping @Sendable (SpeechEvent) -> Void
-  ) {
-    self.request = request
+  init(session: any RecognitionSession, deliver: @escaping @Sendable (SpeechEvent) -> Void) {
+    self.session = session
     self.deliver = deliver
   }
 
   func process(_ buffer: AVAudioPCMBuffer) {
-    request.append(buffer)
+    session.append(buffer)
     deliver(.level(Self.level(of: buffer)))
   }
 

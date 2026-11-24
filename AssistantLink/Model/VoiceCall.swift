@@ -18,18 +18,29 @@ enum SpeechEvent: Equatable, Sendable {
 enum SpeechSegments {
   /// A revision of the partial result keeps its first word, or at least the words after it, which
   /// the recognizer may rewrite ("two friends" to "to friends later"). Otherwise it started over.
+  /// It may also put words before the earlier ones ("the cool one" to "I think the cool one").
   /// A one-word partial only counts as started over when the next one is longer. Punctuation and
   /// case do not count, as a revision often adds them.
   static func startsNew(_ words: String, after provisional: String) -> Bool {
-    let old = provisional.split(whereSeparator: \.isWhitespace).map(letters)
-    let new = words.split(whereSeparator: \.isWhitespace).map(letters)
+    let old = letters(of: provisional)
+    let new = letters(of: words)
     guard let oldFirst = old.first, let newFirst = new.first, oldFirst != newFirst else {
       return false
     }
     let oldTail = old.dropFirst()
     let newTail = new.dropFirst()
     if oldTail.isEmpty { return !newTail.isEmpty }
-    return !newTail.starts(with: oldTail)
+    return !newTail.starts(with: oldTail) && !contains(new, old)
+  }
+
+  /// The final result of a recognition that started new segments holds either only the last one
+  /// or, on some systems, all of them again.
+  static func final(_ words: String, after earlier: String) -> String {
+    let earlierLetters = letters(of: earlier)
+    if !earlierLetters.isEmpty, letters(of: words).starts(with: earlierLetters) {
+      return join("", words)
+    }
+    return join(earlier, words)
   }
 
   static func join(_ first: String, _ second: String) -> String {
@@ -38,8 +49,17 @@ enum SpeechSegments {
     return second.isEmpty ? first : first + " " + second
   }
 
-  private static func letters(_ word: Substring) -> String {
-    String(word.filter { $0.isLetter || $0.isNumber }).lowercased()
+  private static func letters(of text: String) -> [String] {
+    text.split(whereSeparator: \.isWhitespace).map {
+      String($0.filter { $0.isLetter || $0.isNumber }).lowercased()
+    }
+  }
+
+  private static func contains(_ words: [String], _ part: [String]) -> Bool {
+    guard words.count >= part.count else { return false }
+    return (0...(words.count - part.count)).contains {
+      words[$0..<($0 + part.count)].elementsEqual(part)
+    }
   }
 }
 
@@ -525,7 +545,8 @@ final class VoiceCall {
       // The recognizer keeps refining what it heard after the user stops, which isn't speech.
       if isNew, !isFinishing { restartSilenceTimer() }
     case .final(let text):
-      segment = text
+      segment = SpeechSegments.final(text, after: earlierSegments)
+      earlierSegments = ""
       finishUtterance()
     case .stopped:
       failures = 0
