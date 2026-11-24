@@ -263,7 +263,7 @@ final class VoiceCall {
   }
 
   /// Starts the call after asking for permission. Returns whether it started; only then
-  /// `onEnd` runs, once, when the call ends.
+  /// `onEnd` runs, once, when the call ends, unless the Assistant hung up.
   func start(
     assistantID: Assistant.ID, assistantName: String? = nil, isOnline: Bool,
     send: @escaping @MainActor (String) -> Void,
@@ -375,8 +375,16 @@ final class VoiceCall {
     routeChanged()
   }
 
-  /// Queues a new text message of the Assistant to be spoken.
+  /// Queues a new text message of the Assistant to be spoken. A `call_ended` of the Assistant
+  /// ends the call without `onEnd`: the service already has the end.
   func receive(_ event: Event) {
+    if state != .idle, event.assistantID == assistantID, event.type == .callEnded,
+      event.sender == .assistant
+    {
+      onEnd = nil
+      end()
+      return
+    }
     guard state != .idle, event.assistantID == assistantID, event.type == .textMessage,
       event.sender == .assistant, !event.deleted,
       let text = event.text?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty,

@@ -158,6 +158,12 @@ private final class Setup {
       createdAt: .now, text: text)
   }
 
+  func callEnded(
+    _ id: String, sender: Event.Sender = .assistant, assistantID: String = "as-1"
+  ) -> Event {
+    Event(id: id, assistantID: assistantID, type: .callEnded, sender: sender, createdAt: .now)
+  }
+
   func noteEnd() { ends += 1 }
 }
 
@@ -480,6 +486,59 @@ struct VoiceCallStateTests {
     await setup.start()
 
     setup.call.end()
+    setup.call.end()
+
+    #expect(setup.ends == 1)
+  }
+
+  @Test func theAssistantHangingUpEndsTheCallWithoutReportingTheEnd() async {
+    let setup = Setup()
+    await setup.start()
+    setup.call.receive(setup.assistantMessage("e-1", "One"))
+    setup.call.receive(setup.assistantMessage("e-2", "Two"))
+
+    setup.call.receive(setup.callEnded("e-3"))
+
+    #expect(setup.call.state == .idle)
+    #expect(!setup.speaker.isSpeaking)
+    #expect(!setup.listener.isListening)
+    #expect(!setup.audio.isActive)
+    #expect(setup.ends == 0)
+    setup.speaker.finish()
+    #expect(setup.speaker.spoken == ["One"])
+  }
+
+  @Test func theAssistantHangingUpStillSendsTheUtteranceInProgress() async {
+    let setup = Setup()
+    await setup.start()
+
+    setup.listener.hear(.partial("Wait"))
+    setup.call.receive(setup.callEnded("e-1"))
+
+    #expect(setup.sent == ["Wait"])
+    #expect(setup.ends == 0)
+  }
+
+  @Test func aCallEndedOfTheUserAnotherAssistantOrWithoutACallIsIgnored() async {
+    let setup = Setup()
+    setup.call.receive(setup.callEnded("e-1"))
+    await setup.start()
+
+    setup.call.receive(setup.callEnded("e-2", sender: .user))
+    setup.call.receive(setup.callEnded("e-3", assistantID: "as-2"))
+
+    #expect(setup.call.state == .listening)
+    #expect(setup.listener.isListening)
+    setup.call.end()
+    #expect(setup.ends == 1)
+  }
+
+  @Test func aCallAfterTheAssistantHungUpReportsItsEnd() async {
+    let setup = Setup()
+    await setup.start()
+    setup.call.receive(setup.callEnded("e-1"))
+
+    await setup.start()
     setup.call.end()
 
     #expect(setup.ends == 1)
@@ -1571,6 +1630,23 @@ struct VoiceCallAppModelTests {
     let sent = stub.bodies.withLock { $0 }
     #expect(sent.map { $0["type"] } == ["call_started", "call_ended"])
     #expect(Set(sent.compactMap { $0["idempotency_key"] }).count == 2)
+    #expect(model.voiceCall.state == .idle)
+    #expect(!listener.isListening)
+  }
+
+  @Test func theAssistantHangingUpEndsTheCallWithoutSendingCallEndedAgain() async {
+    let stub = Stub()
+    let listener = FakeListener()
+    let model = await startedModel(stub, listener: listener)
+    #expect(await model.startVoiceCall(assistantID: "as-1"))
+
+    model.apply(
+      created: Event(
+        id: "e-1", assistantID: "as-1", type: .callEnded, sender: .assistant, createdAt: .now))
+    await model.callOutbox?.value
+
+    let sent = stub.bodies.withLock { $0 }
+    #expect(sent.map { $0["type"] } == ["call_started"])
     #expect(model.voiceCall.state == .idle)
     #expect(!listener.isListening)
   }
