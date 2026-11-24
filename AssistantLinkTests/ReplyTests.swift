@@ -52,10 +52,24 @@ struct ReplyTargetTests {
   @Test func theUtterancesOfACallStillOnCannotBeRepliedTo() {
     let timeline = Timeline(events: [
       message("e-1"), call("e-2", .callStarted), message("e-3", .user, via: .voice),
-      message("e-4"),
+      message("e-4", via: .voice),
     ])
 
     #expect(timeline.rows.map { $0.replyTarget != nil } == [true, false, false, false])
+  }
+
+  @Test func aCallThatNeverEndedLeavesLaterChatRepliable() {
+    let timeline = Timeline(events: [
+      call("e-1", .callStarted), message("e-2", .user, via: .voice),
+      message("e-3", text: "Typed after the call dropped"), message("e-4", .user, text: "Thanks"),
+    ])
+
+    #expect(
+      timeline.rows.map(\.replyTarget) == [
+        nil, nil,
+        ReplyTarget(eventID: "e-3", text: "Typed after the call dropped", isFromUser: false),
+        ReplyTarget(eventID: "e-4", text: "Thanks", isFromUser: true),
+      ])
   }
 
   @Test func deletedAndUnsentMessagesCannotBeRepliedTo() {
