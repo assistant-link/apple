@@ -880,6 +880,18 @@ struct VoiceCallUtteranceTests {
     #expect(setup.sent == ["remind me to call David."])
   }
 
+  @Test func aFinalResultThatRepeatsTheWordsBeforeThePauseIsNotDoubled() async {
+    let setup = Setup()
+    await setup.start()
+
+    setup.listener.hear(.partial("remind me"))
+    setup.listener.hear(.partial("to call David"))
+    setup.silence.fire()
+    setup.listener.hear(.final("Remind me to call David."))
+
+    #expect(setup.sent == ["Remind me to call David."])
+  }
+
   @Test func theNextUtteranceStartsWithoutTheWordsOfTheLastOne() async {
     let setup = Setup()
     await setup.start()

@@ -19,7 +19,7 @@ final class Dictation {
 
   private(set) var phase = Phase.idle
   /// Words the recognizer settled on, after any text that was in the field before.
-  private(set) var confirmed = ""
+  var confirmed: String { SpeechSegments.join(beforeRecognition, earlierSegments) }
   /// Words it may still change.
   private(set) var provisional = ""
   /// Recent microphone levels, 0 to 1, oldest first.
@@ -40,6 +40,10 @@ final class Dictation {
   private var isSending = false
   /// Counts the starts, so one that was stopped while asking cannot take over a later one.
   private var attempt = 0
+  /// The words settled before the current recognition started.
+  private var beforeRecognition = ""
+  /// The words of the current recognition before it last started a new segment.
+  private var earlierSegments = ""
 
   init(
     listener: any SpeechListener, audio: any VoiceAudio,
@@ -60,7 +64,8 @@ final class Dictation {
     phase = .preparing
     attempt += 1
     let mine = attempt
-    confirmed = existing.trimmingCharacters(in: .whitespacesAndNewlines)
+    beforeRecognition = existing.trimmingCharacters(in: .whitespacesAndNewlines)
+    earlierSegments = ""
     provisional = ""
     levels = []
     seconds = 0
@@ -157,7 +162,8 @@ final class Dictation {
 
   private func reset() {
     phase = .idle
-    confirmed = ""
+    beforeRecognition = ""
+    earlierSegments = ""
     provisional = ""
     levels = []
     seconds = 0
@@ -182,8 +188,7 @@ final class Dictation {
   private func settle() {
     finalResult.cancel()
     listener.stop()
-    confirmed = text
-    provisional = ""
+    settleWords()
     let done = finished
     finished = nil
     isSending = false
@@ -199,24 +204,38 @@ final class Dictation {
     case .partial(let words):
       // After a pause the recognizer may start a new segment without a final result; its words
       // no longer include the earlier ones.
-      if SpeechSegments.startsNew(words, after: provisional) { confirmed = text }
+      if SpeechSegments.startsNew(words, after: provisional) {
+        earlierSegments = SpeechSegments.join(earlierSegments, provisional)
+      }
       provisional = words
     case .final(let words):
-      confirmed = SpeechSegments.join(confirmed, words)
+      beforeRecognition = SpeechSegments.join(
+        beforeRecognition, SpeechSegments.final(words, after: earlierSegments))
+      earlierSegments = ""
       provisional = ""
-      if phase == .finishing { settle() }
+      // A final result ends the recognition, as Apple's server does after a minute.
+      if phase == .finishing { settle() } else { restartRecognition() }
     case .stopped where phase == .finishing, .failed where phase == .finishing:
       settle()
     case .stopped:
       // The recognizer gives up after a silence; the user has not stopped yet.
-      confirmed = text
-      provisional = ""
-      do {
-        try listener.start { [weak self] in self?.handle($0) }
-      } catch {
-        endRecording()
-      }
+      settleWords()
+      restartRecognition()
     case .failed:
+      endRecording()
+    }
+  }
+
+  private func settleWords() {
+    beforeRecognition = text
+    earlierSegments = ""
+    provisional = ""
+  }
+
+  private func restartRecognition() {
+    do {
+      try listener.start { [weak self] in self?.handle($0) }
+    } catch {
       endRecording()
     }
   }
