@@ -316,6 +316,38 @@ struct DictationTests {
     #expect(send(dictation, waiting: finalResult) == "Call David to friends later")
   }
 
+  @Test func aFinalResultThatRepeatsTheEarlierSegmentsIsNotDoubled() async {
+    let (dictation, listener, _, finalResult) = makeDictation()
+    await dictation.start(after: "Hi.")
+    listener.hear(.partial("remind me"))
+    listener.hear(.partial("to call David"))
+    dictation.stop()
+    listener.hear(.final("Remind me to call David."))
+    #expect(dictation.text == "Hi. Remind me to call David.")
+    #expect(!finalResult.isPending)
+  }
+
+  @Test func aFinalResultOfOnlyTheLastSegmentKeepsTheEarlierOnes() async {
+    let (dictation, listener, _, _) = makeDictation()
+    await dictation.start()
+    listener.hear(.partial("remind me"))
+    listener.hear(.partial("to call David"))
+    dictation.stop()
+    listener.hear(.final("to call David."))
+    #expect(dictation.text == "remind me to call David.")
+  }
+
+  @Test func aFinalResultWhileRecordingRestartsTheRecognizer() async {
+    let (dictation, listener, _, finalResult) = makeDictation()
+    await dictation.start()
+    listener.hear(.partial("remind me"))
+    listener.hear(.final("Remind me."))
+    #expect(dictation.phase == .recording)
+    #expect(listener.starts == 2)
+    listener.hear(.partial("to call David"))
+    #expect(send(dictation, waiting: finalResult) == "Remind me. to call David")
+  }
+
   @Test func aFinalResultThenNewPartialsAccumulate() async {
     let (dictation, listener, _, _) = makeDictation()
     await dictation.start()
