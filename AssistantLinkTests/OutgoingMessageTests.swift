@@ -243,6 +243,38 @@ struct OutgoingMessageTests {
     #expect(sent.first?.keys.contains("via") == false)
   }
 
+  @Test func aReplyIsPostedWithTheMessageItAnswers() async throws {
+    let stub = Stub()
+    let model = await startedModel(stub)
+
+    #expect(await model.send(text: "Yes, keep Friday.", assistantID: "as-1", replyTo: "e-1"))
+
+    let sent = stub.bodies.withLock { $0 }
+    #expect(sent.map { $0["reply_to"] } == ["e-1"])
+    #expect(sent.map { $0["text"] } == ["Yes, keep Friday."])
+  }
+
+  @Test func aMessageThatAnswersNothingIsPostedWithoutReplyTo() async throws {
+    let stub = Stub()
+    let model = await startedModel(stub)
+
+    await model.send(text: "Hi", assistantID: "as-1")
+
+    #expect(stub.bodies.withLock { $0.first?.keys.contains("reply_to") } == false)
+  }
+
+  @Test func aQueuedReplyShowsWhatItAnswersAndKeepsItOnARetry() async throws {
+    let stub = Stub(failures: [.network])
+    let model = await startedModel(stub)
+    let message = try #require(model.queue(text: "Hi", assistantID: "as-1", replyTo: "e-1"))
+    #expect(message.replyTo == "e-1")
+    await model.post(message)
+
+    await model.retry(message)
+
+    #expect(stub.bodies.withLock { $0.map { $0["reply_to"] } } == ["e-1", "e-1"])
+  }
+
   @Test func theVoiceOfAFailedMessageSurvivesARetry() async throws {
     let stub = Stub(failures: [.network])
     let model = await startedModel(stub)

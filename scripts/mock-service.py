@@ -252,6 +252,8 @@ def create_message(assistant_id, body):
     if text.startswith("fail"):
         return error(503, "service_unavailable", "The service is unavailable.")
     event = make_event(assistant_id, "user", 0, text, idempotency_key=key, delivery_status="sent")
+    if isinstance(body.get("reply_to"), str):
+        event["reply_to"] = body["reply_to"]
     events.append(event)
     return 201, {"message": event}
 

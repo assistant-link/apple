@@ -241,10 +241,26 @@ final class AppModel {
     timelines[assistantID]?.prepend(page)
   }
 
+  /// Loads earlier pages until the event `id` is loaded, for a reply's quote to scroll to it.
+  /// Returns whether it is.
+  func loadEarlier(untilEventID id: String, assistantID: Assistant.ID) async -> Bool {
+    while let timeline = timelines[assistantID] {
+      if timeline.events.contains(where: { $0.id == id }) { return true }
+      guard timeline.hasMore, let oldest = timeline.events.first,
+        (try? await loadEarlier(assistantID: assistantID)) != nil,
+        timelines[assistantID]?.events.first?.id != oldest.id
+      else { return false }
+    }
+    return false
+  }
+
   /// Shows `text` as a message being sent and posts it. Returns whether the text was valid.
   @discardableResult
-  func send(text: String, assistantID: Assistant.ID, via: Event.Via? = nil) async -> Bool {
-    guard let message = queue(text: text, assistantID: assistantID, via: via) else {
+  func send(
+    text: String, assistantID: Assistant.ID, via: Event.Via? = nil, replyTo: String? = nil
+  ) async -> Bool {
+    guard let message = queue(text: text, assistantID: assistantID, via: via, replyTo: replyTo)
+    else {
       return false
     }
     await post(message)
@@ -252,11 +268,13 @@ final class AppModel {
   }
 
   /// Adds the message as "Sending…" under a fresh idempotency key, without posting it.
-  func queue(text: String, assistantID: Assistant.ID, via: Event.Via? = nil) -> OutgoingMessage? {
+  func queue(
+    text: String, assistantID: Assistant.ID, via: Event.Via? = nil, replyTo: String? = nil
+  ) -> OutgoingMessage? {
     guard TextValidation.isValidMessage(text) else { return nil }
     let message = OutgoingMessage(
       assistantID: assistantID, idempotencyKey: UUIDv7.make(), text: text, createdAt: .now,
-      receivedBefore: timelines[assistantID]?.received ?? 0, via: via)
+      receivedBefore: timelines[assistantID]?.received ?? 0, via: via, replyTo: replyTo)
     timelines[assistantID, default: Timeline()].outgoing.append(message)
     return message
   }
@@ -269,7 +287,7 @@ final class AppModel {
       let event = try await retrying(attempts: attempts, in: session) {
         try await self.client().sendMessage(
           assistantID: message.assistantID, text: message.text,
-          idempotencyKey: message.idempotencyKey, via: message.via)
+          idempotencyKey: message.idempotencyKey, via: message.via, replyTo: message.replyTo)
       }
       guard self.session == session else { return }
       store(event)

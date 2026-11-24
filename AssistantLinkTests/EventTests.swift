@@ -48,6 +48,42 @@ struct EventDecodingTests {
     #expect(event.via == nil)
   }
 
+  @Test func decodesTheMessageAReplyAnswersFromTheTopLevel() throws {
+    let event = try decode(
+      #"""
+      {"id": "e-2", "assistant_id": "as-1", "type": "text_message", "sender": "user",
+       "link_id": null, "created_at": "2026-10-08T12:30:15Z", "deleted": false,
+       "delivery_status": "sent", "idempotency_key": "k-2", "reply_to": "e-1",
+       "text_message": {"text": "Yes, keep Friday."}}
+      """#)
+
+    #expect(event.replyTo == "e-1")
+    #expect(event.text == "Yes, keep Friday.")
+  }
+
+  @Test(arguments: [#""reply_to": null,"#, "", #""reply_to": 7,"#, #""reply_to": {"id": "e-1"},"#])
+  func aMessageWithoutAValidReplyToAnswersNone(field: String) throws {
+    let event = try decode(
+      #"""
+      {"id": "e-2", "assistant_id": "as-1", "type": "text_message", "sender": "assistant", \#(field)
+       "link_id": null, "created_at": "2026-10-08T12:30:15Z", "text_message": {"text": "Hi"}}
+      """#)
+
+    #expect(event.replyTo == nil)
+    #expect(event.text == "Hi")
+  }
+
+  @Test func aReplyToInsideTheTextMessageIsNotTheReply() throws {
+    let event = try decode(
+      #"""
+      {"id": "e-2", "assistant_id": "as-1", "type": "text_message", "sender": "user",
+       "link_id": null, "created_at": "2026-10-08T12:30:15Z",
+       "text_message": {"text": "Hi", "reply_to": "e-1"}}
+      """#)
+
+    #expect(event.replyTo == nil)
+  }
+
   @Test func anUnknownViaIsIgnored() throws {
     let event = try decode(
       #"""
@@ -214,6 +250,18 @@ struct EventAPITests {
     #expect(event.id == "e-1")
     #expect(event.idempotencyKey == "k-1")
     #expect(event.deliveryStatus == .sent)
+  }
+
+  @Test func sendMessagePostsTheMessageItReplies() async throws {
+    let api = client { [message] _, body in
+      let json = try #require(try body?.jsonObject())
+      #expect(
+        json as? [String: String] == ["text": "Hi", "idempotency_key": "k-1", "reply_to": "e-0"])
+      return (201, Data(json: #"{"message": \#(message)}"#))
+    }
+
+    _ = try await api.sendMessage(
+      assistantID: "as-1", text: "Hi", idempotencyKey: "k-1", replyTo: "e-0")
   }
 
   @Test func sendMessageFailsWithTheServicesError() async {
