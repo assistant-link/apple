@@ -106,6 +106,7 @@ struct ConversationView: View {
 
   private func timeline(_ assistant: Assistant) -> some View {
     let content = model.timelines[assistant.id] ?? Timeline()
+    let isInCall = CallPresentation(model.voiceCall, assistantID: assistant.id).isInCall
     return ScrollView {
       // Not lazy: when the composer or keyboard resizes the view, a lazy stack anchored to the
       // bottom can lose its place and draw nothing until the next scroll. Events load 50 to a
@@ -117,7 +118,7 @@ struct ConversationView: View {
             if let first { position.scrollTo(id: first, anchor: .top) }
           }
         }
-        ForEach(content.rows) { row in
+        ForEach(content.rows(isInCall: isInCall)) { row in
           VStack(spacing: 12) {
             switch row.content {
             case .event(let event):

@@ -260,12 +260,12 @@ struct TimelineRowTests {
 
   @Test func aSentMessageKeepsItsRowOnceTheServiceStoresIt() {
     var timeline = sending()
-    let before = timeline.rows.map(\.id)
+    let before = timeline.rows().map(\.id)
 
     _ = timeline.store(sent("e-2"))
 
-    #expect(timeline.rows.map(\.id) == before)
-    #expect(timeline.rows.map(\.id) == ["e-1", key])
+    #expect(timeline.rows().map(\.id) == before)
+    #expect(timeline.rows().map(\.id) == ["e-1", key])
   }
 
   @Test func theLastRowStaysTheSameOnceTheServiceStoresIt() {
@@ -283,8 +283,8 @@ struct TimelineRowTests {
 
     timeline.refetch(with: EventPage(events: [.stub("e-1"), sent("e-2")], hasMore: false))
 
-    #expect(timeline.rows.map(\.id) == ["e-1", key])
-    #expect(timeline.rows.last?.content == .event(sent("e-2")))
+    #expect(timeline.rows().map(\.id) == ["e-1", key])
+    #expect(timeline.rows().last?.content == .event(sent("e-2")))
   }
 
   @Test func aReplyAfterAReloadStoredTheMessageMovesTheLastRow() {
@@ -297,6 +297,6 @@ struct TimelineRowTests {
   }
 
   @Test func eventsFromElsewhereKeepTheirId() {
-    #expect(Timeline(events: [.stub("e-1")]).rows.map(\.id) == ["e-1"])
+    #expect(Timeline(events: [.stub("e-1")]).rows().map(\.id) == ["e-1"])
   }
 }

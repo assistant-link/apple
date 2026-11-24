@@ -72,13 +72,13 @@ struct VoiceChatTranscriptTests {
       event("r-1"), event("e", .callEnded), event("r-2"),
     ])
 
-    #expect(timeline.rows.map(\.id) == ["m-1", "s", "e", "r-2"])
+    #expect(timeline.rows().map(\.id) == ["m-1", "s", "e", "r-2"])
   }
 
   @Test func theMessagesOfACallStillRunningShow() {
     let timeline = Timeline(events: [event("s", .callStarted), event("v-1", sender: .user)])
 
-    #expect(timeline.rows.map(\.id) == ["s", "v-1"])
+    #expect(timeline.rows().map(\.id) == ["s", "v-1"])
   }
 
   @Test func theEntryOpensTheCallsMessagesAndDuration() {
@@ -103,7 +103,7 @@ struct VoiceChatTranscriptTests {
     let timeline = Timeline(events: [event("r-1"), event("e", .callEnded)])
 
     #expect(timeline.voiceChat(endedBy: timeline.events[1]).lines.isEmpty)
-    #expect(timeline.rows.map(\.id) == ["r-1", "e"])
+    #expect(timeline.rows().map(\.id) == ["r-1", "e"])
   }
 
   @Test(arguments: [(0, "00:00"), (48, "00:48"), (72, "01:12"), (3665, "61:05")])

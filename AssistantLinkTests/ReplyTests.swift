@@ -21,7 +21,7 @@ struct ReplyTargetTests {
   }
 
   private func targets(_ timeline: Timeline) -> [String: ReplyTarget?] {
-    Dictionary(uniqueKeysWithValues: timeline.rows.map { ($0.id, $0.replyTarget) })
+    Dictionary(uniqueKeysWithValues: timeline.rows().map { ($0.id, $0.replyTarget) })
   }
 
   @Test func chatMessagesFromEitherSideCanBeRepliedTo() {
@@ -30,7 +30,7 @@ struct ReplyTargetTests {
     ])
 
     #expect(
-      timeline.rows.map(\.replyTarget) == [
+      timeline.rows().map(\.replyTarget) == [
         ReplyTarget(eventID: "e-1", text: "Is Friday still good?", isFromUser: false),
         ReplyTarget(eventID: "e-2", text: "Yes", isFromUser: true),
       ])
@@ -49,13 +49,14 @@ struct ReplyTargetTests {
     #expect(targets["k-e-1"] != .some(nil))
   }
 
-  @Test func theUtterancesOfACallStillOnCannotBeRepliedTo() {
+  @Test func nothingSaidInACallStillOnCanBeRepliedTo() {
     let timeline = Timeline(events: [
       message("e-1"), call("e-2", .callStarted), message("e-3", .user, via: .voice),
-      message("e-4", via: .voice),
+      message("e-4", text: "Spoken reply"),
     ])
 
-    #expect(timeline.rows.map { $0.replyTarget != nil } == [true, false, false, false])
+    #expect(
+      timeline.rows(isInCall: true).map { $0.replyTarget != nil } == [true, false, false, false])
   }
 
   @Test func aCallThatNeverEndedLeavesLaterChatRepliable() {
@@ -64,8 +65,10 @@ struct ReplyTargetTests {
       message("e-3", text: "Typed after the call dropped"), message("e-4", .user, text: "Thanks"),
     ])
 
+    // e-3 could as well be the Assistant speaking in that call: the service sends its speech
+    // without a via, so nothing tells it from typed chat.
     #expect(
-      timeline.rows.map(\.replyTarget) == [
+      timeline.rows(isInCall: false).map(\.replyTarget) == [
         nil, nil,
         ReplyTarget(eventID: "e-3", text: "Typed after the call dropped", isFromUser: false),
         ReplyTarget(eventID: "e-4", text: "Thanks", isFromUser: true),
@@ -78,7 +81,7 @@ struct ReplyTargetTests {
     let timeline = Timeline(
       events: [message("e-1", deleted: true), call("e-2", .linkCreated)], outgoing: [unsent])
 
-    #expect(timeline.rows.map(\.replyTarget) == [nil, nil, nil])
+    #expect(timeline.rows().map(\.replyTarget) == [nil, nil, nil])
   }
 
   @Test func theQuoteBarSaysWhoseMessageItAnswers() {

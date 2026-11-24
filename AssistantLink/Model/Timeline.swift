@@ -113,16 +113,20 @@ struct Timeline: Equatable, Sendable {
   }
 
   /// The events, then the outgoing messages a reload has not already stored. The messages of an
-  /// ended voice chat show in its transcript instead.
-  var rows: [TimelineRow] {
+  /// ended voice chat show in its transcript instead. `isInCall` is whether a voice chat with
+  /// this Assistant is on now: the service marks only the user's speech `via: voice`, so the
+  /// Assistant's spoken replies are told apart only by coming after its `call_started`. A
+  /// `call_started` alone can't tell, because its `call_ended` can be lost.
+  func rows(isInCall: Bool = false) -> [TimelineRow] {
     let stored = Set(events.compactMap(\.idempotencyKey))
     let folded = foldedIndices
+    let live = isInCall ? openCallIndices : 0..<0
     let eventRows = events.indices.filter { folded[$0] == nil }.map { index in
       TimelineRow(
         id: Self.rowID(of: events[index]), content: .event(events[index]),
         showsTimeCaption: events[index].type == .textMessage
           && showsTimeCaption(beforeEventAt: index),
-        replyTarget: ReplyTarget(events[index]))
+        replyTarget: live.contains(index) ? nil : ReplyTarget(events[index]))
     }
     let outgoingRows = outgoing.indices.filter { !stored.contains(outgoing[$0].id) }.map { index in
       TimelineRow(
@@ -134,7 +138,7 @@ struct Timeline: Equatable, Sendable {
 
   /// The id of the last row, which a reload that stored every outgoing message leaves to the events.
   var lastRowID: String? {
-    rows.last?.id
+    rows().last?.id
   }
 
   func showsTimeCaption(beforeEventAt index: Int) -> Bool {
@@ -178,6 +182,14 @@ struct Timeline: Equatable, Sendable {
       }
     }
     return folded
+  }
+
+  /// The indices after a `call_started` that no `call_ended` follows yet.
+  private var openCallIndices: Range<Int> {
+    guard let start = events.lastIndex(where: { $0.type == .callStarted }),
+      !events[start...].contains(where: { $0.type == .callEnded })
+    else { return 0..<0 }
+    return start + 1..<events.endIndex
   }
 
   /// What the bubble of a reply to `id` quotes, or `nil` when the conversation has no such message.

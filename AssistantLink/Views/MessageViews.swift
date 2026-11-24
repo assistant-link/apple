@@ -124,7 +124,7 @@ struct LoadEarlierButton: View {
       isLoading = true
       Task {
         defer { isLoading = false }
-        let first = model.timelines[assistantID]?.rows.first?.id
+        let first = model.timelines[assistantID]?.rows().first?.id
         try? await model.loadEarlier(assistantID: assistantID)
         onLoaded(first)
       }

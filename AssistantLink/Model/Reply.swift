@@ -11,8 +11,8 @@ struct ReplyTarget: Equatable, Sendable {
 
 extension ReplyTarget {
   /// Only chat text messages; a voice chat and what was said in it can't be answered. The
-  /// utterance itself is checked, not whether a call is on: a `call_ended` the service never
-  /// got would otherwise strip Reply from every later message.
+  /// utterance itself is checked, not whether a `call_started` lacks its `call_ended`: one the
+  /// service never got would otherwise strip Reply from every later message.
   init?(_ event: Event) {
     guard event.type == .textMessage, event.via != .voice, !event.deleted, let text = event.text,
       event.sender == .user || event.sender == .assistant
