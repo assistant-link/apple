@@ -60,7 +60,7 @@ struct MessageTextView: UIViewRepresentable {
     var focusRequest: Int
     private var isShowing = false
 
-    init(text: Binding<String>, focusRequest: Int) {
+    init(text: Binding<String>, focusRequest: Int = 0) {
       self.text = text
       self.focusRequest = focusRequest
     }

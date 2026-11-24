@@ -65,41 +65,47 @@ private struct ReplySwipe: ViewModifier {
 
   private static let threshold: CGFloat = 48
 
-  @State private var offset: CGFloat = 0
-  /// Decided by the first movement, so a vertical drag keeps scrolling the conversation.
-  @State private var isSwiping: Bool?
+  /// Resets when the drag ends and also when it is cancelled, such as by the conversation scrolling
+  /// or the context menu, so the bubble never stays shifted. `isSwiping` is decided by the first
+  /// movement, so a vertical drag keeps scrolling the conversation.
+  @GestureState private var drag: (isSwiping: Bool?, offset: CGFloat) = (nil, 0)
+
+  private var isPastThreshold: Bool { drag.offset >= Self.threshold }
 
   func body(content: Content) -> some View {
     content
-      .offset(x: offset)
+      .offset(x: drag.offset)
       .background(alignment: .leading) {
         Image(systemName: "arrow.turn.up.left")
           .font(.subheadline.weight(.semibold))
           .foregroundStyle(.secondary)
           .frame(width: 32, height: 32)
           .background(Color(.tertiarySystemFill), in: Circle())
-          .opacity(min(1, offset / Self.threshold))
+          .opacity(min(1, drag.offset / Self.threshold))
           .accessibilityHidden(true)
       }
-      .sensoryFeedback(.impact(weight: .light), trigger: offset >= Self.threshold) { _, isPast in
+      .animation(.spring(duration: 0.3), value: drag.offset)
+      .sensoryFeedback(.impact(weight: .light), trigger: isPastThreshold) { _, isPast in
         isPast
       }
       .simultaneousGesture(
         DragGesture(minimumDistance: 16)
-          .onChanged { value in
+          .updating($drag) { value, state, _ in
             let translation = value.translation
-            if isSwiping == nil {
-              isSwiping = translation.width > abs(translation.height)
+            if state.isSwiping == nil {
+              state.isSwiping = translation.width > abs(translation.height)
             }
-            guard isSwiping == true else { return }
+            guard state.isSwiping == true else { return }
             let width = max(0, translation.width)
             // Past the threshold the bubble follows the finger more slowly.
-            offset = min(width, Self.threshold) + max(0, width - Self.threshold) / 4
+            state.offset = min(width, Self.threshold) + max(0, width - Self.threshold) / 4
           }
-          .onEnded { _ in
-            if offset >= Self.threshold { onReply() }
-            isSwiping = nil
-            withAnimation(.spring(duration: 0.3)) { offset = 0 }
+          // Not called when the drag is cancelled, so a cancel past the threshold does not reply.
+          .onEnded { value in
+            let translation = value.translation
+            if translation.width >= Self.threshold, translation.width > abs(translation.height) {
+              onReply()
+            }
           })
   }
 }
