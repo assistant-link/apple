@@ -64,6 +64,12 @@ struct TranscriptionTextTests {
     text.add("how are", isFinal: false)
     text.add(" How are you?", isFinal: true)
     #expect(text.text == "Hello there. How are you?")
-    #expect(text.finalized == "Hello there. How are you?")
+  }
+
+  @Test func aVolatileResultThatIsNeverFinalizedIsKept() {
+    var text = TranscriptionText()
+    text.add("Hello there.", isFinal: true)
+    text.add("how are you", isFinal: false)
+    #expect(text.text == "Hello there. how are you")
   }
 }

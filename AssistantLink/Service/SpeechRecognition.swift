@@ -21,7 +21,7 @@ enum SpeechLocale {
 /// The text of a SpeechTranscriber recognition so far: its finalized results in order, then the
 /// latest volatile one, which the next result replaces.
 struct TranscriptionText {
-  private(set) var finalized = ""
+  private var finalized = ""
   private var volatile = ""
 
   var text: String { SpeechSegments.join(finalized, volatile) }
@@ -188,6 +188,8 @@ final class TranscriberSession: RecognitionSession, @unchecked Sendable {
   private let input: AsyncStream<AnalyzerInput>.Continuation
   private let vocabulary: [String]
   private let isCancelled = Atomic(false)
+  /// Only used on the main actor.
+  private var started: Task<Void, any Error>?
 
   init?(_ model: TranscriberModel.Ready, microphone: AVAudioFormat, vocabulary: [String]) {
     if microphone == model.format {
@@ -214,19 +216,24 @@ final class TranscriberSession: RecognitionSession, @unchecked Sendable {
   }
 
   func begin(_ deliver: @escaping @Sendable (SpeechEvent) -> Void) {
+    let started = Task {
+      let context = AnalysisContext()
+      context.contextualStrings[.general] = vocabulary
+      // Only DictationTranscriber documents using contextual strings, so they are a mere hint.
+      try? await analyzer.setContext(context)
+      try await analyzer.start(inputSequence: inputs)
+    }
+    self.started = started
     Task {
       do {
-        let context = AnalysisContext()
-        context.contextualStrings[.general] = vocabulary
-        // Only DictationTranscriber documents using contextual strings, so they are a mere hint.
-        try? await analyzer.setContext(context)
-        try await analyzer.start(inputSequence: inputs)
+        try await started.value
         var text = TranscriptionText()
         for try await result in transcriber.results {
           text.add(String(result.text.characters), isFinal: result.isFinal)
           deliver(.partial(text.text))
         }
-        deliver(.final(text.finalized))
+        // Finalizing may not promote the last volatile result, so it is kept.
+        deliver(.final(text.text))
       } catch {
         guard !isCancelled.load(ordering: .relaxed) else { return }
         await TranscriberModel.shared.failed()
@@ -235,9 +242,13 @@ final class TranscriberSession: RecognitionSession, @unchecked Sendable {
     }
   }
 
+  /// Finalizing an analyzer that has not started makes `start` throw.
   func finish() {
     input.finish()
-    Task { try? await analyzer.finalizeAndFinishThroughEndOfInput() }
+    Task { [started] in
+      _ = try? await started?.value
+      try? await analyzer.finalizeAndFinishThroughEndOfInput()
+    }
   }
 
   func cancel() {
