@@ -6,6 +6,13 @@ enum APIError: Error, Equatable, LocalizedError {
   case unexpectedResponse(status: Int)
   case unreachable
 
+  var status: Int? {
+    switch self {
+    case .service(let status, _, _), .unexpectedResponse(let status): status
+    case .unreachable: nil
+    }
+  }
+
   /// Whether sending the same request again later may succeed.
   var isTransient: Bool {
     switch self {
@@ -117,15 +124,16 @@ struct APIClient: Sendable {
     return response.entries.sorted { $0.seq < $1.seq }
   }
 
-  /// `endedAt` is `nil` while the turn is still being said.
+  /// `id` makes a retry answer with the entry already saved. `endedAt` is `nil` while the turn
+  /// is still being said.
   func saveTranscriptEntry(
-    assistantID: String, callID: String, speaker: CallTranscriptEntry.Speaker, text: String,
-    startedAt: Date, endedAt: Date?
+    id: String, assistantID: String, callID: String, speaker: CallTranscriptEntry.Speaker,
+    text: String, startedAt: Date, endedAt: Date?
   ) async throws -> CallTranscriptEntry {
     let response: Envelope<CallTranscriptEntry> = try await send(
       "POST", "assistants/\(assistantID)/calls/\(callID)/transcript_entries",
       body: TranscriptEntryRequest(
-        speaker: speaker, text: text, startedAt: startedAt, endedAt: endedAt))
+        id: id, speaker: speaker, text: text, startedAt: startedAt, endedAt: endedAt))
     return response.value
   }
 
@@ -326,19 +334,21 @@ private struct TranscriptResponse: Decodable {
 
 /// Leaves out what it doesn't set, so an update changes only `ended_at`.
 private struct TranscriptEntryRequest: Encodable {
+  var id: String?
   var speaker: CallTranscriptEntry.Speaker?
   var text: String?
   var startedAt: Date?
   var endedAt: Date?
 
   enum CodingKeys: String, CodingKey {
-    case speaker, text
+    case id, speaker, text
     case startedAt = "started_at"
     case endedAt = "ended_at"
   }
 
   func encode(to encoder: any Encoder) throws {
     var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encodeIfPresent(id, forKey: .id)
     try container.encodeIfPresent(speaker, forKey: .speaker)
     try container.encodeIfPresent(text, forKey: .text)
     try container.encodeIfPresent(startedAt.map(Self.timestamp), forKey: .startedAt)

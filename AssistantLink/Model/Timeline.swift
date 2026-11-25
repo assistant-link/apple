@@ -262,20 +262,27 @@ struct Timeline: Equatable, Sendable {
       seconds: voiceChatSeconds(endedBy: event), lines: lines)
   }
 
-  /// The voice chat of a `voice_call`, whose lines are the call's transcript entries.
+  /// The voice chat of a `voice_call`, whose lines are the call's transcript entries. The
+  /// messages folded into it are kept too, because a turn can be said without its entry being
+  /// saved, and a message can be typed on another device during the call.
   func voiceChat(of event: Event) -> VoiceChatRecord {
     let call = event.voiceCall
     let startedAt = call?.startedAt ?? event.createdAt
     var seconds = call?.seconds
-    if seconds == nil, call?.endedAt == nil,
-      let index = events.firstIndex(where: { $0.id == event.id }),
-      let end = callGroups(isInCall: false).sessionEnds[index]
-    {
+    let index = events.firstIndex(where: { $0.id == event.id })
+    let groups = callGroups(isInCall: false)
+    if seconds == nil, call?.endedAt == nil, let index, let end = groups.sessionEnds[index] {
       // Its `call_ended` can come before the update with the end.
       seconds = max(0, Int(events[end].createdAt.timeIntervalSince(startedAt)))
     }
+    let messages = groups.folded.filter { $0.value == index }.keys.sorted().compactMap { message in
+      Self.transcriptLine(events[message]).map {
+        VoiceChatRecord.Message(line: $0, sentAt: events[message].createdAt)
+      }
+    }
     return VoiceChatRecord(
-      id: event.id, startedAt: startedAt, seconds: seconds, lines: [], callID: call?.callID)
+      id: event.id, startedAt: startedAt, seconds: seconds, lines: [], callID: call?.callID,
+      messages: messages)
   }
 
   private static func transcriptLine(_ event: Event) -> TranscriptLine? {
@@ -375,6 +382,38 @@ struct VoiceChatRecord: Equatable, Identifiable, Sendable {
   /// The call whose transcript entries are the lines; `nil` for a chat from before calls were
   /// sessions, whose lines are its messages.
   var callID: String?
+  /// The text messages folded into the call's entry.
+  var messages: [Message] = []
+
+  struct Message: Equatable, Sendable {
+    let line: TranscriptLine
+    let sentAt: Date
+  }
+
+  /// The call's transcript entries in `seq` order, with each folded message that no entry of the
+  /// same speaker and text already shows placed before the first entry started after it.
+  func transcript(of entries: [CallTranscriptEntry]) -> [TranscriptLine] {
+    let saved = entries.sorted { $0.seq < $1.seq }
+    var unmatched = messages
+    for entry in saved {
+      let text = entry.text.trimmingCharacters(in: .whitespacesAndNewlines)
+      if let match = unmatched.firstIndex(where: {
+        $0.line.isFromUser == (entry.speaker == .user)
+          && $0.line.text.trimmingCharacters(in: .whitespacesAndNewlines) == text
+      }) {
+        unmatched.remove(at: match)
+      }
+    }
+    var lines: [TranscriptLine] = []
+    for entry in saved {
+      while let next = unmatched.first, next.sentAt < entry.startedAt {
+        lines.append(next.line)
+        unmatched.removeFirst()
+      }
+      if let line = entry.line { lines.append(line) }
+    }
+    return lines + unmatched.map(\.line)
+  }
 }
 
 extension CallTranscriptEntry {

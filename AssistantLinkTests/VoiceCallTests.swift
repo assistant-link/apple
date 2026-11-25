@@ -1975,9 +1975,18 @@ struct CallSessionAppModelTests {
     let requests = Mutex<[Request]>([])
     /// A service from before calls were sessions.
     let hasNoCalls: Bool
+    /// What starting a call answers instead of the call.
+    let startFailure: Int?
+    let failedEntryPosts: Int
 
-    init(hasNoCalls: Bool = false) {
+    init(hasNoCalls: Bool = false, startFailure: Int? = nil, failedEntryPosts: Int = 0) {
       self.hasNoCalls = hasNoCalls
+      self.startFailure = startFailure
+      self.failedEntryPosts = failedEntryPosts
+    }
+
+    func bodies(_ path: String) -> [[String: String]] {
+      requests.withLock { $0.filter { "\($0.method) \($0.path)" == path }.map(\.body) }
     }
 
     var paths: [String] { requests.withLock { $0.map { "\($0.method) \($0.path)" } } }
@@ -1995,6 +2004,9 @@ struct CallSessionAppModelTests {
       }
       let calls = "/api/v1/assistants/as-1/calls"
       switch (method, path) {
+      case ("POST", calls) where startFailure != nil:
+        let status = startFailure ?? 500
+        return (status, Data(json: #"{"error": {"code": "failed", "message": "No."}}"#))
       case ("GET", "/api/v1/assistants"):
         return (200, Data(json: #"{"assistants": [\#(Self.assistant)]}"#))
       case ("POST", calls) where !hasNoCalls:
@@ -2004,7 +2016,10 @@ struct CallSessionAppModelTests {
         return (200, Data(json: #"{"call": \#(ended)}"#))
       case ("POST", "\(calls)/c-1/transcript_entries"):
         let count = requests.withLock { $0.filter { $0.path == path }.count }
-        let entryID = "t-\(count)"
+        guard count > failedEntryPosts else {
+          return (503, Data(json: #"{"error": {"code": "unavailable", "message": "No."}}"#))
+        }
+        let entryID = "t-\(count - failedEntryPosts)"
         return (201, Data(json: #"{"transcript_entry": \#(Self.entry(entryID, sent))}"#))
       case ("PATCH", let entryPath) where entryPath.hasPrefix("\(calls)/c-1/transcript_entries/"):
         let id = String(entryPath.split(separator: "/").last ?? "")
@@ -2107,6 +2122,7 @@ struct CallSessionAppModelTests {
     let entry = try #require(stub.body("POST /api/v1/assistants/as-1/calls/c-1/transcript_entries"))
     #expect(entry["speaker"] == "user")
     #expect(entry["text"] == "Hello there")
+    #expect(entry["id"].flatMap(UUID.init(uuidString:)) != nil)
     let startedAt = try #require(entry["started_at"].flatMap(timestamp))
     let endedAt = try #require(entry["ended_at"].flatMap(timestamp))
     #expect(startedAt <= endedAt)
@@ -2164,6 +2180,41 @@ struct CallSessionAppModelTests {
     let types = stub.requests.withLock { $0.compactMap { $0.body["type"] } }
     #expect(types == ["call_started", "call_ended"])
     #expect(stub.body("POST /api/v1/assistants/as-1/messages")?["via"] == "voice")
+  }
+
+  @Test(arguments: [401, 409, 422, 500])
+  func aCallThatFailedToStartPostsNothingMore(status: Int) async {
+    let stub = Stub(startFailure: status)
+    let listener = FakeListener()
+    let speaker = FakeSpeaker()
+    let model = await startedModel(stub, listener: listener, speaker: speaker)
+
+    #expect(await model.startVoiceCall(assistantID: "as-1"))
+    listener.hear(.partial("Hello"))
+    listener.hear(.final("Hello"))
+    model.apply(created: reply("r-1", "Hi."))
+    speaker.finish()
+    model.endVoiceCall()
+    await model.callOutbox?.value
+
+    #expect(stub.paths.allSatisfy { $0 == "POST /api/v1/assistants/as-1/calls" })
+    #expect(!stub.paths.isEmpty)
+  }
+
+  @Test func aRetriedTurnIsSavedUnderTheSameID() async throws {
+    let stub = Stub(failedEntryPosts: 1)
+    let listener = FakeListener()
+    let model = await startedModel(stub, listener: listener)
+
+    #expect(await model.startVoiceCall(assistantID: "as-1"))
+    listener.hear(.partial("Hello there"))
+    model.endVoiceCall()
+    await model.callOutbox?.value
+
+    let posts = stub.bodies("POST /api/v1/assistants/as-1/calls/c-1/transcript_entries")
+    #expect(posts.count == 2)
+    let id = try #require(posts.first?["id"])
+    #expect(posts.map { $0["id"] } == [id, id])
   }
 
   @Test func theAssistantHangingUpEndsASessionWithoutPostingAnotherEnd() async {

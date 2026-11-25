@@ -348,7 +348,9 @@ final class AppModel {
     return started
   }
 
-  /// Speech can come before the Assistant is online, so it stays behind the start.
+  /// Speech can come before the Assistant is online, so it stays behind the start. Only a
+  /// service without calls falls back to call events: after any other failure the service may
+  /// have started the call anyway, and the chat must not be written twice.
   private func enqueueStart(of call: CallPosts) {
     enqueue {
       do {
@@ -356,8 +358,11 @@ final class AppModel {
           try await self.client().startCall(assistantID: call.assistantID)
         }
         call.callID = started.id
-      } catch {
+      } catch let error as APIError where error.status == 404 {
+        call.usesCallEvents = true
         await self.postCallEvent(.callStarted, assistantID: call.assistantID)
+      } catch {
+        Self.logger.notice("Call start failed: \(error.localizedDescription, privacy: .public)")
       }
     }
   }
@@ -367,15 +372,16 @@ final class AppModel {
     let session = session
     enqueue {
       guard let callID = call.callID else {
-        guard self.session == session,
+        guard call.usesCallEvents, self.session == session,
           let message = self.queue(text: text, assistantID: call.assistantID, via: .voice)
         else { return }
         await self.post(message, attempts: Self.callEventAttempts)
         return
       }
+      let id = UUIDv7.make()
       _ = await self.saveEntry {
         try await $0.saveTranscriptEntry(
-          assistantID: call.assistantID, callID: callID, speaker: .user, text: text,
+          id: id, assistantID: call.assistantID, callID: callID, speaker: .user, text: text,
           startedAt: startedAt, endedAt: endedAt)
       }
     }
@@ -388,10 +394,11 @@ final class AppModel {
       guard let callID = call.callID else { return }
       switch speech {
       case .started(let replyID, let text, let startedAt):
+        let id = UUIDv7.make()
         let entry = await self.saveEntry {
           try await $0.saveTranscriptEntry(
-            assistantID: call.assistantID, callID: callID, speaker: .assistant, text: text,
-            startedAt: startedAt, endedAt: nil)
+            id: id, assistantID: call.assistantID, callID: callID, speaker: .assistant,
+            text: text, startedAt: startedAt, endedAt: nil)
         }
         if let entry { call.replyEntries[replyID] = entry.id }
       case .finished(let replyID, let endedAt):
@@ -421,7 +428,9 @@ final class AppModel {
   private func enqueueEnd(of call: CallPosts) {
     enqueue {
       guard let callID = call.callID else {
-        await self.postCallEvent(.callEnded, assistantID: call.assistantID)
+        if call.usesCallEvents {
+          await self.postCallEvent(.callEnded, assistantID: call.assistantID)
+        }
         return
       }
       do {
@@ -716,9 +725,11 @@ final class AppModel {
 @MainActor
 private final class CallPosts {
   let assistantID: Assistant.ID
-  /// Set once the service started the call; `nil` while it starts, and for a service from
-  /// before calls were sessions.
+  /// Set once the service started the call; `nil` while it starts, if it failed to, and for a
+  /// service from before calls were sessions.
   var callID: String?
+  /// Whether the service is from before calls were sessions.
+  var usesCallEvents = false
   /// The transcript entry of each reply being read out, by the reply's event id.
   var replyEntries: [Event.ID: String] = [:]
 

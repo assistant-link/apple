@@ -160,6 +160,40 @@ struct VoiceCallTimelineTests {
     #expect(chat.lines.isEmpty)
   }
 
+  @Test func aMessageTypedDuringTheCallWithoutAnEntryIsInItsTranscript() {
+    let timeline = Timeline(events: [
+      voiceCall(at: 10, endedAfter: 72), event("r-1", at: 20),
+      event("typed", sender: .user, at: 30), event("e", .callEnded, sender: .user, at: 82),
+    ])
+    let entries = [
+      CallTranscriptEntry(
+        id: "t-2", callID: "c-v", seq: 2, speaker: .assistant, text: "r-1",
+        startedAt: Date(timeIntervalSince1970: 1019)),
+      CallTranscriptEntry(
+        id: "t-1", callID: "c-v", seq: 1, speaker: .user, text: "Hi",
+        startedAt: Date(timeIntervalSince1970: 1015)),
+    ]
+
+    #expect(timeline.rows().map(\.id) == ["v"])
+    let chat = timeline.voiceChat(of: timeline.events[0])
+    #expect(chat.transcript(of: entries).map(\.id) == ["t-1", "t-2", "typed"])
+  }
+
+  @Test func anUnsavedReplyKeepsItsPlaceAmongTheEntries() {
+    let timeline = Timeline(events: [
+      voiceCall(at: 10, endedAfter: 72), event("unsaved", at: 12),
+    ])
+    let entries = [
+      CallTranscriptEntry(
+        id: "t-1", callID: "c-v", seq: 1, speaker: .user, text: "Hi",
+        startedAt: Date(timeIntervalSince1970: 1015))
+    ]
+
+    let chat = timeline.voiceChat(of: timeline.events[0])
+    #expect(chat.transcript(of: entries).map(\.id) == ["unsaved", "t-1"])
+    #expect(chat.transcript(of: []).map(\.id) == ["unsaved"])
+  }
+
   @Test func theCallsOwnStartBeforeItsEntryIsNotAnotherVoiceChat() {
     let timeline = Timeline(events: [
       event("s", .callStarted, sender: .user), voiceCall(at: 0, endedAfter: 30),

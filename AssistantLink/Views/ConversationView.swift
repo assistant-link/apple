@@ -324,8 +324,8 @@ private struct ConversationSheets: ViewModifier {
   }
 }
 
-/// The transcript of an ended voice chat: the call's saved turns, or the messages of a chat from
-/// before calls were sessions.
+/// The transcript of an ended voice chat: the call's saved turns and its messages they miss, or
+/// the messages of a chat from before calls were sessions.
 private struct VoiceChatSheet: View {
   let assistantID: Assistant.ID
   let chat: VoiceChatRecord
@@ -343,7 +343,7 @@ private struct VoiceChatSheet: View {
 
   private func saved(_ callID: String) -> VoiceChatRecord {
     var saved = chat
-    saved.lines = (model.callTranscripts[callID] ?? []).compactMap(\.line)
+    saved.lines = chat.transcript(of: model.callTranscripts[callID] ?? [])
     return saved
   }
 }
