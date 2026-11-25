@@ -2004,7 +2004,8 @@ struct CallSessionAppModelTests {
         return (200, Data(json: #"{"call": \#(ended)}"#))
       case ("POST", "\(calls)/c-1/transcript_entries"):
         let count = requests.withLock { $0.filter { $0.path == path }.count }
-        return (201, Data(json: #"{"transcript_entry": \#(Self.entry("t-\#(count)", sent))}"#))
+        let entryID = "t-\(count)"
+        return (201, Data(json: #"{"transcript_entry": \#(Self.entry(entryID, sent))}"#))
       case ("PATCH", let entryPath) where entryPath.hasPrefix("\(calls)/c-1/transcript_entries/"):
         let id = String(entryPath.split(separator: "/").last ?? "")
         return (200, Data(json: #"{"transcript_entry": \#(Self.entry(id, sent))}"#))

@@ -307,8 +307,8 @@ extension Event {
     text = content?.text
     via = content?.via
     replyTo = container.decode(LossyOptional<String>.self, forKey: .replyTo).wrappedValue
-    voiceCall = container.decode(LossyOptional<VoiceCallDetails>.self, forKey: .voiceCall)
-      .wrappedValue
+    voiceCall =
+      container.decode(LossyOptional<VoiceCallDetails>.self, forKey: .voiceCall).wrappedValue
   }
 }
 
