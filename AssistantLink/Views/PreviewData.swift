@@ -37,10 +37,32 @@ extension Assistant {
         linkID: "01a0f5c2-8000-7000-8000-000000000003")),
   ]
 
+  /// Hermes with only its laptop Link, woken by `wake`.
+  static func hermesLaptop(wake: Wake) -> Assistant {
+    var hermes = samples[0]
+    hermes.links = [hermes.links[0]]
+    hermes.links[0].wake = wake
+    return hermes
+  }
+
   /// The conversations opened in previews, by Assistant.
   static let sampleTimelines: [Assistant.ID: Timeline] = [
     hermesID: Timeline(events: Event.samples)
   ]
+}
+
+extension Wake {
+  /// The states of the wake-route design mocks, in their order.
+  static let samples: [Wake] = {
+    let email = "hermes@example.com"
+    return [
+      Wake(webhookInstalled: true, route: .webhook),
+      Wake(email: Email(address: email, confirmed: true), route: .email),
+      Wake(webhookInstalled: true, email: Email(address: email, confirmed: true), route: .webhook),
+      Wake(email: Email(address: email, confirmed: false), route: .noRoute),
+      Wake(route: .noRoute),
+    ]
+  }()
 }
 
 extension Event {
