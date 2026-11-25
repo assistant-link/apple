@@ -23,6 +23,14 @@ struct ComponentCatalog: View {
     case dictationRecording = "dictation-recording"
     case dictationRecordingLong = "dictation-recording-long"
     case dictationEditing = "dictation-editing"
+    case wakeWebhook = "wake-webhook"
+    case wakeEmail = "wake-email"
+    case wakeBoth = "wake-both"
+    case wakePending = "wake-pending"
+    case wakeNone = "wake-none"
+
+    /// In the order of `Wake.samples`.
+    static let wake: [Page] = [.wakeWebhook, .wakeEmail, .wakeBoth, .wakePending, .wakeNone]
 
     static let dictation: [Page] = [
       .dictationIdle, .dictationPreparing, .dictationRecording, .dictationRecordingLong,
@@ -50,6 +58,9 @@ struct ComponentCatalog: View {
       inChat(MessageComposer(draft: .constant(Self.sampleLines(lines)), onSend: {}))
     } else if let composer = dictationComposer {
       inChat(composer)
+    } else if let index = Page.wake.firstIndex(of: page) {
+      WakeRoutePreview(wake: Wake.samples[index])
+        .accessibilityIdentifier("componentCatalog")
     } else if let model = chatModel {
       NavigationStack { ConversationView(assistantID: Assistant.samples[0].id) }
         .environment(model)

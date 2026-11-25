@@ -62,14 +62,76 @@ struct Link: Decodable, Equatable, Identifiable, Sendable {
   var lastActiveAt: Date?
   /// What the agent says it is doing. Only live, never stored.
   @ActivityText var activity: String? = nil
+  /// `nil` when the service doesn't say how its Links are woken, as before it could.
+  var wake: Wake? = nil
+}
 
-  enum CodingKeys: String, CodingKey {
+extension Link {
+  private enum CodingKeys: String, CodingKey {
     case id
     case label
     case status
     case lastActiveAt = "last_active_at"
     case activity
+    case webhookInstalled = "webhook_installed"
+    case wakeEmail = "wake_email"
+    case wakeRoute = "wake_route"
   }
+
+  init(from decoder: any Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    id = try container.decode(String.self, forKey: .id)
+    label = try container.decodeIfPresent(String.self, forKey: .label)
+    status = try container.decode(Status.self, forKey: .status)
+    lastActiveAt = try container.decodeIfPresent(Date.self, forKey: .lastActiveAt)
+    _activity = container.decode(ActivityText.self, forKey: .activity)
+    // A service that knows wake routes sends all three keys, even when they are null.
+    let wakeKeys: [CodingKeys] = [.webhookInstalled, .wakeEmail, .wakeRoute]
+    guard wakeKeys.contains(where: container.contains) else { return }
+    let installed = try? container.decodeIfPresent(Bool.self, forKey: .webhookInstalled)
+    let email = container.decode(LossyOptional<Wake.Email>.self, forKey: .wakeEmail).wrappedValue
+    let route: Wake.Route? =
+      if container.contains(.wakeRoute) {
+        Wake.Route(container.decode(LossyOptional<String>.self, forKey: .wakeRoute).wrappedValue)
+      } else {
+        nil
+      }
+    wake = Wake(
+      webhookInstalled: installed ?? false,
+      email: email?.address.isEmpty == false ? email : nil,
+      route: route)
+  }
+}
+
+/// How the service wakes a Link's agent when none is connected. A webhook's URL and secret never
+/// reach the app.
+struct Wake: Equatable, Sendable {
+  enum Route: Sendable {
+    case webhook
+    case email
+    /// Also a route this app doesn't know.
+    case noRoute
+
+    init(_ value: String?) {
+      self =
+        switch value {
+        case "webhook": .webhook
+        case "email": .email
+        default: .noRoute
+        }
+    }
+  }
+
+  struct Email: Decodable, Equatable, Sendable {
+    let address: String
+    /// An email wakes the agent only once its address is confirmed.
+    let confirmed: Bool
+  }
+
+  var webhookInstalled = false
+  var email: Email?
+  /// The active route, or `nil` when the service doesn't say which one it is.
+  var route: Route?
 }
 
 struct PairingCode: Decodable, Equatable, Sendable {

@@ -113,6 +113,9 @@ private struct LinkRow: View {
         }
         .font(.subheadline)
         .foregroundStyle(.secondary)
+        if let wake = WakeCaption(link) {
+          WakeCaptionView(caption: wake)
+        }
       }
       if showsPairingHint {
         Spacer()
@@ -123,6 +126,21 @@ private struct LinkRow: View {
       }
     }
     .padding(.vertical, 2)
+  }
+}
+
+private struct WakeCaptionView: View {
+  let caption: WakeCaption
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 2) {
+      Text(caption.text)
+        .foregroundStyle(caption.isMuted ? HierarchicalShapeStyle.tertiary : .secondary)
+      if let note = caption.note {
+        Text(note).foregroundStyle(.tertiary)
+      }
+    }
+    .font(.footnote)
   }
 }
 
@@ -138,4 +156,23 @@ private struct LinkRow: View {
     AssistantDetailsView(assistantID: Assistant.samples[1].id)
   }
   .environment(AppModel.preview(Assistant.samples))
+}
+
+#Preview("Woken by webhook") { WakeRoutePreview(wake: Wake.samples[0]) }
+#Preview("Woken by email") { WakeRoutePreview(wake: Wake.samples[1]) }
+#Preview("Woken by webhook, email also set") { WakeRoutePreview(wake: Wake.samples[2]) }
+#Preview("Wake email pending") { WakeRoutePreview(wake: Wake.samples[3]) }
+#Preview("No wake route") { WakeRoutePreview(wake: Wake.samples[4]) }
+
+/// Hermes with only its laptop Link, as in the wake-route design mocks.
+struct WakeRoutePreview: View {
+  let wake: Wake
+
+  var body: some View {
+    let hermes = Assistant.hermesLaptop(wake: wake)
+    NavigationStack {
+      AssistantDetailsView(assistantID: hermes.id)
+    }
+    .environment(AppModel.preview([hermes]))
+  }
 }

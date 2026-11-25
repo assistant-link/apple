@@ -126,6 +126,21 @@ final class ComponentScreenshotTests: XCTestCase {
     capture(app, "32-first-pairing")
   }
 
+  /// Assistant Details in the states of the wake-route design mocks 01 to 05.
+  @MainActor func testCaptureWakeRoutes() {
+    let pages = ["wake-webhook", "wake-email", "wake-both", "wake-pending", "wake-none"]
+    for (index, page) in pages.enumerated() {
+      let app = XCUIApplication()
+      app.launchArguments = ["-componentCatalog", page]
+      app.launch()
+      XCTAssertTrue(
+        app.staticTexts["laptop"].waitForExistence(timeout: 30), "the \(page) page did not appear")
+      Thread.sleep(forTimeInterval: 1)
+      capture(app, "\(60 + index)-details-\(page)")
+      app.terminate()
+    }
+  }
+
   private func capture(_ app: XCUIApplication, _ name: String) {
     let attachment = XCTAttachment(screenshot: app.screenshot())
     attachment.name = name
