@@ -2653,6 +2653,28 @@ struct CallSessionAppModelTests {
       ])
   }
 
+  @Test func whatTheDeviceHeardIsNotSavedToACallTheVoiceAgentCouldNotTake() async {
+    let stub = Stub(
+      webRTC: (503, #"{"error": {"code": "voice_unavailable", "message": "No voice."}}"#))
+    let listener = FakeListener()
+    let model = await startedModel(stub, listener: listener)
+
+    #expect(await model.startVoiceCall(assistantID: "as-1"))
+    listener.hear(.partial("Hello"))
+    listener.hear(.final("Hello"))
+    listener.hear(.partial("Are you"))
+    await model.callOutbox?.value
+
+    #expect(model.voiceCall.state == .idle)
+    #expect(model.voiceCall.startFailure == .service)
+    #expect(
+      stub.paths == [
+        "POST /api/v1/assistants/as-1/calls",
+        "POST /api/v1/assistants/as-1/calls/c-1/webrtc",
+        "POST /api/v1/assistants/as-1/calls/c-1/end",
+      ])
+  }
+
   @Test func anOfferTheDeviceCannotMakeEndsTheCallAndSaysSo() async {
     let stub = Stub(webRTC: Stub.answered)
     let relay = FakeRelay()

@@ -408,6 +408,7 @@ final class AppModel {
       Self.logger.notice("Voice relay failed: \(error.localizedDescription, privacy: .public)")
       // An end already queued behind this start tells the service.
       guard currentCall === call, voiceCall.state != .idle else { return }
+      call.usesRelay = true
       voiceCall.endedElsewhere(startFailure: .service)
       await postEnd(assistantID: call.assistantID, callID: callID)
       return
@@ -790,8 +791,9 @@ private final class CallPosts {
   var callID: String?
   /// Whether the service is from before calls were sessions.
   var usesCallEvents = false
-  /// Whether the service's voice agent took the call's audio, so the device's own turns are
-  /// not the transcript.
+  /// Whether the device's own turns are not the transcript: the service's voice agent took the
+  /// call's audio, or the call ended because it could not, and turns queued behind the end
+  /// would go to an ended call.
   var usesRelay = false
   /// The transcript entry of each reply being read out, by the reply's event id.
   var replyEntries: [Event.ID: String] = [:]
