@@ -46,6 +46,8 @@ final class AppModel {
   private(set) var callOutbox: Task<Void, Never>?
   /// The posts of the call that is on or last was.
   private var currentCall: CallPosts?
+  /// The service's id of the call that is on or last was, once it started.
+  var currentCallID: String? { currentCall?.callID }
   /// Keeps the process running until the task finishes, so posts started when the app leaves the
   /// foreground are not cut off by suspension.
   private let keepRunning: @MainActor (Task<Void, Never>) -> Void
@@ -734,6 +736,7 @@ final class AppModel {
 
 /// The posts of one voice chat, which go out one after another through the call outbox.
 @MainActor
+@Observable
 private final class CallPosts {
   let assistantID: Assistant.ID
   /// Set once the service started the call; `nil` while it starts, if it failed to, and for a

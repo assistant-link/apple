@@ -116,10 +116,11 @@ struct Timeline: Equatable, Sendable {
   /// voice chat show in its transcript instead. `isInCall` is whether a voice chat with this
   /// Assistant is on now: the service marks only the user's speech `via: voice`, so the
   /// Assistant's spoken replies are told apart only by coming after its `call_started` or
-  /// `voice_call`. Those alone can't tell, because the end of the call can be lost.
-  func rows(isInCall: Bool = false) -> [TimelineRow] {
+  /// `voice_call`. Those alone can't tell, because the end of the call can be lost. `callID` is
+  /// the service's id of that voice chat, once it has one.
+  func rows(isInCall: Bool = false, callID: String? = nil) -> [TimelineRow] {
     let stored = Set(events.compactMap(\.idempotencyKey))
-    let groups = callGroups(isInCall: isInCall)
+    let groups = callGroups(liveCallID: isInCall ? callID : nil)
     let live = isInCall ? openCallIndices : 0..<0
     let sessionEnds = Set(groups.sessionEnds.values)
     let shown = events.indices.filter { groups.folded[$0] == nil && !sessionEnds.contains($0) }
@@ -159,7 +160,7 @@ struct Timeline: Equatable, Sendable {
     let unread = events.firstIndex {
       $0.id > lastReadID && $0.type == .textMessage && $0.sender == .assistant
     }
-    let folded = callGroups(isInCall: false).folded
+    let folded = callGroups(liveCallID: nil).folded
     return unread.map { Self.rowID(of: events[folded[$0] ?? $0]) }
   }
 
@@ -175,9 +176,10 @@ struct Timeline: Equatable, Sendable {
     var live: Int?
   }
 
-  /// A `call_started` open when a `voice_call` comes, or the first one after it, is that call's
-  /// own.
-  private func callGroups(isInCall: Bool) -> CallGroups {
+  /// The `call_started` just before a `voice_call`, or else the first one after it, is that call's
+  /// own: an earlier one still open is of a call whose `call_ended` was lost. Only the
+  /// `voice_call` of `liveCallID` is live, since the newest unended one can be such a call too.
+  private func callGroups(liveCallID: String?) -> CallGroups {
     var groups = CallGroups()
     var sessions: [Int] = []
     var start: Int?
@@ -187,7 +189,7 @@ struct Timeline: Equatable, Sendable {
       switch event.type {
       case .voiceCall:
         sessions.append(index)
-        session = (index, start != nil)
+        session = (index, start == index - 1)
         start = nil
       case .callStarted:
         if let open = session, !open.hasStart {
@@ -216,7 +218,7 @@ struct Timeline: Equatable, Sendable {
       let endedAt = events[index].voiceCall?.endedAt
       if endedAt == nil, groups.sessionEnds[index] == nil {
         // An end the service never got would otherwise hide every later message.
-        guard isInCall, position == sessions.count - 1 else { continue }
+        guard let liveCallID, events[index].voiceCall?.callID == liveCallID else { continue }
         groups.live = index
       }
       for message in index + 1..<end where events[message].type == .textMessage {
@@ -228,8 +230,8 @@ struct Timeline: Equatable, Sendable {
   }
 
   /// The `voice_call` entry of the call that is on now, which counts up and opens the call.
-  func liveVoiceCallID(isInCall: Bool) -> Event.ID? {
-    callGroups(isInCall: isInCall).live.map { events[$0].id }
+  func liveVoiceCallID(callID: String?) -> Event.ID? {
+    callGroups(liveCallID: callID).live.map { events[$0].id }
   }
 
   /// The indices after a `call_started` that no `call_ended` follows yet.
@@ -248,7 +250,7 @@ struct Timeline: Equatable, Sendable {
     let event = events[index]
     guard event.type == .textMessage else { return nil }
     guard !event.deleted, let text = event.text else { return .deleted }
-    let folded = callGroups(isInCall: false).folded
+    let folded = callGroups(liveCallID: nil).folded
     return .message(text: text, rowID: Self.rowID(of: events[folded[index] ?? index]))
   }
 
@@ -270,7 +272,7 @@ struct Timeline: Equatable, Sendable {
     let startedAt = call?.startedAt ?? event.createdAt
     var seconds = call?.seconds
     let index = events.firstIndex(where: { $0.id == event.id })
-    let groups = callGroups(isInCall: false)
+    let groups = callGroups(liveCallID: nil)
     if seconds == nil, call?.endedAt == nil, let index, let end = groups.sessionEnds[index] {
       // Its `call_ended` can come before the update with the end.
       seconds = max(0, Int(events[end].createdAt.timeIntervalSince(startedAt)))

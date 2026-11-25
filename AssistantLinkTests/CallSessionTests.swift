@@ -151,7 +151,7 @@ struct VoiceCallTimelineTests {
     ])
 
     #expect(timeline.rows().map(\.id) == ["before", "v", "s", "after"])
-    #expect(timeline.liveVoiceCallID(isInCall: false) == nil)
+    #expect(timeline.liveVoiceCallID(callID: nil) == nil)
     let chat = timeline.voiceChat(of: timeline.events[1])
     #expect(chat.id == "v")
     #expect(chat.callID == "c-v")
@@ -209,15 +209,38 @@ struct VoiceCallTimelineTests {
       event("s", .callStarted, sender: .user, at: 10), event("r-1", at: 20),
     ])
 
-    #expect(timeline.rows(isInCall: true).map(\.id) == ["before", "v", "s"])
-    #expect(timeline.liveVoiceCallID(isInCall: true) == "v")
+    #expect(timeline.rows(isInCall: true, callID: "c-v").map(\.id) == ["before", "v", "s"])
+    #expect(timeline.liveVoiceCallID(callID: "c-v") == "v")
+  }
+
+  @Test func anEarlierCallWhoseEndNeverCameIsNotTheCallOn() {
+    let timeline = Timeline(events: [
+      voiceCall("old", endedAfter: nil), event("typed", at: 20),
+      event("s", .callStarted, sender: .user, at: 30),
+    ])
+
+    for callID in ["c-new", nil] {
+      #expect(timeline.rows(isInCall: true, callID: callID).map(\.id) == ["old", "typed", "s"])
+      #expect(timeline.liveVoiceCallID(callID: callID) == nil)
+    }
+  }
+
+  @Test func onlyTheEntryOfTheCallOnIsLive() {
+    let timeline = Timeline(events: [
+      voiceCall("old", endedAfter: nil), event("typed", at: 20),
+      voiceCall("new", at: 30, endedAfter: nil), event("r-1", at: 40),
+    ])
+
+    #expect(timeline.rows(isInCall: true, callID: "c-new").map(\.id) == ["old", "typed", "new"])
+    #expect(timeline.liveVoiceCallID(callID: "c-new") == "new")
+    #expect(timeline.liveVoiceCallID(callID: "c-old") == "old")
   }
 
   @Test func aCallWhoseEndNeverCameLeavesLaterMessagesInTheChat() {
     let timeline = Timeline(events: [voiceCall(endedAfter: nil), event("r-1", at: 20)])
 
     #expect(timeline.rows(isInCall: false).map(\.id) == ["v", "r-1"])
-    #expect(timeline.liveVoiceCallID(isInCall: false) == nil)
+    #expect(timeline.liveVoiceCallID(callID: nil) == nil)
   }
 
   @Test func messagesAfterTheEndTheServiceStoredStayInTheChat() {
@@ -234,7 +257,7 @@ struct VoiceCallTimelineTests {
     ])
 
     #expect(timeline.rows().map(\.id) == ["v"])
-    #expect(timeline.liveVoiceCallID(isInCall: true) == nil)
+    #expect(timeline.liveVoiceCallID(callID: "c-v") == nil)
     #expect(timeline.voiceChat(of: timeline.events[0]).seconds == 48)
   }
 
@@ -257,6 +280,16 @@ struct VoiceCallTimelineTests {
     ])
 
     #expect(timeline.rows().map(\.id) == ["v", "s", "s-2", "e-2"])
+  }
+
+  @Test func aStartWhoseEndWasLostIsNotTheNextCallsOwn() {
+    let timeline = Timeline(events: [
+      event("s-1", .callStarted, sender: .user), event("u", sender: .user, at: 5),
+      voiceCall(at: 100, endedAfter: 30), event("s-2", .callStarted, sender: .user, at: 100),
+      event("r", at: 110), event("e-2", .callEnded, sender: .user, at: 130),
+    ])
+
+    #expect(timeline.rows().map(\.id) == ["s-1", "u", "v", "s-2"])
   }
 
   @Test func theEntryCannotBeRepliedTo() {
