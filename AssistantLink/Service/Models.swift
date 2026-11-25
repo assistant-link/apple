@@ -153,6 +153,8 @@ struct Event: Decodable, Equatable, Identifiable, Sendable {
     case linkCreated = "link_created"
     case callStarted = "call_started"
     case callEnded = "call_ended"
+    /// A voice chat's one timeline entry, stored when it starts and updated when it ends.
+    case voiceCall = "voice_call"
     case unknown
 
     static let fallback = unknown
@@ -195,6 +197,81 @@ struct Event: Decodable, Equatable, Identifiable, Sendable {
   var via: Via?
   /// The id of the message this one answers, which may no longer exist.
   var replyTo: String?
+  /// The call of a `voice_call`.
+  var voiceCall: VoiceCallDetails?
+}
+
+/// A `voice_call` event's summary of its call.
+struct VoiceCallDetails: Decodable, Equatable, Sendable {
+  let callID: String
+  var mode: String?
+  var startedAt: Date?
+  /// `nil` while the call is on.
+  var endedAt: Date?
+  var durationSeconds: Int?
+  var transcriptURL: URL?
+
+  /// The final length; `nil` while the call is on.
+  var seconds: Int? {
+    if let durationSeconds { return max(0, durationSeconds) }
+    guard let startedAt, let endedAt else { return nil }
+    return max(0, Int(endedAt.timeIntervalSince(startedAt)))
+  }
+}
+
+extension VoiceCallDetails {
+  private enum CodingKeys: String, CodingKey {
+    case mode
+    case callID = "call_id"
+    case startedAt = "started_at"
+    case endedAt = "ended_at"
+    case durationSeconds = "duration_seconds"
+    case transcriptURL = "transcript_url"
+  }
+
+  init(from decoder: any Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    callID = try container.decode(String.self, forKey: .callID)
+    mode = container.decode(LossyOptional<String>.self, forKey: .mode).wrappedValue
+    startedAt = container.decode(LossyOptional<Date>.self, forKey: .startedAt).wrappedValue
+    endedAt = container.decode(LossyOptional<Date>.self, forKey: .endedAt).wrappedValue
+    durationSeconds =
+      container.decode(LossyOptional<Int>.self, forKey: .durationSeconds).wrappedValue
+    transcriptURL = container.decode(LossyOptional<URL>.self, forKey: .transcriptURL).wrappedValue
+  }
+}
+
+/// A started voice chat, as the service keeps it.
+struct CallSession: Decodable, Equatable, Sendable {
+  let id: String
+}
+
+/// One spoken turn of a call. `seq` is the order the entries were saved in; `startedAt` and
+/// `endedAt` are when it was said, which may overlap another turn.
+struct CallTranscriptEntry: Decodable, Equatable, Identifiable, Sendable {
+  enum Speaker: String, ForwardCompatibleEnum, Encodable, Sendable {
+    case user
+    case assistant
+    case unknown
+
+    static let fallback = unknown
+  }
+
+  let id: String
+  let callID: String
+  let seq: Int
+  let speaker: Speaker
+  let text: String
+  let startedAt: Date
+  /// `nil` while it is still being said.
+  var endedAt: Date?
+
+  enum CodingKeys: String, CodingKey {
+    case id, seq, speaker, text
+    case callID = "call_id"
+    case startedAt = "started_at"
+    case endedAt = "ended_at"
+  }
 }
 
 extension Event {
@@ -207,6 +284,7 @@ extension Event {
     case idempotencyKey = "idempotency_key"
     case textMessage = "text_message"
     case replyTo = "reply_to"
+    case voiceCall = "voice_call"
   }
 
   private struct TextContent: Decodable {
@@ -229,6 +307,8 @@ extension Event {
     text = content?.text
     via = content?.via
     replyTo = container.decode(LossyOptional<String>.self, forKey: .replyTo).wrappedValue
+    voiceCall = container.decode(LossyOptional<VoiceCallDetails>.self, forKey: .voiceCall)
+      .wrappedValue
   }
 }
 

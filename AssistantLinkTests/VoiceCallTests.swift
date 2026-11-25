@@ -144,7 +144,7 @@ private final class Setup {
   func start(isOnline: Bool = true, assistantName: String? = nil) async {
     let started = await call.start(
       assistantID: "as-1", assistantName: assistantName, isOnline: isOnline,
-      send: { [unowned self] in sent.append($0) },
+      send: { [unowned self] text, _ in sent.append(text) },
       onEnd: { [unowned self] in
         ends += 1
         sentBeforeEnd = sent
@@ -352,7 +352,7 @@ struct VoiceCallStateTests {
     setup.audio.isAllowed = false
 
     let started = await setup.call.start(
-      assistantID: "as-1", isOnline: true, send: { _ in }, onEnd: {})
+      assistantID: "as-1", isOnline: true, send: { _, _ in }, onEnd: {})
 
     #expect(!started)
     #expect(setup.call.state == .idle)
@@ -366,7 +366,7 @@ struct VoiceCallStateTests {
     setup.audio.activateError = URLError(.unknown)
 
     let started = await setup.call.start(
-      assistantID: "as-1", isOnline: true, send: { _ in }, onEnd: {})
+      assistantID: "as-1", isOnline: true, send: { _, _ in }, onEnd: {})
 
     #expect(!started)
     #expect(setup.call.state == .idle)
@@ -376,7 +376,7 @@ struct VoiceCallStateTests {
   @Test func aStartThatWorksHasNoFailure() async {
     let setup = Setup()
     setup.audio.isAllowed = false
-    _ = await setup.call.start(assistantID: "as-1", isOnline: true, send: { _ in }, onEnd: {})
+    _ = await setup.call.start(assistantID: "as-1", isOnline: true, send: { _, _ in }, onEnd: {})
     setup.audio.isAllowed = true
 
     await setup.start()
@@ -389,7 +389,7 @@ struct VoiceCallStateTests {
     setup.listener.startError = URLError(.unknown)
 
     let started = await setup.call.start(
-      assistantID: "as-1", isOnline: true, send: { _ in }, onEnd: {})
+      assistantID: "as-1", isOnline: true, send: { _, _ in }, onEnd: {})
 
     #expect(!started)
     #expect(setup.call.state == .idle)
@@ -549,7 +549,7 @@ struct VoiceCallStateTests {
     setup.listener.startError = URLError(.unknown)
 
     _ = await setup.call.start(
-      assistantID: "as-1", isOnline: true, send: { _ in }, onEnd: { setup.noteEnd() })
+      assistantID: "as-1", isOnline: true, send: { _, _ in }, onEnd: { setup.noteEnd() })
 
     #expect(setup.ends == 0)
   }
@@ -1960,5 +1960,264 @@ struct VoiceCallInterruptionTests {
 
     #expect(!setup.call.listeningFailed)
     #expect(setup.listener.isListening)
+  }
+}
+
+@MainActor
+struct CallSessionAppModelTests {
+  private final class Stub: Sendable {
+    struct Request: Equatable {
+      let method: String
+      let path: String
+      let body: [String: String]
+    }
+
+    let requests = Mutex<[Request]>([])
+    /// A service from before calls were sessions.
+    let hasNoCalls: Bool
+
+    init(hasNoCalls: Bool = false) {
+      self.hasNoCalls = hasNoCalls
+    }
+
+    var paths: [String] { requests.withLock { $0.map { "\($0.method) \($0.path)" } } }
+
+    func body(_ path: String) -> [String: String]? {
+      requests.withLock { $0.first { "\($0.method) \($0.path)" == path }?.body }
+    }
+
+    func answer(_ request: URLRequest, _ body: Data?) throws -> (Int, Data) {
+      let method = request.httpMethod ?? ""
+      let path = request.url?.path() ?? ""
+      let sent = try (body.map { try $0.jsonObject() } ?? [:]).compactMapValues { $0 as? String }
+      if path != "/api/v1/assistants" {
+        requests.withLock { $0.append(Request(method: method, path: path, body: sent)) }
+      }
+      let calls = "/api/v1/assistants/as-1/calls"
+      switch (method, path) {
+      case ("GET", "/api/v1/assistants"):
+        return (200, Data(json: #"{"assistants": [\#(Self.assistant)]}"#))
+      case ("POST", calls) where !hasNoCalls:
+        return (201, Data(json: #"{"call": \#(Self.call(endedAt: "null"))}"#))
+      case ("POST", "\(calls)/c-1/end"):
+        let ended = Self.call(endedAt: "\"2026-11-25T10:01:00Z\"")
+        return (200, Data(json: #"{"call": \#(ended)}"#))
+      case ("POST", "\(calls)/c-1/transcript_entries"):
+        let count = requests.withLock { $0.filter { $0.path == path }.count }
+        return (201, Data(json: #"{"transcript_entry": \#(Self.entry("t-\#(count)", sent))}"#))
+      case ("PATCH", let entryPath) where entryPath.hasPrefix("\(calls)/c-1/transcript_entries/"):
+        let id = String(entryPath.split(separator: "/").last ?? "")
+        return (200, Data(json: #"{"transcript_entry": \#(Self.entry(id, sent))}"#))
+      case ("GET", "\(calls)/c-1/transcript"):
+        let entries = [
+          Self.entry("t-2", ["speaker": "assistant", "text": "Hello"], seq: 2),
+          Self.entry("t-1", ["speaker": "user", "text": "Hi"], seq: 1),
+        ]
+        return (200, Data(json: #"{"transcript_entries": [\#(entries.joined(separator: ","))]}"#))
+      case ("POST", "/api/v1/assistants/as-1/call_events"):
+        let event = """
+          {"id": "ev-\(sent["idempotency_key"] ?? "")", "assistant_id": "as-1",
+           "type": "\(sent["type"] ?? "")", "sender": "user",
+           "created_at": "2026-11-25T10:00:00Z"}
+          """
+        return (201, Data(json: #"{"event": \#(event)}"#))
+      case ("POST", "/api/v1/assistants/as-1/messages"):
+        let event = """
+          {"id": "ev-\(sent["idempotency_key"] ?? "")", "assistant_id": "as-1",
+           "type": "text_message", "sender": "user", "created_at": "2026-11-25T10:00:00Z",
+           "idempotency_key": "\(sent["idempotency_key"] ?? "")",
+           "text_message": {"text": "\(sent["text"] ?? "")", "via": "voice"}}
+          """
+        return (201, Data(json: #"{"message": \#(event)}"#))
+      default:
+        return (404, Data(json: #"{"error": {"code": "not_found", "message": "No."}}"#))
+      }
+    }
+
+    private static func call(endedAt: String) -> String {
+      """
+      {"id": "c-1", "assistant_id": "as-1", "mode": "realtime_relay",
+       "started_at": "2026-11-25T10:00:00Z", "ended_at": \(endedAt)}
+      """
+    }
+
+    private static func entry(_ id: String, _ sent: [String: String], seq: Int = 1) -> String {
+      """
+      {"id": "\(id)", "call_id": "c-1", "seq": \(seq), "speaker": "\(sent["speaker"] ?? "user")",
+       "text": "\(sent["text"] ?? "")", "started_at": "2026-11-25T10:00:00Z", "ended_at": null}
+      """
+    }
+
+    static let assistant = """
+      {"id": "as-1", "name": "Muse", "avatar": "sparkles", "status": "online", "links": [
+       {"id": "l-1", "label": null, "status": "online", "last_active_at": null}],
+       "latest_event": null}
+      """
+  }
+
+  private func startedModel(
+    _ stub: Stub, listener: FakeListener, speaker: FakeSpeaker = FakeSpeaker()
+  ) async -> AppModel {
+    let api = APIClient(
+      baseURL: URL(string: "https://service.test")!, credential: "ala_secret",
+      session: StubURLProtocol.session { request, body in try stub.answer(request, body) })
+    let model = AppModel(
+      connect: { api }, sleep: { _ in },
+      voiceCall: VoiceCall(listener: listener, speaker: speaker, audio: FakeAudio()),
+      dictation: .fake())
+    await model.start()
+    return model
+  }
+
+  private func timestamp(_ text: String) -> Date? {
+    try? Date(text, strategy: Date.ISO8601FormatStyle(includingFractionalSeconds: true))
+  }
+
+  private func reply(_ id: String, _ text: String) -> Event {
+    Event(
+      id: id, assistantID: "as-1", type: .textMessage, sender: .assistant, createdAt: .now,
+      text: text)
+  }
+
+  private func voiceCallEvent(callID: String, ended: Bool) -> Event {
+    var event = Event(
+      id: "v-1", assistantID: "as-1", type: .voiceCall, sender: .user, createdAt: .now)
+    event.voiceCall = VoiceCallDetails(
+      callID: callID, startedAt: .now.addingTimeInterval(-30), endedAt: ended ? .now : nil)
+    return event
+  }
+
+  @Test func aCallStartsAndEndsAsASessionAndTheUsersSpeechIsItsTranscript() async throws {
+    let stub = Stub()
+    let listener = FakeListener()
+    let model = await startedModel(stub, listener: listener)
+
+    #expect(await model.startVoiceCall(assistantID: "as-1"))
+    listener.hear(.partial("Hello there"))
+    model.endVoiceCall()
+    await model.callOutbox?.value
+
+    #expect(
+      stub.paths == [
+        "POST /api/v1/assistants/as-1/calls",
+        "POST /api/v1/assistants/as-1/calls/c-1/transcript_entries",
+        "POST /api/v1/assistants/as-1/calls/c-1/end",
+      ])
+    let entry = try #require(stub.body("POST /api/v1/assistants/as-1/calls/c-1/transcript_entries"))
+    #expect(entry["speaker"] == "user")
+    #expect(entry["text"] == "Hello there")
+    let startedAt = try #require(entry["started_at"].flatMap(timestamp))
+    let endedAt = try #require(entry["ended_at"].flatMap(timestamp))
+    #expect(startedAt <= endedAt)
+    #expect(model.timelines["as-1"]?.outgoing.isEmpty ?? true)
+    #expect(model.voiceCall.state == .idle)
+  }
+
+  @Test func aSpokenReplyIsSavedAsItStartsAndUpdatedWhenItEnds() async throws {
+    let stub = Stub()
+    let speaker = FakeSpeaker()
+    let model = await startedModel(stub, listener: FakeListener(), speaker: speaker)
+    #expect(await model.startVoiceCall(assistantID: "as-1"))
+    await model.callOutbox?.value
+
+    model.apply(created: reply("r-1", "Sure."))
+    #expect(speaker.spoken == ["Sure."])
+    speaker.finish()
+    await model.callOutbox?.value
+
+    #expect(
+      stub.paths.dropFirst() == [
+        "POST /api/v1/assistants/as-1/calls/c-1/transcript_entries",
+        "PATCH /api/v1/assistants/as-1/calls/c-1/transcript_entries/t-1",
+      ])
+    let saved = try #require(stub.body("POST /api/v1/assistants/as-1/calls/c-1/transcript_entries"))
+    #expect(saved["speaker"] == "assistant")
+    #expect(saved["text"] == "Sure.")
+    #expect(saved["ended_at"] == nil)
+    let update = try #require(
+      stub.body("PATCH /api/v1/assistants/as-1/calls/c-1/transcript_entries/t-1"))
+    #expect(Set(update.keys) == ["ended_at"])
+  }
+
+  @Test func aServiceWithoutCallsGetsCallEventsAndVoiceMessagesAsBefore() async {
+    let stub = Stub(hasNoCalls: true)
+    let listener = FakeListener()
+    let speaker = FakeSpeaker()
+    let model = await startedModel(stub, listener: listener, speaker: speaker)
+
+    #expect(await model.startVoiceCall(assistantID: "as-1"))
+    listener.hear(.partial("Hello"))
+    listener.hear(.final("Hello"))
+    model.apply(created: reply("r-1", "Hi."))
+    speaker.finish()
+    model.endVoiceCall()
+    await model.callOutbox?.value
+
+    #expect(
+      stub.paths == [
+        "POST /api/v1/assistants/as-1/calls",
+        "POST /api/v1/assistants/as-1/call_events",
+        "POST /api/v1/assistants/as-1/messages",
+        "POST /api/v1/assistants/as-1/call_events",
+      ])
+    let types = stub.requests.withLock { $0.compactMap { $0.body["type"] } }
+    #expect(types == ["call_started", "call_ended"])
+    #expect(stub.body("POST /api/v1/assistants/as-1/messages")?["via"] == "voice")
+  }
+
+  @Test func theAssistantHangingUpEndsASessionWithoutPostingAnotherEnd() async {
+    let stub = Stub()
+    let listener = FakeListener()
+    let model = await startedModel(stub, listener: listener)
+    #expect(await model.startVoiceCall(assistantID: "as-1"))
+    await model.callOutbox?.value
+
+    model.apply(
+      created: Event(
+        id: "e-1", assistantID: "as-1", type: .callEnded, sender: .assistant, createdAt: .now))
+    await model.callOutbox?.value
+
+    #expect(model.voiceCall.state == .idle)
+    #expect(!listener.isListening)
+    #expect(stub.paths == ["POST /api/v1/assistants/as-1/calls"])
+  }
+
+  @Test func theServiceEndingTheCallEndsItHereWithoutPostingAnotherEnd() async {
+    let stub = Stub()
+    let listener = FakeListener()
+    let model = await startedModel(stub, listener: listener)
+    #expect(await model.startVoiceCall(assistantID: "as-1"))
+    await model.callOutbox?.value
+
+    model.apply(updated: voiceCallEvent(callID: "c-1", ended: false))
+    model.apply(updated: voiceCallEvent(callID: "c-0", ended: true))
+    #expect(model.voiceCall.state != .idle)
+
+    model.apply(updated: voiceCallEvent(callID: "c-1", ended: true))
+    await model.callOutbox?.value
+
+    #expect(model.voiceCall.state == .idle)
+    #expect(!listener.isListening)
+    #expect(stub.paths == ["POST /api/v1/assistants/as-1/calls"])
+  }
+
+  @Test func theTranscriptIsTheCallsEntriesInTheOrderSavedWithLiveOnesMerged() async throws {
+    let model = await startedModel(Stub(), listener: FakeListener())
+    let start = Date(timeIntervalSince1970: 1_795_600_800)
+
+    try await model.loadTranscript(assistantID: "as-1", callID: "c-1")
+    model.apply(
+      CallTranscriptEntry(
+        id: "t-3", callID: "c-1", seq: 3, speaker: .user, text: "Thanks", startedAt: start))
+    model.apply(
+      CallTranscriptEntry(
+        id: "t-2", callID: "c-1", seq: 2, speaker: .assistant, text: "Hello!", startedAt: start))
+
+    #expect(
+      model.callTranscripts["c-1"]?.compactMap(\.line) == [
+        TranscriptLine(id: "t-1", text: "Hi", isFromUser: true),
+        TranscriptLine(id: "t-2", text: "Hello!", isFromUser: false),
+        TranscriptLine(id: "t-3", text: "Thanks", isFromUser: true),
+      ])
   }
 }

@@ -112,16 +112,18 @@ struct Timeline: Equatable, Sendable {
     event.idempotencyKey ?? event.id
   }
 
-  /// The events, then the outgoing messages a reload has not already stored. The messages of an
-  /// ended voice chat show in its transcript instead. `isInCall` is whether a voice chat with
-  /// this Assistant is on now: the service marks only the user's speech `via: voice`, so the
-  /// Assistant's spoken replies are told apart only by coming after its `call_started`. A
-  /// `call_started` alone can't tell, because its `call_ended` can be lost.
+  /// The events, then the outgoing messages a reload has not already stored. The messages of a
+  /// voice chat show in its transcript instead. `isInCall` is whether a voice chat with this
+  /// Assistant is on now: the service marks only the user's speech `via: voice`, so the
+  /// Assistant's spoken replies are told apart only by coming after its `call_started` or
+  /// `voice_call`. Those alone can't tell, because the end of the call can be lost.
   func rows(isInCall: Bool = false) -> [TimelineRow] {
     let stored = Set(events.compactMap(\.idempotencyKey))
-    let folded = foldedIndices
+    let groups = callGroups(isInCall: isInCall)
     let live = isInCall ? openCallIndices : 0..<0
-    let eventRows = events.indices.filter { folded[$0] == nil }.map { index in
+    let sessionEnds = Set(groups.sessionEnds.values)
+    let shown = events.indices.filter { groups.folded[$0] == nil && !sessionEnds.contains($0) }
+    let eventRows = shown.map { index in
       TimelineRow(
         id: Self.rowID(of: events[index]), content: .event(events[index]),
         showsTimeCaption: events[index].type == .textMessage
@@ -157,31 +159,77 @@ struct Timeline: Equatable, Sendable {
     let unread = events.firstIndex {
       $0.id > lastReadID && $0.type == .textMessage && $0.sender == .assistant
     }
-    let folded = foldedIndices
+    let folded = callGroups(isInCall: false).folded
     return unread.map { Self.rowID(of: events[folded[$0] ?? $0]) }
   }
 
-  /// The indices of the text messages between a `call_started` and the `call_ended` after it,
-  /// each with the index of that `call_ended`.
-  private var foldedIndices: [Int: Int] {
+  /// How the call events gather the conversation's messages.
+  private struct CallGroups {
+    /// The indices of the text messages said in a voice chat, each with the index of the
+    /// chat's entry: its `call_ended`, or its `voice_call`.
     var folded: [Int: Int] = [:]
+    /// The index of each `voice_call` whose `call_ended` is loaded, which shows no row of its own:
+    /// the service still writes `call_started` and `call_ended` for older apps.
+    var sessionEnds: [Int: Int] = [:]
+    /// The index of the `voice_call` of the call that is on now.
+    var live: Int?
+  }
+
+  /// A `call_started` open when a `voice_call` comes, or the first one after it, is that call's
+  /// own.
+  private func callGroups(isInCall: Bool) -> CallGroups {
+    var groups = CallGroups()
+    var sessions: [Int] = []
     var start: Int?
+    // The `voice_call` whose `call_ended` has not come yet, and whether its `call_started` has.
+    var session: (index: Int, hasStart: Bool)?
     for (index, event) in events.enumerated() {
       switch event.type {
+      case .voiceCall:
+        sessions.append(index)
+        session = (index, start != nil)
+        start = nil
       case .callStarted:
-        start = index
+        if let open = session, !open.hasStart {
+          session = (open.index, true)
+        } else {
+          session = nil
+          start = index
+        }
       case .callEnded:
-        if let start {
+        if let open = session {
+          groups.sessionEnds[open.index] = index
+        } else if let start {
           for message in start + 1..<index where events[message].type == .textMessage {
-            folded[message] = index
+            groups.folded[message] = index
           }
         }
+        session = nil
         start = nil
       default:
         break
       }
     }
-    return folded
+    for (position, index) in sessions.enumerated() {
+      let next = position + 1 < sessions.count ? sessions[position + 1] : events.endIndex
+      let end = groups.sessionEnds[index] ?? next
+      let endedAt = events[index].voiceCall?.endedAt
+      if endedAt == nil, groups.sessionEnds[index] == nil {
+        // An end the service never got would otherwise hide every later message.
+        guard isInCall, position == sessions.count - 1 else { continue }
+        groups.live = index
+      }
+      for message in index + 1..<end where events[message].type == .textMessage {
+        if let endedAt, events[message].createdAt > endedAt { break }
+        groups.folded[message] = index
+      }
+    }
+    return groups
+  }
+
+  /// The `voice_call` entry of the call that is on now, which counts up and opens the call.
+  func liveVoiceCallID(isInCall: Bool) -> Event.ID? {
+    callGroups(isInCall: isInCall).live.map { events[$0].id }
   }
 
   /// The indices after a `call_started` that no `call_ended` follows yet.
@@ -200,7 +248,8 @@ struct Timeline: Equatable, Sendable {
     let event = events[index]
     guard event.type == .textMessage else { return nil }
     guard !event.deleted, let text = event.text else { return .deleted }
-    return .message(text: text, rowID: Self.rowID(of: events[foldedIndices[index] ?? index]))
+    let folded = callGroups(isInCall: false).folded
+    return .message(text: text, rowID: Self.rowID(of: events[folded[index] ?? index]))
   }
 
   /// The voice chat that `event`, a `call_ended`, ended, with the messages since its start.
@@ -211,6 +260,22 @@ struct Timeline: Equatable, Sendable {
     return VoiceChatRecord(
       id: event.id, startedAt: start.map { events[$0].createdAt },
       seconds: voiceChatSeconds(endedBy: event), lines: lines)
+  }
+
+  /// The voice chat of a `voice_call`, whose lines are the call's transcript entries.
+  func voiceChat(of event: Event) -> VoiceChatRecord {
+    let call = event.voiceCall
+    let startedAt = call?.startedAt ?? event.createdAt
+    var seconds = call?.seconds
+    if seconds == nil, call?.endedAt == nil,
+      let index = events.firstIndex(where: { $0.id == event.id }),
+      let end = callGroups(isInCall: false).sessionEnds[index]
+    {
+      // Its `call_ended` can come before the update with the end.
+      seconds = max(0, Int(events[end].createdAt.timeIntervalSince(startedAt)))
+    }
+    return VoiceChatRecord(
+      id: event.id, startedAt: startedAt, seconds: seconds, lines: [], callID: call?.callID)
   }
 
   private static func transcriptLine(_ event: Event) -> TranscriptLine? {
@@ -302,11 +367,21 @@ struct Timeline: Equatable, Sendable {
 
 /// An ended voice chat, which its timeline entry opens.
 struct VoiceChatRecord: Equatable, Identifiable, Sendable {
-  /// The id of the `call_ended` event.
+  /// The id of the `call_ended` or `voice_call` event.
   let id: String
   let startedAt: Date?
   let seconds: Int?
-  let lines: [TranscriptLine]
+  var lines: [TranscriptLine]
+  /// The call whose transcript entries are the lines; `nil` for a chat from before calls were
+  /// sessions, whose lines are its messages.
+  var callID: String?
+}
+
+extension CallTranscriptEntry {
+  var line: TranscriptLine? {
+    guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+    return TranscriptLine(id: id, text: text, isFromUser: speaker == .user)
+  }
 }
 
 enum EventTime {

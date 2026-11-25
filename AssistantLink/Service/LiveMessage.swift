@@ -38,6 +38,8 @@ enum LiveMessage: Equatable, Sendable {
   case assistantUpdated(AssistantChange)
   case eventCreated(Event)
   case eventUpdated(Event)
+  /// A spoken turn of a call was saved or updated.
+  case transcriptEntry(CallTranscriptEntry)
   case closing(reason: String)
   case ignored
 
@@ -71,6 +73,10 @@ enum LiveMessage: Equatable, Sendable {
       self =
         (try? decoder.decode(Notification<EventParams>.self, from: data))
         .map { .eventUpdated($0.params.event) } ?? .ignored
+    case "call.transcript_entry":
+      self =
+        (try? decoder.decode(Notification<TranscriptEntryParams>.self, from: data))
+        .map { .transcriptEntry($0.params.entry) } ?? .ignored
     case "connection.closing":
       self =
         (try? decoder.decode(Notification<Closing>.self, from: data))
@@ -109,6 +115,22 @@ private struct AssistantParams: Decodable {
 
 private struct EventParams: Decodable {
   let event: Event
+}
+
+/// The entry is the params, or under `transcript_entry` like the event under `event`.
+private struct TranscriptEntryParams: Decodable {
+  let entry: CallTranscriptEntry
+
+  enum CodingKeys: String, CodingKey {
+    case transcriptEntry = "transcript_entry"
+  }
+
+  init(from decoder: any Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    entry =
+      try container.decodeIfPresent(CallTranscriptEntry.self, forKey: .transcriptEntry)
+      ?? CallTranscriptEntry(from: decoder)
+  }
 }
 
 private struct Closing: Decodable {
