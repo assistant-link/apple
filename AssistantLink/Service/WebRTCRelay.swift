@@ -21,12 +21,7 @@ final class WebRTCRelay: NSObject, VoiceRelay {
     let session = RTCAudioSession.sharedInstance()
     session.useManualAudio = true
     session.isAudioEnabled = false
-    // As `LiveVoiceAudio`, so WebRTC configuring the session keeps the sound on the speaker.
-    let configuration = RTCAudioSessionConfiguration.webRTC()
-    configuration.category = AVAudioSession.Category.playAndRecord.rawValue
-    configuration.mode = AVAudioSession.Mode.voiceChat.rawValue
-    configuration.categoryOptions = [.defaultToSpeaker, .allowBluetoothHFP, .allowBluetoothA2DP]
-    RTCAudioSessionConfiguration.setWebRTC(configuration)
+    // `LiveVoiceAudio` also keeps WebRTC's session configuration in step with the speaker.
     return RTCPeerConnectionFactory()
   }()
 

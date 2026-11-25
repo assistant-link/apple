@@ -380,6 +380,15 @@ struct VoiceCallStateTests {
     #expect(!LiveVoiceAudio.affectsMicrophone(.wakeFromSleep))
   }
 
+  @Test func onlyTheSpeakerDefaultsToTheSpeaker() {
+    let on = LiveVoiceAudio.categoryOptions(speakerOn: true)
+    let off = LiveVoiceAudio.categoryOptions(speakerOn: false)
+    #expect(on.contains(.defaultToSpeaker))
+    #expect(!off.contains(.defaultToSpeaker))
+    #expect(on.isSuperset(of: [.allowBluetoothHFP, .allowBluetoothA2DP]))
+    #expect(off.isSuperset(of: [.allowBluetoothHFP, .allowBluetoothA2DP]))
+  }
+
   @Test func deniedPermissionDoesNotStart() async {
     let setup = Setup()
     setup.audio.isAllowed = false
