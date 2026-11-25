@@ -54,6 +54,10 @@ struct ConversationView: View {
         failedMessage = nil
         voiceChat = nil
       }
+      // The service can still fail to start a call that went live here.
+      .onChange(of: model.voiceCall.startFailure) { _, failure in
+        if let failure, model.voiceCall.assistantID == assistant.id { startFailure = failure }
+      }
       .startFailureAlert("Can't start the voice chat", failure: $startFailure)
     } else {
       ContentUnavailableView("Assistant not found", systemImage: "questionmark.circle")

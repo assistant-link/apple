@@ -350,7 +350,8 @@ final class AppModel {
 
   /// Speech can come before the Assistant is online, so it stays behind the start. Only a
   /// service without calls falls back to call events: after any other failure the service may
-  /// have started the call anyway, and the chat must not be written twice.
+  /// have started the call anyway, and the chat must not be written twice. Such a call could
+  /// save nothing and would never wake the agent, so it ends here, without posting an end.
   private func enqueueStart(of call: CallPosts) {
     enqueue {
       do {
@@ -363,6 +364,9 @@ final class AppModel {
         await self.postCallEvent(.callStarted, assistantID: call.assistantID)
       } catch {
         Self.logger.notice("Call start failed: \(error.localizedDescription, privacy: .public)")
+        if self.currentCall === call {
+          self.voiceCall.endedElsewhere(startFailure: .unavailable)
+        }
       }
     }
   }

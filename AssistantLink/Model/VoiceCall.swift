@@ -192,7 +192,8 @@ final class VoiceCall {
   private(set) var transcript: [TranscriptLine] = []
   private(set) var startedAt: Date?
 
-  /// Why the last `start` failed; nil when it started, or did not because a call was running.
+  /// Why the last `start` failed; nil when it started, or did not because a call was running. A
+  /// call that started here can still fail to start on the service, which ends it.
   enum StartFailure: Equatable {
     case permissionDenied
     /// The audio session or the recognizer could not start.
@@ -392,11 +393,13 @@ final class VoiceCall {
     routeChanged()
   }
 
-  /// Ends the call without `onEnd`, because the service already has the end.
-  func endedElsewhere() {
+  /// Ends the call without `onEnd`, because the service already has the end, or never had the
+  /// call when it failed to start there.
+  func endedElsewhere(startFailure: StartFailure? = nil) {
     guard state != .idle else { return }
     onEnd = nil
     end()
+    self.startFailure = startFailure
   }
 
   /// Queues a new text message of the Assistant to be spoken. A `call_ended` of the Assistant

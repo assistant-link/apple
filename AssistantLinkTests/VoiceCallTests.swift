@@ -2201,6 +2201,22 @@ struct CallSessionAppModelTests {
     #expect(!stub.paths.isEmpty)
   }
 
+  @Test(arguments: [401, 409, 422, 500])
+  func aCallTheServiceFailedToStartEndsHereAndSaysSo(status: Int) async {
+    let stub = Stub(startFailure: status)
+    let listener = FakeListener()
+    let model = await startedModel(stub, listener: listener)
+
+    #expect(await model.startVoiceCall(assistantID: "as-1"))
+    #expect(model.voiceCall.startFailure == nil)
+    await model.callOutbox?.value
+
+    #expect(model.voiceCall.state == .idle)
+    #expect(!listener.isListening)
+    #expect(model.voiceCall.startFailure == .unavailable)
+    #expect(stub.paths.allSatisfy { $0 == "POST /api/v1/assistants/as-1/calls" })
+  }
+
   @Test func aRetriedTurnIsSavedUnderTheSameID() async throws {
     let stub = Stub(failedEntryPosts: 1)
     let listener = FakeListener()
