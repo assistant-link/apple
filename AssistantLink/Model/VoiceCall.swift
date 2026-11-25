@@ -395,8 +395,8 @@ final class VoiceCall {
     routeChanged()
   }
 
-  /// Ends the call without `onEnd`, because the service already has the end, or never had the
-  /// call when it failed to start there.
+  /// Ends the call without `onEnd`, because the service already has the end, or the call failed
+  /// to start there and the app ends it there by the id it sent.
   func endedElsewhere(startFailure: StartFailure? = nil) {
     guard state != .idle else { return }
     onEnd = nil

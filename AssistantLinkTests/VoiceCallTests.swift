@@ -1977,11 +1977,16 @@ struct CallSessionAppModelTests {
     let hasNoCalls: Bool
     /// What starting a call answers instead of the call.
     let startFailure: Int?
+    let failedStartPosts: Int
     let failedEntryPosts: Int
 
-    init(hasNoCalls: Bool = false, startFailure: Int? = nil, failedEntryPosts: Int = 0) {
+    init(
+      hasNoCalls: Bool = false, startFailure: Int? = nil, failedStartPosts: Int = 0,
+      failedEntryPosts: Int = 0
+    ) {
       self.hasNoCalls = hasNoCalls
       self.startFailure = startFailure
+      self.failedStartPosts = failedStartPosts
       self.failedEntryPosts = failedEntryPosts
     }
 
@@ -2003,15 +2008,17 @@ struct CallSessionAppModelTests {
         requests.withLock { $0.append(Request(method: method, path: path, body: sent)) }
       }
       let calls = "/api/v1/assistants/as-1/calls"
+      let startPosts = requests.withLock { $0.filter { $0.path == calls }.count }
+      let sentID = requests.withLock { $0.first { $0.path == calls }?.body["id"] } ?? "c-1"
       switch (method, path) {
-      case ("POST", calls) where startFailure != nil:
-        let status = startFailure ?? 500
+      case ("POST", calls) where startFailure != nil || startPosts <= failedStartPosts:
+        let status = startFailure ?? 503
         return (status, Data(json: #"{"error": {"code": "failed", "message": "No."}}"#))
       case ("GET", "/api/v1/assistants"):
         return (200, Data(json: #"{"assistants": [\#(Self.assistant)]}"#))
       case ("POST", calls) where !hasNoCalls:
         return (201, Data(json: #"{"call": \#(Self.call(endedAt: "null"))}"#))
-      case ("POST", "\(calls)/c-1/end"):
+      case ("POST", "\(calls)/c-1/end"), ("POST", "\(calls)/\(sentID)/end"):
         let ended = Self.call(endedAt: "\"2026-11-25T10:01:00Z\"")
         return (200, Data(json: #"{"call": \#(ended)}"#))
       case ("POST", "\(calls)/c-1/transcript_entries"):
@@ -2119,6 +2126,8 @@ struct CallSessionAppModelTests {
         "POST /api/v1/assistants/as-1/calls/c-1/transcript_entries",
         "POST /api/v1/assistants/as-1/calls/c-1/end",
       ])
+    let start = try #require(stub.body("POST /api/v1/assistants/as-1/calls"))
+    #expect(start["id"].flatMap(UUID.init(uuidString:)) != nil)
     let entry = try #require(stub.body("POST /api/v1/assistants/as-1/calls/c-1/transcript_entries"))
     #expect(entry["speaker"] == "user")
     #expect(entry["text"] == "Hello there")
@@ -2183,7 +2192,7 @@ struct CallSessionAppModelTests {
   }
 
   @Test(arguments: [401, 409, 422, 500])
-  func aCallThatFailedToStartPostsNothingMore(status: Int) async {
+  func aCallThatFailedToStartPostsNothingButItsEnd(status: Int) async throws {
     let stub = Stub(startFailure: status)
     let listener = FakeListener()
     let speaker = FakeSpeaker()
@@ -2197,12 +2206,14 @@ struct CallSessionAppModelTests {
     model.endVoiceCall()
     await model.callOutbox?.value
 
-    #expect(stub.paths.allSatisfy { $0 == "POST /api/v1/assistants/as-1/calls" })
-    #expect(!stub.paths.isEmpty)
+    let id = try #require(stub.body("POST /api/v1/assistants/as-1/calls")?["id"])
+    let starts = stub.paths.filter { $0 == "POST /api/v1/assistants/as-1/calls" }
+    #expect(!starts.isEmpty)
+    #expect(stub.paths == starts + ["POST /api/v1/assistants/as-1/calls/\(id)/end"])
   }
 
   @Test(arguments: [401, 409, 422, 500])
-  func aCallTheServiceFailedToStartEndsHereAndSaysSo(status: Int) async {
+  func aCallTheServiceFailedToStartEndsHereAndSaysSo(status: Int) async throws {
     let stub = Stub(startFailure: status)
     let listener = FakeListener()
     let model = await startedModel(stub, listener: listener)
@@ -2214,7 +2225,26 @@ struct CallSessionAppModelTests {
     #expect(model.voiceCall.state == .idle)
     #expect(!listener.isListening)
     #expect(model.voiceCall.startFailure == .service)
-    #expect(stub.paths.allSatisfy { $0 == "POST /api/v1/assistants/as-1/calls" })
+    let starts = stub.bodies("POST /api/v1/assistants/as-1/calls")
+    let id = try #require(starts.first?["id"])
+    #expect(starts.allSatisfy { $0["id"] == id })
+    #expect(stub.paths.last == "POST /api/v1/assistants/as-1/calls/\(id)/end")
+  }
+
+  @Test func aCallStartIsSentWithAnIDItsRetriesReuse() async throws {
+    let stub = Stub(failedStartPosts: 2)
+    let model = await startedModel(stub, listener: FakeListener())
+
+    #expect(await model.startVoiceCall(assistantID: "as-1"))
+    model.endVoiceCall()
+    await model.callOutbox?.value
+
+    let starts = stub.bodies("POST /api/v1/assistants/as-1/calls")
+    #expect(starts.count == 3)
+    let id = try #require(starts.first?["id"])
+    #expect(UUID(uuidString: id) != nil)
+    #expect(starts.map { $0["id"] } == [id, id, id])
+    #expect(stub.paths.last == "POST /api/v1/assistants/as-1/calls/c-1/end")
   }
 
   @Test func aRetriedTurnIsSavedUnderTheSameID() async throws {

@@ -104,10 +104,11 @@ struct APIClient: Sendable {
   }
 
   /// Starts a voice chat, which the service also writes as a `call_started` and a `voice_call`.
-  /// A service from before calls were sessions answers 404.
-  func startCall(assistantID: String) async throws -> CallSession {
+  /// Posting the same `id` again, or starting while a call is open, answers with the open call,
+  /// whose id can differ. A service from before calls were sessions answers 404.
+  func startCall(id: String, assistantID: String) async throws -> CallSession {
     let response: Envelope<CallSession> = try await send(
-      "POST", "assistants/\(assistantID)/calls", body: [String: String]())
+      "POST", "assistants/\(assistantID)/calls", body: ["id": id])
     return response.value
   }
 

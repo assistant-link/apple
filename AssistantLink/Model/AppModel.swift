@@ -351,12 +351,14 @@ final class AppModel {
   /// Speech can come before the Assistant is online, so it stays behind the start. Only a
   /// service without calls falls back to call events: after any other failure the service may
   /// have started the call anyway, and the chat must not be written twice. Such a call could
-  /// save nothing and would never wake the agent, so it ends here, without posting an end.
+  /// save nothing and would never wake the agent, so it ends here, and the call the service may
+  /// have started under the sent id is ended there.
   private func enqueueStart(of call: CallPosts) {
+    let id = UUIDv7.make()
     enqueue {
       do {
         let started = try await self.retrying(attempts: Self.callEventAttempts, in: nil) {
-          try await self.client().startCall(assistantID: call.assistantID)
+          try await self.client().startCall(id: id, assistantID: call.assistantID)
         }
         call.callID = started.id
       } catch let error as APIError where error.status == 404 {
@@ -367,6 +369,7 @@ final class AppModel {
         if self.currentCall === call {
           self.voiceCall.endedElsewhere(startFailure: .service)
         }
+        await self.postEnd(assistantID: call.assistantID, callID: id)
       }
     }
   }
@@ -437,13 +440,17 @@ final class AppModel {
         }
         return
       }
-      do {
-        try await self.retrying(attempts: Self.callEventAttempts, in: nil) {
-          try await self.client().endCall(assistantID: call.assistantID, callID: callID)
-        }
-      } catch {
-        Self.logger.notice("Call end failed: \(error.localizedDescription, privacy: .public)")
+      await self.postEnd(assistantID: call.assistantID, callID: callID)
+    }
+  }
+
+  private func postEnd(assistantID: Assistant.ID, callID: String) async {
+    do {
+      try await retrying(attempts: Self.callEventAttempts, in: nil) {
+        try await self.client().endCall(assistantID: assistantID, callID: callID)
       }
+    } catch {
+      Self.logger.notice("Call end failed: \(error.localizedDescription, privacy: .public)")
     }
   }
 
