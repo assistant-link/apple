@@ -20,6 +20,10 @@ packages:
   FluidAudio:
     url: https://github.com/FluidInference/FluidAudio.git
     from: 0.18.3
+  # Google's WebRTC built for Apple platforms, for the call's audio to the service.
+  WebRTC:
+    url: https://github.com/stasel/WebRTC.git
+    from: 158.0.0
 
 targets:
   AssistantLink:
@@ -31,6 +35,7 @@ targets:
         buildPhase: resources
     dependencies:
       - package: FluidAudio
+      - package: WebRTC
     entitlements:
       path: AssistantLink/AssistantLink.entitlements
     settings:

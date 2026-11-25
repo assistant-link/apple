@@ -105,6 +105,25 @@ extension VoiceAudio {
   func setSpeaker(_ on: Bool) {}
 }
 
+enum VoiceRelayState: Equatable, Sendable {
+  case connected
+  /// The connection was lost for good, or never made.
+  case failed
+}
+
+/// Carries the call's audio over WebRTC to and from the service, whose voice agent listens and
+/// talks back. The service takes no trickled ICE candidates, so the offer holds them all.
+@MainActor
+protocol VoiceRelay: AnyObject {
+  func offer() async throws -> String
+  func accept(answer: String) async throws
+  /// Starts the microphone and playback in the call's audio session. `onChange` follows the
+  /// connection, starting with its state so far, until `close()`.
+  func start(_ onChange: @escaping @MainActor (VoiceRelayState) -> Void)
+  func setMuted(_ muted: Bool)
+  func close()
+}
+
 @MainActor
 protocol SilenceTimer: AnyObject {
   /// Calls `fire` after the silence, unless `restart` or `cancel` comes first.
@@ -166,13 +185,15 @@ enum ReplySpeech: Equatable, Sendable {
 /// user says, and speaks the Assistant's replies. It never listens while speaking, so it can't
 /// hear itself, and it never speaks while the user is talking: a reply waits for the end of their
 /// turn. Speech is sent whether or not the Assistant is online: the service keeps it until the
-/// Assistant connects.
+/// Assistant connects. Once a `VoiceRelay` takes the call over, the service's voice agent does
+/// the listening and speaking instead.
 @MainActor
 @Observable
 final class VoiceCall {
   enum State: Equatable {
     case idle
-    /// Listening like `listening`, while the Assistant is not online yet.
+    /// Listening like `listening`, while the Assistant is not online yet; or, relayed, until the
+    /// relay connects.
     case connecting
     case listening
     case speaking
@@ -188,9 +209,12 @@ final class VoiceCall {
   private(set) var listeningFailed = false
   /// The words of the utterance in progress.
   var heard: String { SpeechSegments.join(earlierSegments, segment) }
-  /// What was said in this call: the user's sent utterances and the replies spoken so far.
+  /// What was said in this call: the user's sent utterances and the replies spoken so far, or,
+  /// relayed, the voice agent's transcript.
   private(set) var transcript: [TranscriptLine] = []
   private(set) var startedAt: Date?
+  /// Whether a `VoiceRelay` carries the call's audio.
+  var isRelayed: Bool { relay != nil }
 
   /// Why the last `start` failed; nil when it started, or did not because a call was running. A
   /// call that started here can still fail to start on the service, which ends it.
@@ -205,6 +229,10 @@ final class VoiceCall {
   private(set) var startFailure: StartFailure?
 
   static let maxFailures = 3
+
+  /// How long a relay may take to connect before the call fails to start. ICE alone would take
+  /// about half a minute to give up on a network that blocks UDP.
+  static let relayConnectWait = Duration.seconds(15)
 
   /// How long after the last new word an utterance ends. Pauses between the sentences of one
   /// thought often reach two seconds, which 1.5 s still split; much longer and the reply feels
@@ -236,6 +264,7 @@ final class VoiceCall {
   /// fresh install (its on-device model still loading) and recovers a little later.
   private let patience: any SilenceTimer
   private let finalResult: any SilenceTimer
+  private let relayConnect: any SilenceTimer
   private let notifications: NotificationCenter
   private var interruptionObserver: (any NSObjectProtocol)?
   /// The system holds the audio session, so nothing may listen or speak until it gives it back.
@@ -258,6 +287,8 @@ final class VoiceCall {
   private var speakingReplyID: Event.ID?
   private var replies: [TranscriptLine] = []
   private var spokenIDs: Set<Event.ID> = []
+  private var relay: (any VoiceRelay)?
+  private var isRelayConnected = false
 
   init(
     listener: any SpeechListener, speaker: any SpeechSpeaker, audio: any VoiceAudio,
@@ -265,6 +296,7 @@ final class VoiceCall {
     retry: any SilenceTimer = TaskSilenceTimer(after: .milliseconds(500)),
     patience: any SilenceTimer = TaskSilenceTimer(after: .seconds(5)),
     finalResult: any SilenceTimer = TaskSilenceTimer(after: VoiceCall.finalResultWait),
+    relayConnect: any SilenceTimer = TaskSilenceTimer(after: VoiceCall.relayConnectWait),
     notifications: NotificationCenter = .default
   ) {
     self.listener = listener
@@ -274,6 +306,7 @@ final class VoiceCall {
     self.retry = retry
     self.patience = patience
     self.finalResult = finalResult
+    self.relayConnect = relayConnect
     self.notifications = notifications
   }
 
@@ -330,6 +363,7 @@ final class VoiceCall {
   /// `listening`; the microphone and any utterance in progress are left alone.
   func setOnline(_ online: Bool) {
     isOnline = online
+    guard relay == nil else { return }
     if online, state == .connecting {
       state = .listening
     } else if !online, state == .listening {
@@ -343,6 +377,10 @@ final class VoiceCall {
     stopListening()
     speaker.stop()
     finishReply()
+    relayConnect.cancel()
+    relay?.close()
+    relay = nil
+    isRelayConnected = false
     audio.deactivate()
     stopObservingInterruptions()
     replies = []
@@ -375,7 +413,9 @@ final class VoiceCall {
   func setMuted(_ muted: Bool) {
     guard state != .idle, muted != isMuted else { return }
     isMuted = muted
-    if muted {
+    if let relay {
+      relay.setMuted(muted)
+    } else if muted {
       flushUtterance()
       stopListening()
       speakHeldReplies()
@@ -404,6 +444,46 @@ final class VoiceCall {
     self.startFailure = startFailure
   }
 
+  /// Hands the call's audio to `relay`, unless the call ended. The words heard so far and the
+  /// replies still queued are dropped, because the voice agent never heard them.
+  func useRelay(_ relay: any VoiceRelay) -> Bool {
+    guard state != .idle, self.relay == nil else { return false }
+    stopListening()
+    speaker.stop()
+    finishReply()
+    replies = []
+    transcript = []
+    listeningFailed = false
+    self.relay = relay
+    state = .connecting
+    relay.setMuted(isMuted)
+    relayConnect.restart { [weak self] in self?.relayChanged(.failed) }
+    relay.start { [weak self] in self?.relayChanged($0) }
+    return true
+  }
+
+  /// The voice agent's transcript, which the service sends while it hears and speaks.
+  func showRelayedTranscript(_ lines: [TranscriptLine]) {
+    guard relay != nil else { return }
+    transcript = lines
+  }
+
+  /// A relay that never connected means the call failed to start, which the user is told; the
+  /// service still gets the end of the call it started.
+  private func relayChanged(_ change: VoiceRelayState) {
+    guard relay != nil, state != .idle else { return }
+    switch change {
+    case .connected:
+      relayConnect.cancel()
+      isRelayConnected = true
+      state = .listening
+    case .failed:
+      let failure: StartFailure? = isRelayConnected ? nil : .service
+      end()
+      startFailure = failure
+    }
+  }
+
   /// Queues a new text message of the Assistant to be spoken. A `call_ended` of the Assistant
   /// ends the call without `onEnd`: the service already has the end.
   func receive(_ event: Event) {
@@ -413,7 +493,8 @@ final class VoiceCall {
       endedElsewhere()
       return
     }
-    guard state != .idle, event.assistantID == assistantID, event.type == .textMessage,
+    guard state != .idle, relay == nil, event.assistantID == assistantID,
+      event.type == .textMessage,
       event.sender == .assistant, !event.deleted,
       let text = event.text?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty,
       spokenIDs.insert(event.id).inserted
@@ -485,7 +566,7 @@ final class VoiceCall {
 
   private var canHear: Bool {
     (state == .listening || state == .connecting) && !isMuted && !listeningFailed
-      && !isInterrupted
+      && !isInterrupted && relay == nil
   }
 
   private func observeInterruptions() {
@@ -534,6 +615,11 @@ final class VoiceCall {
   private func interruptionEnded(shouldResume: Bool) {
     guard state != .idle, isInterrupted else { return }
     isInterrupted = false
+    // WebRTC restarts its own audio once the session is active again.
+    if relay != nil {
+      try? audio.activate()
+      return
+    }
     guard shouldResume else {
       listeningFailed = !isMuted
       return

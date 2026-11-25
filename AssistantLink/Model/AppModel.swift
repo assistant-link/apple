@@ -41,6 +41,7 @@ final class AppModel {
   private var api: APIClient?
   private var pairingCodes: [Link.ID: PairingCode] = [:]
   private let sleep: @Sendable (Duration) async throws -> Void
+  private let makeRelay: @MainActor () -> any VoiceRelay
   /// The tail of a call's posts, which run one after another so the Assistant sees them in the
   /// order they happened.
   private(set) var callOutbox: Task<Void, Never>?
@@ -64,6 +65,7 @@ final class AppModel {
     liveUpdates: @escaping @MainActor (APIClient) -> LiveUpdates? = LiveUpdates.live,
     sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
     voiceCall: VoiceCall = .live(),
+    relay: @escaping @MainActor () -> any VoiceRelay = { WebRTCRelay() },
     dictation: Dictation = .live(),
     kokoro: KokoroVoice? = nil,
     keepRunning: @escaping @MainActor (Task<Void, Never>) -> Void = { _ in },
@@ -76,6 +78,7 @@ final class AppModel {
     self.makeLiveUpdates = liveUpdates
     self.sleep = sleep
     self.voiceCall = voiceCall
+    self.makeRelay = relay
     self.dictation = dictation
     self.kokoro = kokoro
   }
@@ -217,6 +220,12 @@ final class AppModel {
     entries.removeAll { $0.id == entry.id }
     entries.append(entry)
     callTranscripts[entry.callID] = entries.sorted { $0.seq < $1.seq }
+    showRelayedTranscript(callID: entry.callID)
+  }
+
+  private func showRelayedTranscript(callID: String) {
+    guard voiceCall.isRelayed, callID == currentCallID else { return }
+    voiceCall.showRelayedTranscript((callTranscripts[callID] ?? []).compactMap(\.line))
   }
 
   /// Fetches the spoken turns of an ended call for its transcript sheet. Turns heard of live
@@ -333,8 +342,9 @@ final class AppModel {
 
   /// Starts a voice chat with the Assistant. The service is told when the chat starts and
   /// ends, which wakes and releases the agent. It keeps the chat as a call with its own
-  /// transcript; a service from before calls were sessions gets call events and the user's
-  /// speech as messages instead.
+  /// transcript, and its voice agent takes the call's audio over WebRTC. A service without a
+  /// voice agent gets the turns the device heard and spoke as the transcript instead, and one
+  /// from before calls were sessions gets call events and the user's speech as messages.
   func startVoiceCall(assistantID: Assistant.ID) async -> Bool {
     let call = CallPosts(assistantID: assistantID)
     let started = await voiceCall.start(
@@ -366,20 +376,55 @@ final class AppModel {
       } catch let error as APIError where error.status == 404 {
         call.usesCallEvents = true
         await self.postCallEvent(.callStarted, assistantID: call.assistantID)
+        return
       } catch {
         Self.logger.notice("Call start failed: \(error.localizedDescription, privacy: .public)")
         if self.currentCall === call {
           self.voiceCall.endedElsewhere(startFailure: .service)
         }
         await self.postEnd(assistantID: call.assistantID, callID: id)
+        return
       }
+      await self.connectRelay(of: call)
     }
+  }
+
+  /// Hands the call's audio to the service's voice agent. Only a service without one keeps the
+  /// call on the device; after any other failure the call ends, because the service would hear
+  /// nothing of it. A relay that later fails to connect ends the call the same way.
+  private func connectRelay(of call: CallPosts) async {
+    guard let callID = call.callID, currentCall === call, voiceCall.state != .idle else { return }
+    let relay = makeRelay()
+    do {
+      let offer = try await relay.offer()
+      let answer = try await client().webRTCAnswer(
+        to: offer, assistantID: call.assistantID, callID: callID)
+      try await relay.accept(answer: answer)
+    } catch let error as APIError where error.status == 404 {
+      relay.close()
+      return
+    } catch {
+      relay.close()
+      Self.logger.notice("Voice relay failed: \(error.localizedDescription, privacy: .public)")
+      // An end already queued behind this start tells the service.
+      guard currentCall === call, voiceCall.state != .idle else { return }
+      voiceCall.endedElsewhere(startFailure: .service)
+      await postEnd(assistantID: call.assistantID, callID: callID)
+      return
+    }
+    guard currentCall === call, voiceCall.useRelay(relay) else {
+      relay.close()
+      return
+    }
+    call.usesRelay = true
+    showRelayedTranscript(callID: callID)
   }
 
   private func enqueueUtterance(_ text: String, startedAt: Date, in call: CallPosts) {
     let endedAt = Date.now
     let session = session
     enqueue {
+      guard !call.usesRelay else { return }
       guard let callID = call.callID else {
         guard call.usesCallEvents, self.session == session,
           let message = self.queue(text: text, assistantID: call.assistantID, via: .voice)
@@ -403,6 +448,7 @@ final class AppModel {
       guard let callID = call.callID else { return }
       switch speech {
       case .started(let replyID, let text, let startedAt):
+        guard !call.usesRelay else { return }
         let id = UUIDv7.make()
         let entry = await self.saveEntry {
           try await $0.saveTranscriptEntry(
@@ -744,6 +790,9 @@ private final class CallPosts {
   var callID: String?
   /// Whether the service is from before calls were sessions.
   var usesCallEvents = false
+  /// Whether the service's voice agent took the call's audio, so the device's own turns are
+  /// not the transcript.
+  var usesRelay = false
   /// The transcript entry of each reply being read out, by the reply's event id.
   var replyEntries: [Event.ID: String] = [:]
 

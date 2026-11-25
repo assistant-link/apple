@@ -91,6 +91,37 @@ private final class FakeAudio: VoiceAudio {
 }
 
 @MainActor
+private final class FakeRelay: VoiceRelay {
+  var offerError: (any Error)?
+  private(set) var answer: String?
+  private(set) var isStarted = false
+  private(set) var isMuted = false
+  private(set) var isClosed = false
+  private var onChange: (@MainActor (VoiceRelayState) -> Void)?
+
+  func offer() async throws -> String {
+    if let offerError { throw offerError }
+    return "v=0 offer"
+  }
+
+  func accept(answer: String) async throws { self.answer = answer }
+
+  func start(_ onChange: @escaping @MainActor (VoiceRelayState) -> Void) {
+    isStarted = true
+    self.onChange = onChange
+  }
+
+  func setMuted(_ muted: Bool) { isMuted = muted }
+
+  func close() {
+    isClosed = true
+    onChange = nil
+  }
+
+  func change(_ state: VoiceRelayState) { onChange?(state) }
+}
+
+@MainActor
 private final class FakeSilence: SilenceTimer {
   private(set) var restarts = 0
   private var pending: (@MainActor () -> Void)?
@@ -119,6 +150,7 @@ private final class Setup {
   let retry = FakeSilence()
   let patience = FakeSilence()
   let finalResult = FakeSilence()
+  let relayConnect = FakeSilence()
   let center = NotificationCenter()
   var sent: [String] = []
   private(set) var sentBeforeEnd: [String] = []
@@ -128,7 +160,8 @@ private final class Setup {
   init() {
     call = VoiceCall(
       listener: listener, speaker: speaker, audio: audio, silence: silence, retry: retry,
-      patience: patience, finalResult: finalResult, notifications: center)
+      patience: patience, finalResult: finalResult, relayConnect: relayConnect,
+      notifications: center)
   }
 
   func interrupt(_ type: AVAudioSession.InterruptionType, shouldResume: Bool = false) {
@@ -1463,6 +1496,163 @@ struct VoiceCallTranscriptTests {
   }
 }
 
+@MainActor
+struct VoiceCallRelayTests {
+  @Test func aRelayTakesTheCallOverAndDropsWhatTheDeviceHeard() async {
+    let setup = Setup()
+    let relay = FakeRelay()
+    await setup.start()
+    setup.listener.hear(.partial("Hello"))
+
+    #expect(setup.call.useRelay(relay))
+
+    #expect(setup.call.isRelayed)
+    #expect(!setup.listener.isListening)
+    #expect(setup.call.heard.isEmpty)
+    #expect(setup.sent.isEmpty)
+    #expect(setup.call.transcript.isEmpty)
+    #expect(relay.isStarted)
+    #expect(setup.call.state == .connecting)
+    #expect(setup.audio.isActive)
+
+    relay.change(.connected)
+
+    #expect(setup.call.state == .listening)
+    #expect(!setup.listener.isListening)
+  }
+
+  @Test func aRelayedCallSpeaksNoReplyAndStopsTheOneBeingSpoken() async {
+    let setup = Setup()
+    await setup.start()
+    setup.call.receive(setup.assistantMessage("r-1", "Hi."))
+    #expect(setup.speaker.isSpeaking)
+
+    #expect(setup.call.useRelay(FakeRelay()))
+    setup.call.receive(setup.assistantMessage("r-2", "Still there?"))
+
+    #expect(!setup.speaker.isSpeaking)
+    #expect(setup.speaker.spoken == ["Hi."])
+  }
+
+  @Test func muteGoesToTheRelayAndTheDeviceStillDoesNotListen() async {
+    let setup = Setup()
+    let relay = FakeRelay()
+    await setup.start()
+    setup.call.setMuted(true)
+
+    #expect(setup.call.useRelay(relay))
+    #expect(relay.isMuted)
+
+    setup.call.setMuted(false)
+    #expect(!relay.isMuted)
+    #expect(!setup.call.isMuted)
+    #expect(!setup.listener.isListening)
+  }
+
+  @Test func theAssistantGoingOfflineLeavesARelayedCallLive() async {
+    let setup = Setup()
+    let relay = FakeRelay()
+    await setup.start()
+    #expect(setup.call.useRelay(relay))
+    relay.change(.connected)
+
+    setup.call.setOnline(false)
+
+    #expect(setup.call.state == .listening)
+  }
+
+  @Test func routeChangesDoNotListenOnTheDevice() async {
+    let setup = Setup()
+    await setup.start()
+    #expect(setup.call.useRelay(FakeRelay()))
+    let starts = setup.listener.starts
+
+    setup.audio.changeRoute()
+    setup.retry.fire()
+    setup.call.setSpeaker(false)
+    setup.retry.fire()
+
+    #expect(setup.listener.starts == starts)
+    #expect(!setup.listener.isListening)
+    #expect(setup.audio.speakerChanges.last == false)
+  }
+
+  @Test func anInterruptionKeepsARelayedCallLiveWithoutListening() async {
+    let setup = Setup()
+    let relay = FakeRelay()
+    await setup.start()
+    #expect(setup.call.useRelay(relay))
+    relay.change(.connected)
+    let starts = setup.listener.starts
+
+    setup.interrupt(.began)
+    setup.interrupt(.ended)
+
+    #expect(setup.listener.starts == starts)
+    #expect(!setup.call.listeningFailed)
+    #expect(setup.call.state == .listening)
+    #expect(setup.audio.isActive)
+  }
+
+  @Test(arguments: ["failed", "timeout"])
+  func aRelayThatNeverConnectsEndsTheCallAsAFailedStart(cause: String) async {
+    let setup = Setup()
+    let relay = FakeRelay()
+    await setup.start()
+    #expect(setup.call.useRelay(relay))
+
+    if cause == "failed" { relay.change(.failed) } else { setup.relayConnect.fire() }
+
+    #expect(setup.call.state == .idle)
+    #expect(setup.call.startFailure == .service)
+    #expect(setup.ends == 1)
+    #expect(relay.isClosed)
+    #expect(!setup.audio.isActive)
+  }
+
+  @Test func aRelayLostAfterItConnectedEndsTheCallWithoutAFailedStart() async {
+    let setup = Setup()
+    let relay = FakeRelay()
+    await setup.start()
+    #expect(setup.call.useRelay(relay))
+    relay.change(.connected)
+    #expect(!setup.relayConnect.isPending)
+
+    relay.change(.failed)
+
+    #expect(setup.call.state == .idle)
+    #expect(setup.call.startFailure == nil)
+    #expect(setup.ends == 1)
+  }
+
+  @Test func endingClosesTheRelayAndAnEndedCallTakesNone() async {
+    let setup = Setup()
+    let relay = FakeRelay()
+    await setup.start()
+    #expect(setup.call.useRelay(relay))
+
+    setup.call.end()
+
+    #expect(relay.isClosed)
+    #expect(!setup.call.isRelayed)
+    #expect(!setup.relayConnect.isPending)
+    #expect(!setup.call.useRelay(FakeRelay()))
+  }
+
+  @Test func theRelayedTranscriptReplacesTheLinesOnlyWhileRelayed() async {
+    let setup = Setup()
+    let lines = [TranscriptLine(id: "t-1", text: "Hi, I'm Muse.", isFromUser: false)]
+    await setup.start()
+
+    setup.call.showRelayedTranscript(lines)
+    #expect(setup.call.transcript.isEmpty)
+
+    #expect(setup.call.useRelay(FakeRelay()))
+    setup.call.showRelayedTranscript(lines)
+    #expect(setup.call.transcript == lines)
+  }
+}
+
 struct VoiceDurationTests {
   @Test(arguments: [(0, "00:00"), (59, "00:59"), (151, "02:31"), (3665, "61:05")])
   func theBubbleShowsMinutesAndSeconds(seconds: Int, time: String) {
@@ -1979,16 +2169,22 @@ struct CallSessionAppModelTests {
     let startFailure: Int?
     let failedStartPosts: Int
     let failedEntryPosts: Int
+    /// What the WebRTC signaling answers; without it, 404 as from a service without a voice
+    /// agent.
+    let webRTC: (status: Int, body: String)?
 
     init(
       hasNoCalls: Bool = false, startFailure: Int? = nil, failedStartPosts: Int = 0,
-      failedEntryPosts: Int = 0
+      failedEntryPosts: Int = 0, webRTC: (status: Int, body: String)? = nil
     ) {
       self.hasNoCalls = hasNoCalls
       self.startFailure = startFailure
       self.failedStartPosts = failedStartPosts
       self.failedEntryPosts = failedEntryPosts
+      self.webRTC = webRTC
     }
+
+    static let answered = (status: 201, body: #"{"answer": "v=0 answer"}"#)
 
     func bodies(_ path: String) -> [[String: String]] {
       requests.withLock { $0.filter { "\($0.method) \($0.path)" == path }.map(\.body) }
@@ -2018,6 +2214,8 @@ struct CallSessionAppModelTests {
         return (200, Data(json: #"{"assistants": [\#(Self.assistant)]}"#))
       case ("POST", calls) where !hasNoCalls:
         return (201, Data(json: #"{"call": \#(Self.call(endedAt: "null"))}"#))
+      case ("POST", "\(calls)/c-1/webrtc") where webRTC != nil:
+        return (webRTC?.status ?? 404, Data(json: webRTC?.body ?? ""))
       case ("POST", "\(calls)/c-1/end"), ("POST", "\(calls)/\(sentID)/end"):
         let ended = Self.call(endedAt: "\"2026-11-25T10:01:00Z\"")
         return (200, Data(json: #"{"call": \#(ended)}"#))
@@ -2079,7 +2277,8 @@ struct CallSessionAppModelTests {
   }
 
   private func startedModel(
-    _ stub: Stub, listener: FakeListener, speaker: FakeSpeaker = FakeSpeaker()
+    _ stub: Stub, listener: FakeListener, speaker: FakeSpeaker = FakeSpeaker(),
+    relay: FakeRelay = FakeRelay()
   ) async -> AppModel {
     let api = APIClient(
       baseURL: URL(string: "https://service.test")!, credential: "ala_secret",
@@ -2087,7 +2286,7 @@ struct CallSessionAppModelTests {
     let model = AppModel(
       connect: { api }, sleep: { _ in },
       voiceCall: VoiceCall(listener: listener, speaker: speaker, audio: FakeAudio()),
-      dictation: .fake())
+      relay: { relay }, dictation: .fake())
     await model.start()
     return model
   }
@@ -2120,6 +2319,7 @@ struct CallSessionAppModelTests {
     model.endVoiceCall()
     await model.callOutbox?.value
 
+    // The call ended before it started on the service, so no relay was tried.
     #expect(
       stub.paths == [
         "POST /api/v1/assistants/as-1/calls",
@@ -2152,7 +2352,7 @@ struct CallSessionAppModelTests {
     await model.callOutbox?.value
 
     #expect(
-      stub.paths.dropFirst() == [
+      stub.paths.dropFirst(2) == [
         "POST /api/v1/assistants/as-1/calls/c-1/transcript_entries",
         "PATCH /api/v1/assistants/as-1/calls/c-1/transcript_entries/t-1",
       ])
@@ -2277,7 +2477,10 @@ struct CallSessionAppModelTests {
 
     #expect(model.voiceCall.state == .idle)
     #expect(!listener.isListening)
-    #expect(stub.paths == ["POST /api/v1/assistants/as-1/calls"])
+    #expect(
+      stub.paths == [
+        "POST /api/v1/assistants/as-1/calls", "POST /api/v1/assistants/as-1/calls/c-1/webrtc",
+      ])
   }
 
   @Test func theServiceEndingTheCallEndsItHereWithoutPostingAnotherEnd() async {
@@ -2296,7 +2499,10 @@ struct CallSessionAppModelTests {
 
     #expect(model.voiceCall.state == .idle)
     #expect(!listener.isListening)
-    #expect(stub.paths == ["POST /api/v1/assistants/as-1/calls"])
+    #expect(
+      stub.paths == [
+        "POST /api/v1/assistants/as-1/calls", "POST /api/v1/assistants/as-1/calls/c-1/webrtc",
+      ])
   }
 
   @Test func theTranscriptIsTheCallsEntriesInTheOrderSavedWithLiveOnesMerged() async throws {
@@ -2316,6 +2522,176 @@ struct CallSessionAppModelTests {
         TranscriptLine(id: "t-1", text: "Hi", isFromUser: true),
         TranscriptLine(id: "t-2", text: "Hello!", isFromUser: false),
         TranscriptLine(id: "t-3", text: "Thanks", isFromUser: true),
+      ])
+  }
+
+  @Test func aServiceWithoutAVoiceAgentKeepsTheCallOnTheDevice() async throws {
+    let stub = Stub()
+    let listener = FakeListener()
+    let relay = FakeRelay()
+    let model = await startedModel(stub, listener: listener, relay: relay)
+
+    #expect(await model.startVoiceCall(assistantID: "as-1"))
+    await model.callOutbox?.value
+
+    #expect(stub.body("POST /api/v1/assistants/as-1/calls/c-1/webrtc")?["offer"] == "v=0 offer")
+    #expect(relay.isClosed)
+    #expect(!relay.isStarted)
+    #expect(!model.voiceCall.isRelayed)
+    #expect(listener.isListening)
+    #expect(model.voiceCall.startFailure == nil)
+  }
+
+  @Test func theVoiceAgentTakesTheCallAndTheDeviceNeitherListensNorSpeaks() async throws {
+    let stub = Stub(webRTC: Stub.answered)
+    let listener = FakeListener()
+    let speaker = FakeSpeaker()
+    let relay = FakeRelay()
+    let model = await startedModel(stub, listener: listener, speaker: speaker, relay: relay)
+
+    #expect(await model.startVoiceCall(assistantID: "as-1"))
+    await model.callOutbox?.value
+
+    #expect(relay.answer == "v=0 answer")
+    #expect(relay.isStarted)
+    #expect(model.voiceCall.isRelayed)
+    #expect(!listener.isListening)
+    relay.change(.connected)
+    #expect(model.voiceCall.state == .listening)
+
+    model.apply(created: reply("r-1", "Sure."))
+    #expect(speaker.spoken.isEmpty)
+
+    model.endVoiceCall()
+    await model.callOutbox?.value
+
+    #expect(relay.isClosed)
+    #expect(
+      stub.paths == [
+        "POST /api/v1/assistants/as-1/calls",
+        "POST /api/v1/assistants/as-1/calls/c-1/webrtc",
+        "POST /api/v1/assistants/as-1/calls/c-1/end",
+      ])
+  }
+
+  @Test func whatTheDeviceHeardBeforeTheVoiceAgentTookOverIsNotSaved() async {
+    let stub = Stub(webRTC: Stub.answered)
+    let listener = FakeListener()
+    let model = await startedModel(stub, listener: listener)
+
+    #expect(await model.startVoiceCall(assistantID: "as-1"))
+    listener.hear(.partial("Hello"))
+    listener.hear(.final("Hello"))
+    await model.callOutbox?.value
+
+    #expect(model.voiceCall.isRelayed)
+    #expect(
+      stub.paths == [
+        "POST /api/v1/assistants/as-1/calls", "POST /api/v1/assistants/as-1/calls/c-1/webrtc",
+      ])
+  }
+
+  @Test func theVoiceAgentsTranscriptShowsLiveInTheCall() async {
+    let stub = Stub(webRTC: Stub.answered)
+    let model = await startedModel(stub, listener: FakeListener())
+    let start = Date(timeIntervalSince1970: 1_795_600_800)
+    model.apply(
+      CallTranscriptEntry(
+        id: "t-1", callID: "c-1", seq: 1, speaker: .assistant, text: "Hi, I'm Muse.",
+        startedAt: start))
+
+    #expect(await model.startVoiceCall(assistantID: "as-1"))
+    await model.callOutbox?.value
+    model.apply(
+      CallTranscriptEntry(
+        id: "t-2", callID: "c-1", seq: 2, speaker: .user, text: "Hello", startedAt: start))
+    model.apply(
+      CallTranscriptEntry(
+        id: "o-1", callID: "c-0", seq: 1, speaker: .user, text: "Other", startedAt: start))
+
+    #expect(
+      model.voiceCall.transcript == [
+        TranscriptLine(id: "t-1", text: "Hi, I'm Muse.", isFromUser: false),
+        TranscriptLine(id: "t-2", text: "Hello", isFromUser: true),
+      ])
+  }
+
+  @Test(arguments: [
+    (503, #"{"error": {"code": "voice_unavailable", "message": "No voice."}}"#),
+    (503, ""),
+    (500, #"{"error": {"code": "internal_error", "message": "No."}}"#),
+    (409, #"{"error": {"code": "call_already_ended", "message": "No."}}"#),
+  ])
+  func aVoiceAgentThatCannotTakeTheCallEndsItAndSaysSo(status: Int, body: String) async {
+    let stub = Stub(webRTC: (status, body))
+    let listener = FakeListener()
+    let relay = FakeRelay()
+    let model = await startedModel(stub, listener: listener, relay: relay)
+
+    #expect(await model.startVoiceCall(assistantID: "as-1"))
+    await model.callOutbox?.value
+
+    #expect(model.voiceCall.state == .idle)
+    #expect(model.voiceCall.startFailure == .service)
+    #expect(!listener.isListening)
+    #expect(relay.isClosed)
+    #expect(!relay.isStarted)
+    #expect(
+      stub.paths == [
+        "POST /api/v1/assistants/as-1/calls",
+        "POST /api/v1/assistants/as-1/calls/c-1/webrtc",
+        "POST /api/v1/assistants/as-1/calls/c-1/end",
+      ])
+  }
+
+  @Test func anOfferTheDeviceCannotMakeEndsTheCallAndSaysSo() async {
+    let stub = Stub(webRTC: Stub.answered)
+    let relay = FakeRelay()
+    relay.offerError = WebRTCRelayError.noOffer
+    let model = await startedModel(stub, listener: FakeListener(), relay: relay)
+
+    #expect(await model.startVoiceCall(assistantID: "as-1"))
+    await model.callOutbox?.value
+
+    #expect(model.voiceCall.state == .idle)
+    #expect(model.voiceCall.startFailure == .service)
+    #expect(
+      stub.paths == [
+        "POST /api/v1/assistants/as-1/calls", "POST /api/v1/assistants/as-1/calls/c-1/end",
+      ])
+  }
+
+  @Test func aRelayThatNeverConnectsEndsTheCallThereAndSaysSo() async {
+    let stub = Stub(webRTC: Stub.answered)
+    let relay = FakeRelay()
+    let model = await startedModel(stub, listener: FakeListener(), relay: relay)
+    #expect(await model.startVoiceCall(assistantID: "as-1"))
+    await model.callOutbox?.value
+
+    relay.change(.failed)
+    await model.callOutbox?.value
+
+    #expect(model.voiceCall.state == .idle)
+    #expect(model.voiceCall.startFailure == .service)
+    #expect(stub.paths.last == "POST /api/v1/assistants/as-1/calls/c-1/end")
+  }
+
+  @Test func theAssistantHangingUpEndsARelayedCallWithoutPostingAnotherEnd() async {
+    let stub = Stub(webRTC: Stub.answered)
+    let relay = FakeRelay()
+    let model = await startedModel(stub, listener: FakeListener(), relay: relay)
+    #expect(await model.startVoiceCall(assistantID: "as-1"))
+    await model.callOutbox?.value
+    relay.change(.connected)
+
+    model.apply(updated: voiceCallEvent(callID: "c-1", ended: true))
+    await model.callOutbox?.value
+
+    #expect(model.voiceCall.state == .idle)
+    #expect(relay.isClosed)
+    #expect(
+      stub.paths == [
+        "POST /api/v1/assistants/as-1/calls", "POST /api/v1/assistants/as-1/calls/c-1/webrtc",
       ])
   }
 }
