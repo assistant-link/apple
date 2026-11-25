@@ -4,6 +4,7 @@ import Testing
 @testable import AssistantLink
 
 actor FakeSynthesizer: SentenceSynthesizing {
+  private(set) var started: [String] = []
   private(set) var synthesized: [String] = []
   private var failing: Set<String> = []
   private var held: Set<String> = []
@@ -34,7 +35,10 @@ actor FakeSynthesizer: SentenceSynthesizing {
   }
 
   func synthesize(_ sentence: String) async throws -> SpeechClip {
+    started.append(sentence)
     while held.contains(sentence) { try await Task.sleep(for: .milliseconds(5)) }
+    // A sleep that ended just before the cancellation must not let the sentence through.
+    try Task.checkCancellation()
     if failing.contains(sentence) { throw FakeFailure() }
     synthesized.append(sentence)
     return SpeechClip(samples: [0], sampleRate: 24_000)
@@ -213,7 +217,8 @@ struct NeuralReplyEngineTests {
     let engine = await ready(synthesizer, player)
     var results: [ReplySpeechResult] = []
     engine.speak("One. Two. Three.") { results.append($0) }
-    await waitUntil { player.clips == 1 }
+    // Stops while "Two." is being synthesized rather than on its way to the synthesizer.
+    await waitUntil { await synthesizer.started.contains("Two.") }
 
     engine.stop()
     await synthesizer.release("Two.")
