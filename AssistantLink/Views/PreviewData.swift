@@ -136,17 +136,17 @@ extension VoiceCall {
 }
 
 extension Timeline {
-  /// The design mock followed by a 15 second voice chat.
+  /// The design mock followed by a voice chat of 01:12.
   static let designMockAfterCall: Timeline = {
     var events = designMock.events
-    let end = events.last?.createdAt ?? .now
-    for (index, kind) in [Event.Kind.callStarted, .callEnded].enumerated() {
-      events.append(
-        Event(
-          id: "01a11a4e-0a6b-7000-8000-\(String(format: "%012d", 200 + index))",
-          assistantID: Assistant.samples[0].id, type: kind, sender: .system,
-          createdAt: end.addingTimeInterval(60 + Double(index) * 15)))
-    }
+    let start = (events.last?.createdAt ?? .now).addingTimeInterval(60)
+    var call = Event(
+      id: "01a11a4e-0a6b-7000-8000-000000000200", assistantID: Assistant.samples[0].id,
+      type: .voiceCall, sender: .user, createdAt: start)
+    call.voiceCall = VoiceCallDetails(
+      callID: "01a11a4e-0a6b-7000-8000-000000000201", mode: "realtime_relay", startedAt: start,
+      endedAt: start.addingTimeInterval(72), durationSeconds: 72)
+    events.append(call)
     return Timeline(events: events)
   }()
 }

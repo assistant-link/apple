@@ -17,6 +17,8 @@ final class AppModel {
   }
   /// The conversations opened so far, by Assistant.
   private(set) var timelines: [Assistant.ID: Timeline] = [:]
+  /// The spoken turns of the calls loaded or heard of so far, by call, in the order saved.
+  private(set) var callTranscripts: [String: [CallTranscriptEntry]] = [:]
   /// Changes whenever the app starts using an account, so live updates restart with it.
   private(set) var session = 0
   let voiceCall: VoiceCall
@@ -42,6 +44,10 @@ final class AppModel {
   /// The tail of a call's posts, which run one after another so the Assistant sees them in the
   /// order they happened.
   private(set) var callOutbox: Task<Void, Never>?
+  /// The posts of the call that is on or last was.
+  private var currentCall: CallPosts?
+  /// The service's id of the call that is on or last was, once it started.
+  var currentCallID: String? { currentCall?.callID }
   /// Keeps the process running until the task finishes, so posts started when the app leaves the
   /// foreground are not cut off by suspension.
   private let keepRunning: @MainActor (Task<Void, Never>) -> Void
@@ -159,7 +165,8 @@ final class AppModel {
       onLinkActivity: { apply($0) },
       onAssistantUpdated: { apply($0) },
       onEventCreated: { apply(created: $0) },
-      onEventUpdated: { apply(updated: $0) })
+      onEventUpdated: { apply(updated: $0) },
+      onTranscriptEntry: { apply($0) })
     if let stop {
       Self.logger.notice("Live updates stopped: \(String(describing: stop), privacy: .public)")
     }
@@ -196,11 +203,38 @@ final class AppModel {
     timelines[event.assistantID]?.receive(event)
     setLatestEvent(event, onlyIfLatest: false)
     voiceCall.receive(event)
+    endCallIfEnded(by: event)
   }
 
   func apply(updated event: Event) {
     timelines[event.assistantID]?.update(event)
     setLatestEvent(event, onlyIfLatest: true)
+    endCallIfEnded(by: event)
+  }
+
+  func apply(_ entry: CallTranscriptEntry) {
+    var entries = callTranscripts[entry.callID] ?? []
+    entries.removeAll { $0.id == entry.id }
+    entries.append(entry)
+    callTranscripts[entry.callID] = entries.sorted { $0.seq < $1.seq }
+  }
+
+  /// Fetches the spoken turns of an ended call for its transcript sheet. Turns heard of live
+  /// meanwhile are kept.
+  func loadTranscript(assistantID: Assistant.ID, callID: String) async throws {
+    for entry in try await client().transcript(assistantID: assistantID, callID: callID) {
+      apply(entry)
+    }
+  }
+
+  /// The service ended the call that is on, for example because the Assistant hung up, so
+  /// nothing posts its end again.
+  private func endCallIfEnded(by event: Event) {
+    guard event.type == .voiceCall, let call = event.voiceCall, call.endedAt != nil,
+      let callID = currentCall?.callID, call.callID == callID,
+      voiceCall.assistantID == event.assistantID
+    else { return }
+    voiceCall.endedElsewhere()
   }
 
   private func link(id: Link.ID) -> Link? {
@@ -297,29 +331,129 @@ final class AppModel {
     }
   }
 
-  /// Starts a voice chat with the Assistant; what the user says is sent as messages. The
-  /// service is told when the chat starts and ends, which wakes and releases the agent.
+  /// Starts a voice chat with the Assistant. The service is told when the chat starts and
+  /// ends, which wakes and releases the agent. It keeps the chat as a call with its own
+  /// transcript; a service from before calls were sessions gets call events and the user's
+  /// speech as messages instead.
   func startVoiceCall(assistantID: Assistant.ID) async -> Bool {
+    let call = CallPosts(assistantID: assistantID)
     let started = await voiceCall.start(
       assistantID: assistantID, assistantName: assistant(id: assistantID)?.name,
       isOnline: assistant(id: assistantID)?.status == .online,
-      send: { text in
-        // Speech can come before the Assistant is online, so keep it behind `call_started`.
-        guard let message = self.queue(text: text, assistantID: assistantID, via: .voice) else {
-          return
-        }
-        let session = self.session
-        self.enqueue {
-          if self.session == session {
-            await self.post(message, attempts: Self.callEventAttempts)
-          }
-        }
-      },
-      onEnd: { self.enqueueCallEvent(.callEnded, assistantID: assistantID) })
+      send: { text, startedAt in self.enqueueUtterance(text, startedAt: startedAt, in: call) },
+      onSpeech: { self.enqueueReplySpeech($0, in: call) },
+      onEnd: { self.enqueueEnd(of: call) })
     if started {
-      enqueueCallEvent(.callStarted, assistantID: assistantID)
+      currentCall = call
+      enqueueStart(of: call)
     }
     return started
+  }
+
+  /// Speech can come before the Assistant is online, so it stays behind the start. Only a
+  /// service without calls falls back to call events: after any other failure the service may
+  /// have started the call anyway, and the chat must not be written twice. Such a call could
+  /// save nothing and would never wake the agent, so it ends here, and the call the service may
+  /// have started under the sent id is ended there.
+  private func enqueueStart(of call: CallPosts) {
+    let id = UUIDv7.make()
+    enqueue {
+      do {
+        let started = try await self.retrying(attempts: Self.callEventAttempts, in: nil) {
+          try await self.client().startCall(id: id, assistantID: call.assistantID)
+        }
+        call.callID = started.id
+      } catch let error as APIError where error.status == 404 {
+        call.usesCallEvents = true
+        await self.postCallEvent(.callStarted, assistantID: call.assistantID)
+      } catch {
+        Self.logger.notice("Call start failed: \(error.localizedDescription, privacy: .public)")
+        if self.currentCall === call {
+          self.voiceCall.endedElsewhere(startFailure: .service)
+        }
+        await self.postEnd(assistantID: call.assistantID, callID: id)
+      }
+    }
+  }
+
+  private func enqueueUtterance(_ text: String, startedAt: Date, in call: CallPosts) {
+    let endedAt = Date.now
+    let session = session
+    enqueue {
+      guard let callID = call.callID else {
+        guard call.usesCallEvents, self.session == session,
+          let message = self.queue(text: text, assistantID: call.assistantID, via: .voice)
+        else { return }
+        await self.post(message, attempts: Self.callEventAttempts)
+        return
+      }
+      let id = UUIDv7.make()
+      _ = await self.saveEntry {
+        try await $0.saveTranscriptEntry(
+          id: id, assistantID: call.assistantID, callID: callID, speaker: .user, text: text,
+          startedAt: startedAt, endedAt: endedAt)
+      }
+    }
+  }
+
+  /// A reply is saved as it starts to be read out, and ends when the reading does. Without a
+  /// session the reply is already in the chat as the Assistant's message.
+  private func enqueueReplySpeech(_ speech: ReplySpeech, in call: CallPosts) {
+    enqueue {
+      guard let callID = call.callID else { return }
+      switch speech {
+      case .started(let replyID, let text, let startedAt):
+        let id = UUIDv7.make()
+        let entry = await self.saveEntry {
+          try await $0.saveTranscriptEntry(
+            id: id, assistantID: call.assistantID, callID: callID, speaker: .assistant,
+            text: text, startedAt: startedAt, endedAt: nil)
+        }
+        if let entry { call.replyEntries[replyID] = entry.id }
+      case .finished(let replyID, let endedAt):
+        guard let entryID = call.replyEntries.removeValue(forKey: replyID) else { return }
+        _ = await self.saveEntry {
+          try await $0.updateTranscriptEntry(
+            assistantID: call.assistantID, callID: callID, entryID: entryID, endedAt: endedAt)
+        }
+      }
+    }
+  }
+
+  /// Keeps trying like the call's other posts; a turn that never goes out is only missing from
+  /// the transcript.
+  private func saveEntry<T>(_ operation: (APIClient) async throws -> T) async -> T? {
+    do {
+      return try await retrying(attempts: Self.callEventAttempts, in: nil) {
+        try await operation(self.client())
+      }
+    } catch {
+      Self.logger.notice(
+        "Transcript entry not saved: \(error.localizedDescription, privacy: .public)")
+      return nil
+    }
+  }
+
+  private func enqueueEnd(of call: CallPosts) {
+    enqueue {
+      guard let callID = call.callID else {
+        if call.usesCallEvents {
+          await self.postCallEvent(.callEnded, assistantID: call.assistantID)
+        }
+        return
+      }
+      await self.postEnd(assistantID: call.assistantID, callID: callID)
+    }
+  }
+
+  private func postEnd(assistantID: Assistant.ID, callID: String) async {
+    do {
+      try await retrying(attempts: Self.callEventAttempts, in: nil) {
+        try await self.client().endCall(assistantID: assistantID, callID: callID)
+      }
+    } catch {
+      Self.logger.notice("Call end failed: \(error.localizedDescription, privacy: .public)")
+    }
   }
 
   func endVoiceCall() {
@@ -358,17 +492,15 @@ final class AppModel {
   /// Keeps trying while the failure may pass, because an Assistant that never sees the end of
   /// a call keeps its agent awake. A call's later posts wait behind it, so it gives up eventually.
   /// It outlives a session change, such as reconnecting, because only the account owns the call.
-  private func enqueueCallEvent(_ type: Event.Kind, assistantID: Assistant.ID) {
+  private func postCallEvent(_ type: Event.Kind, assistantID: Assistant.ID) async {
     let key = UUIDv7.make()
-    enqueue {
-      do {
-        let event = try await self.retrying(attempts: Self.callEventAttempts, in: nil) {
-          try await self.client().sendCallEvent(
-            assistantID: assistantID, type: type, idempotencyKey: key)
-        }
-        self.store(event)
-      } catch {}
-    }
+    do {
+      let event = try await retrying(attempts: Self.callEventAttempts, in: nil) {
+        try await self.client().sendCallEvent(
+          assistantID: assistantID, type: type, idempotencyKey: key)
+      }
+      store(event)
+    } catch {}
   }
 
   /// Runs `operation` again after a capped backoff while its failure is transient, and throws
@@ -462,6 +594,7 @@ final class AppModel {
     api = nil
     assistants = []
     timelines = [:]
+    callTranscripts = [:]
     pairingCodes = [:]
     requestedConversation = nil
     await start()
@@ -574,6 +707,10 @@ final class AppModel {
     if let latest = timeline.events.last {
       setLatestEvent(latest, onlyIfLatest: false)
     }
+    // The update that ended the call may have come while the live connection was closed.
+    for event in timeline.events where event.type == .voiceCall {
+      endCallIfEnded(by: event)
+    }
   }
 
   /// Local messages the service hasn't stored survive a refetch that replaces the events.
@@ -594,5 +731,23 @@ final class AppModel {
     let api = try await connect()
     self.api = api
     return api
+  }
+}
+
+/// The posts of one voice chat, which go out one after another through the call outbox.
+@MainActor
+@Observable
+private final class CallPosts {
+  let assistantID: Assistant.ID
+  /// Set once the service started the call; `nil` while it starts, if it failed to, and for a
+  /// service from before calls were sessions.
+  var callID: String?
+  /// Whether the service is from before calls were sessions.
+  var usesCallEvents = false
+  /// The transcript entry of each reply being read out, by the reply's event id.
+  var replyEntries: [Event.ID: String] = [:]
+
+  init(assistantID: Assistant.ID) {
+    self.assistantID = assistantID
   }
 }

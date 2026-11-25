@@ -50,3 +50,17 @@ struct VoiceChatCaption: View {
       .frame(maxWidth: .infinity)
   }
 }
+
+/// The entry of the voice chat that is on, counting up from `startedAt`.
+struct LiveVoiceChatCaption: View {
+  let startedAt: Date
+
+  var body: some View {
+    TimelineView(.periodic(from: startedAt, by: 1)) { context in
+      let seconds = max(0, Int(context.date.timeIntervalSince(startedAt)))
+      VoiceChatCaption(seconds: seconds)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(VoiceChat.accessibilityLabel(seconds: seconds))
+    }
+  }
+}

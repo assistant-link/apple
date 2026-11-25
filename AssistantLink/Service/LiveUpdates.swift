@@ -59,7 +59,8 @@ struct LiveUpdates {
     onLinkActivity: (LinkActivityChange) -> Void,
     onAssistantUpdated: (AssistantChange) -> Void,
     onEventCreated: (Event) -> Void,
-    onEventUpdated: (Event) -> Void
+    onEventUpdated: (Event) -> Void,
+    onTranscriptEntry: (CallTranscriptEntry) -> Void = { _ in }
   ) async -> Stop? {
     var backoff = backoff
     while !Task.isCancelled {
@@ -77,6 +78,7 @@ struct LiveUpdates {
             case .assistantUpdated(let change): onAssistantUpdated(change)
             case .eventCreated(let event): onEventCreated(event)
             case .eventUpdated(let event): onEventUpdated(event)
+            case .transcriptEntry(let entry): onTranscriptEntry(entry)
             case .closing(reason: "account_deleted"): return .accountDeleted
             case .closing, .ignored: break
             }

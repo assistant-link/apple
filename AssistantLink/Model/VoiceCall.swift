@@ -155,6 +155,13 @@ enum VoiceChat {
   }
 }
 
+/// An Assistant's reply being read out in a call.
+enum ReplySpeech: Equatable, Sendable {
+  case started(Event.ID, text: String, at: Date)
+  /// It was read out to the end or cut off.
+  case finished(Event.ID, at: Date)
+}
+
 /// A hands-free conversation with one Assistant: it listens for the whole call, sends what the
 /// user says, and speaks the Assistant's replies. It never listens while speaking, so it can't
 /// hear itself, and it never speaks while the user is talking: a reply waits for the end of their
@@ -185,11 +192,14 @@ final class VoiceCall {
   private(set) var transcript: [TranscriptLine] = []
   private(set) var startedAt: Date?
 
-  /// Why the last `start` failed; nil when it started, or did not because a call was running.
+  /// Why the last `start` failed; nil when it started, or did not because a call was running. A
+  /// call that started here can still fail to start on the service, which ends it.
   enum StartFailure: Equatable {
     case permissionDenied
     /// The audio session or the recognizer could not start.
     case unavailable
+    /// The service did not start the call.
+    case service
   }
 
   private(set) var startFailure: StartFailure?
@@ -230,7 +240,8 @@ final class VoiceCall {
   private var interruptionObserver: (any NSObjectProtocol)?
   /// The system holds the audio session, so nothing may listen or speak until it gives it back.
   private var isInterrupted = false
-  private var send: (@MainActor (String) -> Void)?
+  private var send: (@MainActor (String, Date) -> Void)?
+  private var onSpeech: (@MainActor (ReplySpeech) -> Void)?
   private var onEnd: (@MainActor () -> Void)?
   private var isOnline = false
   private var isStarting = false
@@ -241,6 +252,10 @@ final class VoiceCall {
   private var earlierSegments = ""
   /// The recognizer's latest result since it last started over.
   private var segment = ""
+  /// When the first word of the utterance in progress was heard.
+  private var utteranceStartedAt: Date?
+  /// The reply being read out.
+  private var speakingReplyID: Event.ID?
   private var replies: [TranscriptLine] = []
   private var spokenIDs: Set<Event.ID> = []
 
@@ -263,10 +278,12 @@ final class VoiceCall {
   }
 
   /// Starts the call after asking for permission. Returns whether it started; only then
-  /// `onEnd` runs, once, when the call ends, unless the Assistant hung up.
+  /// `onEnd` runs, once, when the call ends, unless the call ended elsewhere. `send` gets each
+  /// utterance with when its first word was heard.
   func start(
     assistantID: Assistant.ID, assistantName: String? = nil, isOnline: Bool,
-    send: @escaping @MainActor (String) -> Void,
+    send: @escaping @MainActor (String, Date) -> Void,
+    onSpeech: @escaping @MainActor (ReplySpeech) -> Void = { _ in },
     onEnd: @escaping @MainActor () -> Void
   ) async -> Bool {
     startFailure = nil
@@ -290,6 +307,7 @@ final class VoiceCall {
     speaker.prepareForCall()
     self.assistantID = assistantID
     self.send = send
+    self.onSpeech = onSpeech
     self.isOnline = isOnline
     listener.vocabulary = Self.vocabulary(assistantName: assistantName)
     isMuted = false
@@ -324,6 +342,7 @@ final class VoiceCall {
     flushUtterance()
     stopListening()
     speaker.stop()
+    finishReply()
     audio.deactivate()
     stopObservingInterruptions()
     replies = []
@@ -331,6 +350,7 @@ final class VoiceCall {
     transcript = []
     startedAt = nil
     send = nil
+    onSpeech = nil
     isMuted = false
     listeningFailed = false
     state = .idle
@@ -375,14 +395,22 @@ final class VoiceCall {
     routeChanged()
   }
 
+  /// Ends the call without `onEnd`, because the service already has the end, or the call failed
+  /// to start there and the app ends it there by the id it sent.
+  func endedElsewhere(startFailure: StartFailure? = nil) {
+    guard state != .idle else { return }
+    onEnd = nil
+    end()
+    self.startFailure = startFailure
+  }
+
   /// Queues a new text message of the Assistant to be spoken. A `call_ended` of the Assistant
   /// ends the call without `onEnd`: the service already has the end.
   func receive(_ event: Event) {
     if state != .idle, event.assistantID == assistantID, event.type == .callEnded,
       event.sender == .assistant
     {
-      onEnd = nil
-      end()
+      endedElsewhere()
       return
     }
     guard state != .idle, event.assistantID == assistantID, event.type == .textMessage,
@@ -418,10 +446,19 @@ final class VoiceCall {
     state = .speaking
     let reply = replies.removeFirst()
     transcript.append(reply)
+    speakingReplyID = reply.id
+    onSpeech?(.started(reply.id, text: reply.text, at: .now))
     speaker.speak(reply.text) { [weak self] in
       guard let self, state == .speaking else { return }
+      finishReply()
       speakNext()
     }
+  }
+
+  private func finishReply() {
+    guard let id = speakingReplyID else { return }
+    speakingReplyID = nil
+    onSpeech?(.finished(id, at: .now))
   }
 
   /// The microphone moved to another device, which stops the audio engine under the recognizer.
@@ -487,6 +524,7 @@ final class VoiceCall {
     stopListening()
     if state == .speaking {
       speaker.stop()
+      finishReply()
       state = isOnline ? .listening : .connecting
     }
   }
@@ -526,6 +564,7 @@ final class VoiceCall {
     isFinishing = false
     earlierSegments = ""
     segment = ""
+    utteranceStartedAt = nil
     level = 0
     listener.stop()
   }
@@ -539,6 +578,7 @@ final class VoiceCall {
       let isNew = Self.words(of: text) != Self.words(of: segment)
       if SpeechSegments.startsNew(text, after: segment) { earlierSegments = heard }
       segment = text
+      if utteranceStartedAt == nil, !Self.words(of: text).isEmpty { utteranceStartedAt = .now }
       if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
         failures = 0
       }
@@ -577,10 +617,12 @@ final class VoiceCall {
   @discardableResult
   private func flushUtterance() -> Bool {
     let text = heard.trimmingCharacters(in: .whitespacesAndNewlines)
+    let startedAt = utteranceStartedAt ?? .now
     earlierSegments = ""
     segment = ""
+    utteranceStartedAt = nil
     guard !text.isEmpty else { return false }
-    send?(text)
+    send?(text, startedAt)
     transcript.append(TranscriptLine(id: UUID().uuidString, text: text, isFromUser: true))
     return true
   }

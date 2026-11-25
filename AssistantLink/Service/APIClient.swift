@@ -6,6 +6,13 @@ enum APIError: Error, Equatable, LocalizedError {
   case unexpectedResponse(status: Int)
   case unreachable
 
+  var status: Int? {
+    switch self {
+    case .service(let status, _, _), .unexpectedResponse(let status): status
+    case .unreachable: nil
+    }
+  }
+
   /// Whether sending the same request again later may succeed.
   var isTransient: Bool {
     switch self {
@@ -94,6 +101,49 @@ struct APIClient: Sendable {
       "POST", "assistants/\(assistantID)/call_events",
       body: ["type": type.rawValue, "idempotency_key": idempotencyKey])
     return response.event
+  }
+
+  /// Starts a voice chat, which the service also writes as a `call_started` and a `voice_call`.
+  /// Posting the same `id` again, or starting while a call is open, answers with the open call,
+  /// whose id can differ. A service from before calls were sessions answers 404.
+  func startCall(id: String, assistantID: String) async throws -> CallSession {
+    let response: Envelope<CallSession> = try await send(
+      "POST", "assistants/\(assistantID)/calls", body: ["id": id])
+    return response.value
+  }
+
+  /// The user hung up; the service writes the `call_ended` and updates the `voice_call`.
+  func endCall(assistantID: String, callID: String) async throws {
+    _ = try await perform(
+      "POST", "assistants/\(assistantID)/calls/\(callID)/end", body: [String: String]())
+  }
+
+  /// The call's spoken turns, in the order they were saved.
+  func transcript(assistantID: String, callID: String) async throws -> [CallTranscriptEntry] {
+    let response: TranscriptResponse = try await send(
+      "GET", "assistants/\(assistantID)/calls/\(callID)/transcript")
+    return response.entries.sorted { $0.seq < $1.seq }
+  }
+
+  /// `id` makes a retry answer with the entry already saved. `endedAt` is `nil` while the turn
+  /// is still being said.
+  func saveTranscriptEntry(
+    id: String, assistantID: String, callID: String, speaker: CallTranscriptEntry.Speaker,
+    text: String, startedAt: Date, endedAt: Date?
+  ) async throws -> CallTranscriptEntry {
+    let response: Envelope<CallTranscriptEntry> = try await send(
+      "POST", "assistants/\(assistantID)/calls/\(callID)/transcript_entries",
+      body: TranscriptEntryRequest(
+        id: id, speaker: speaker, text: text, startedAt: startedAt, endedAt: endedAt))
+    return response.value
+  }
+
+  func updateTranscriptEntry(
+    assistantID: String, callID: String, entryID: String, endedAt: Date
+  ) async throws {
+    _ = try await perform(
+      "PATCH", "assistants/\(assistantID)/calls/\(callID)/transcript_entries/\(entryID)",
+      body: TranscriptEntryRequest(endedAt: endedAt))
   }
 
   /// Asks the service to wake the Assistants that have a webhook, so they show as online.
@@ -230,6 +280,84 @@ private struct MessageRequest: Encodable {
     case text, via
     case idempotencyKey = "idempotency_key"
     case replyTo = "reply_to"
+  }
+}
+
+/// A resource the service answers with under its own name, as for the other resources.
+private protocol NamedResource: Decodable {
+  static var name: String { get }
+}
+
+extension CallSession: NamedResource {
+  static let name = "call"
+}
+
+extension CallTranscriptEntry: NamedResource {
+  static let name = "transcript_entry"
+}
+
+/// The resource under its name, or on its own.
+private struct Envelope<Value: NamedResource>: Decodable {
+  let value: Value
+
+  private struct Key: CodingKey {
+    let stringValue: String
+    var intValue: Int? { nil }
+    init(stringValue: String) { self.stringValue = stringValue }
+    init?(intValue: Int) { nil }
+  }
+
+  init(from decoder: any Decoder) throws {
+    if let container = try? decoder.container(keyedBy: Key.self),
+      let value = try? container.decode(Value.self, forKey: Key(stringValue: Value.name))
+    {
+      self.value = value
+    } else {
+      value = try Value(from: decoder)
+    }
+  }
+}
+
+private struct TranscriptResponse: Decodable {
+  let entries: [CallTranscriptEntry]
+
+  enum CodingKeys: String, CodingKey {
+    case transcriptEntries = "transcript_entries"
+    case entries
+  }
+
+  init(from decoder: any Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    let key: CodingKeys = container.contains(.transcriptEntries) ? .transcriptEntries : .entries
+    entries = try container.decode(LossyArray<CallTranscriptEntry>.self, forKey: key).wrappedValue
+  }
+}
+
+/// Leaves out what it doesn't set, so an update changes only `ended_at`.
+private struct TranscriptEntryRequest: Encodable {
+  var id: String?
+  var speaker: CallTranscriptEntry.Speaker?
+  var text: String?
+  var startedAt: Date?
+  var endedAt: Date?
+
+  enum CodingKeys: String, CodingKey {
+    case id, speaker, text
+    case startedAt = "started_at"
+    case endedAt = "ended_at"
+  }
+
+  func encode(to encoder: any Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encodeIfPresent(id, forKey: .id)
+    try container.encodeIfPresent(speaker, forKey: .speaker)
+    try container.encodeIfPresent(text, forKey: .text)
+    try container.encodeIfPresent(startedAt.map(Self.timestamp), forKey: .startedAt)
+    try container.encodeIfPresent(endedAt.map(Self.timestamp), forKey: .endedAt)
+  }
+
+  private static func timestamp(_ date: Date) -> String {
+    date.formatted(Date.ISO8601FormatStyle(includingFractionalSeconds: true))
   }
 }
 

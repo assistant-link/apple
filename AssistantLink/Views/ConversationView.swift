@@ -54,6 +54,10 @@ struct ConversationView: View {
         failedMessage = nil
         voiceChat = nil
       }
+      // The service can still fail to start a call that went live here.
+      .onChange(of: model.voiceCall.startFailure) { _, failure in
+        if let failure, model.voiceCall.assistantID == assistant.id { startFailure = failure }
+      }
       .startFailureAlert("Can't start the voice chat", failure: $startFailure)
     } else {
       ContentUnavailableView("Assistant not found", systemImage: "questionmark.circle")
@@ -107,6 +111,8 @@ struct ConversationView: View {
   private func timeline(_ assistant: Assistant) -> some View {
     let content = model.timelines[assistant.id] ?? Timeline()
     let isInCall = CallPresentation(model.voiceCall, assistantID: assistant.id).isInCall
+    let callID = isInCall ? model.currentCallID : nil
+    let liveCallID = content.liveVoiceCallID(callID: callID)
     return ScrollView {
       // Not lazy: when the composer or keyboard resizes the view, a lazy stack anchored to the
       // bottom can lose its place and draw nothing until the next scroll. Events load 50 to a
@@ -118,7 +124,7 @@ struct ConversationView: View {
             if let first { position.scrollTo(id: first, anchor: .top) }
           }
         }
-        ForEach(content.rows(isInCall: isInCall)) { row in
+        ForEach(content.rows(isInCall: isInCall, callID: callID)) { row in
           VStack(spacing: 12) {
             switch row.content {
             case .event(let event):
@@ -128,7 +134,9 @@ struct ConversationView: View {
               } else if row.showsTimeCaption {
                 TimeCaptionView(date: event.createdAt)
               }
-              eventView(event, in: assistant, timeline: content, replyTarget: row.replyTarget)
+              eventView(
+                event, in: assistant, timeline: content, replyTarget: row.replyTarget,
+                isLive: event.id == liveCallID)
             case .outgoing(let message):
               if row.showsTimeCaption { TimeCaptionView(date: message.createdAt) }
               MessageBubble(
@@ -233,7 +241,8 @@ struct ConversationView: View {
 
   @ViewBuilder
   private func eventView(
-    _ event: Event, in assistant: Assistant, timeline: Timeline, replyTarget: ReplyTarget?
+    _ event: Event, in assistant: Assistant, timeline: Timeline, replyTarget: ReplyTarget?,
+    isLive: Bool
   ) -> some View {
     switch event.type {
     case .textMessage:
@@ -256,6 +265,29 @@ struct ConversationView: View {
       .accessibilityLabel(VoiceChat.accessibilityLabel(seconds: chat.seconds))
       .accessibilityHint("Shows the transcript")
       .accessibilityIdentifier("voiceChatEntry")
+    case .voiceCall:
+      if isLive {
+        let startedAt = model.voiceCall.startedAt ?? event.voiceCall?.startedAt ?? event.createdAt
+        Button {
+          callDetent = .large
+        } label: {
+          LiveVoiceChatCaption(startedAt: startedAt)
+        }
+        .buttonStyle(.plain)
+        .accessibilityHint("Shows the voice chat")
+        .accessibilityIdentifier("voiceChatEntry")
+      } else {
+        let chat = timeline.voiceChat(of: event)
+        Button {
+          voiceChat = request(chat)
+        } label: {
+          VoiceChatCaption(seconds: chat.seconds)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(VoiceChat.accessibilityLabel(seconds: chat.seconds))
+        .accessibilityHint("Shows the transcript")
+        .accessibilityIdentifier("voiceChatEntry")
+      }
     case .linkCreated:
       if let position = assistant.links.firstIndex(where: { $0.id == event.linkID }) {
         let link = assistant.links[position]
@@ -279,7 +311,7 @@ private struct ConversationSheets: ViewModifier {
 
   func body(content: Content) -> some View {
     content
-      .sheet(item: presented($voiceChat)) { VoiceTranscriptSheet(chat: $0) }
+      .sheet(item: presented($voiceChat)) { VoiceChatSheet(assistantID: assistant.id, chat: $0) }
       .failedMessageSheet(
         item: presented($failedMessage), onTryAgain: onTryAgain, onDelete: onDelete
       )
@@ -294,6 +326,30 @@ private struct ConversationSheets: ViewModifier {
     Binding(
       get: { request.wrappedValue?.presented(duringCall: duringCall) },
       set: { if $0 == nil { request.wrappedValue = nil } })
+  }
+}
+
+/// The transcript of an ended voice chat: the call's saved turns and its messages they miss, or
+/// the messages of a chat from before calls were sessions.
+private struct VoiceChatSheet: View {
+  let assistantID: Assistant.ID
+  let chat: VoiceChatRecord
+
+  @Environment(AppModel.self) private var model
+
+  var body: some View {
+    if let callID = chat.callID {
+      VoiceTranscriptSheet(chat: saved(callID))
+        .task { try? await model.loadTranscript(assistantID: assistantID, callID: callID) }
+    } else {
+      VoiceTranscriptSheet(chat: chat)
+    }
+  }
+
+  private func saved(_ callID: String) -> VoiceChatRecord {
+    var saved = chat
+    saved.lines = chat.transcript(of: model.callTranscripts[callID] ?? [])
+    return saved
   }
 }
 
@@ -425,7 +481,9 @@ private struct StartFailureAlert: ViewModifier {
       Text(
         failure == .permissionDenied
           ? "Allow Microphone and Speech Recognition for Assistant Link in Settings."
-          : "The microphone or speech recognition could not start. Try again.")
+          : failure == .service
+            ? "The voice chat could not start. Try again."
+            : "The microphone or speech recognition could not start. Try again.")
     }
   }
 }

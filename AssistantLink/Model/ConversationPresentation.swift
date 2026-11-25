@@ -35,7 +35,7 @@ struct ListPreview: Equatable {
     switch event.type {
     case .linkCreated:
       self.init(text: "Assistant Link created")
-    case .callStarted, .callEnded:
+    case .callStarted, .callEnded, .voiceCall:
       self.init(text: "Voice chat")
     case .textMessage:
       let text = event.deleted ? "This message was deleted" : event.text ?? ""

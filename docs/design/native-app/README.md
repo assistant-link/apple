@@ -67,7 +67,7 @@ A 72 pt empty slot under the buttons is kept for a later push-to-talk control.
 
 ### Voice chat marker (`voiceChatEntry`)
 
-Not a bubble: a small centered caption where the call ended, `Label("Voice chat · 00:15", systemImage: "waveform")` in `.footnote`, `.secondary`. The call's messages fold into it; tapping it opens the transcript in a sheet (`VoiceTranscriptSheet`).
+Not a bubble: a small centered caption, `Label("Voice chat · 01:12", systemImage: "waveform")` in `.footnote`, `.secondary`. A call is one `voice_call` entry, stored when it starts and updated when it ends, and its spoken turns stay out of the chat. While the call is on and the sheet is pulled down, the entry counts up and a tap expands the call sheet. Once it ended, it shows the final length and a tap opens the call's transcript in a sheet (`VoiceTranscriptSheet`). A chat from before calls were sessions sits where it ended, with its messages folded into it.
 
 ### Agent activity (`thinkingIndicator`)
 
