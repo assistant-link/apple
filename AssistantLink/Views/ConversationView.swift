@@ -480,7 +480,9 @@ private struct StartFailureAlert: ViewModifier {
       Text(
         failure == .permissionDenied
           ? "Allow Microphone and Speech Recognition for Assistant Link in Settings."
-          : "The microphone or speech recognition could not start. Try again.")
+          : failure == .service
+            ? "The voice chat could not start. Try again."
+            : "The microphone or speech recognition could not start. Try again.")
     }
   }
 }

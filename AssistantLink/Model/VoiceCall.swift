@@ -198,6 +198,8 @@ final class VoiceCall {
     case permissionDenied
     /// The audio session or the recognizer could not start.
     case unavailable
+    /// The service did not start the call.
+    case service
   }
 
   private(set) var startFailure: StartFailure?

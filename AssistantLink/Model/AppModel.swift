@@ -365,7 +365,7 @@ final class AppModel {
       } catch {
         Self.logger.notice("Call start failed: \(error.localizedDescription, privacy: .public)")
         if self.currentCall === call {
-          self.voiceCall.endedElsewhere(startFailure: .unavailable)
+          self.voiceCall.endedElsewhere(startFailure: .service)
         }
       }
     }

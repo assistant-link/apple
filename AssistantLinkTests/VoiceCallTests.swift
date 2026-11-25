@@ -2213,7 +2213,7 @@ struct CallSessionAppModelTests {
 
     #expect(model.voiceCall.state == .idle)
     #expect(!listener.isListening)
-    #expect(model.voiceCall.startFailure == .unavailable)
+    #expect(model.voiceCall.startFailure == .service)
     #expect(stub.paths.allSatisfy { $0 == "POST /api/v1/assistants/as-1/calls" })
   }
 
