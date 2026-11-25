@@ -74,10 +74,13 @@ struct NeuralReplyEngineTests {
   }
 
   /// Polls instead of sleeping a fixed time, which a busy CI runner can outlast; the expectations
-  /// after it still fail when the condition never comes.
+  /// after it still fail when the condition never comes. The bound counts polls, not time: a test
+  /// elsewhere that holds the main actor for seconds would use up a deadline while the work polled
+  /// for is queued behind it, whereas each poll lets that queued work run before the next.
   private func waitUntil(_ condition: () async -> Bool) async {
-    let deadline = ContinuousClock.now + .seconds(10)
-    while await !condition(), ContinuousClock.now < deadline {
+    var polls = 0
+    while await !condition(), polls < 2_000 {
+      polls += 1
       try? await Task.sleep(for: .milliseconds(5))
     }
   }
@@ -102,6 +105,7 @@ struct NeuralReplyEngineTests {
     engine.prepare()
     await waitForPreparation(of: engine)
 
+    #expect(engine.status == .ready)
     #expect(engine.isReady)
   }
 

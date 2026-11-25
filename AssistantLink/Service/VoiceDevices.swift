@@ -1,6 +1,7 @@
 import AVFoundation
 import OSLog
 import Speech
+import WebRTC
 
 extension VoiceCall {
   static func live(kokoro: KokoroVoice = KokoroVoice()) -> VoiceCall {
@@ -47,9 +48,21 @@ final class LiveVoiceAudio: VoiceAudio {
   }
 
   /// Unlike overriding the output port, `defaultToSpeaker` leaves a connected headset in use.
-  private func setCategory() throws {
+  nonisolated static func categoryOptions(speakerOn: Bool) -> AVAudioSession.CategoryOptions {
     var options: AVAudioSession.CategoryOptions = [.allowBluetoothHFP, .allowBluetoothA2DP]
-    if isSpeakerOn { options.insert(.defaultToSpeaker) }
+    if speakerOn { options.insert(.defaultToSpeaker) }
+    return options
+  }
+
+  private func setCategory() throws {
+    let options = Self.categoryOptions(speakerOn: isSpeakerOn)
+    // WebRTC applies its own configuration when its audio starts and after an interruption or a
+    // media services reset; a stale one would move the sound back to the speaker.
+    let configuration = RTCAudioSessionConfiguration.webRTC()
+    configuration.category = AVAudioSession.Category.playAndRecord.rawValue
+    configuration.mode = AVAudioSession.Mode.voiceChat.rawValue
+    configuration.categoryOptions = options
+    RTCAudioSessionConfiguration.setWebRTC(configuration)
     try AVAudioSession.sharedInstance().setCategory(
       .playAndRecord, mode: .voiceChat, options: options)
   }

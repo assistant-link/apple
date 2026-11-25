@@ -233,6 +233,41 @@ struct APIClientTests {
     }
   }
 
+  @Test func theWebRTCOfferIsPostedForTheCallAndItsAnswerReturned() async throws {
+    let api = client { request, body in
+      #expect(request.httpMethod == "POST")
+      #expect(request.url?.path() == "/api/v1/assistants/as-1/calls/c-1/webrtc")
+      let json = try #require(try body?.jsonObject())
+      #expect(json as? [String: String] == ["offer": "v=0 offer"])
+      return (201, Data(json: #"{"answer": "v=0 answer", "ice_servers": []}"#))
+    }
+
+    let answer = try await api.webRTCAnswer(to: "v=0 offer", assistantID: "as-1", callID: "c-1")
+
+    #expect(answer == "v=0 answer")
+  }
+
+  @Test func aVoiceAgentThatIsUnavailableIsAServiceError() async throws {
+    let api = client { _, _ in
+      (503, Data(json: #"{"error": {"code": "voice_unavailable", "message": "No voice."}}"#))
+    }
+
+    await #expect(
+      throws: APIError.service(status: 503, code: "voice_unavailable", message: "No voice.")
+    ) {
+      try await api.webRTCAnswer(to: "v=0 offer", assistantID: "as-1", callID: "c-1")
+    }
+  }
+
+  @Test(arguments: [404, 503])
+  func aWebRTCAnswerWithoutAnErrorBodyKeepsItsStatus(status: Int) async throws {
+    let api = client { _, _ in (status, Data()) }
+
+    await #expect(throws: APIError.unexpectedResponse(status: status)) {
+      try await api.webRTCAnswer(to: "v=0 offer", assistantID: "as-1", callID: "c-1")
+    }
+  }
+
   @Test func transportFailuresAreReported() async throws {
     let api = client { _, _ in throw URLError(.notConnectedToInternet) }
 

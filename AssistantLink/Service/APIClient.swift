@@ -112,6 +112,17 @@ struct APIClient: Sendable {
     return response.value
   }
 
+  /// The service's SDP answer to the device's offer for the call's audio. A service without a
+  /// voice agent answers 404, and one whose voice agent can't take the call 503, with
+  /// `voice_unavailable`.
+  func webRTCAnswer(
+    to offer: String, assistantID: String, callID: String
+  ) async throws -> String {
+    let response: WebRTCAnswer = try await send(
+      "POST", "assistants/\(assistantID)/calls/\(callID)/webrtc", body: ["offer": offer])
+    return response.answer
+  }
+
   /// The user hung up; the service writes the `call_ended` and updates the `voice_call`.
   func endCall(assistantID: String, callID: String) async throws {
     _ = try await perform(
@@ -359,6 +370,10 @@ private struct TranscriptEntryRequest: Encodable {
   private static func timestamp(_ date: Date) -> String {
     date.formatted(Date.ISO8601FormatStyle(includingFractionalSeconds: true))
   }
+}
+
+private struct WebRTCAnswer: Decodable {
+  let answer: String
 }
 
 private struct CallEventResponse: Decodable {
